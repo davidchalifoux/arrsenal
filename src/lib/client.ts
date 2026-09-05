@@ -1,7 +1,27 @@
-import type { MediaItem } from "./types";
+import type { MediaItem, MediaKind } from "./types";
 
-export function mediaHref(media: Pick<MediaItem, "id" | "kind">) {
-  return `/${media.kind === "movie" ? "movies" : "shows"}/${encodeURIComponent(media.id)}`;
+export function mediaHref(media: Pick<MediaItem, "id" | "kind" | "title">) {
+  const providerId = media.id.match(
+    media.kind === "movie"
+      ? /^movie:tmdb:([1-9]\d*)$/
+      : /^series:tvdb:([1-9]\d*)$/,
+  )?.[1];
+  const slug = media.title
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+  const segment = providerId ? `${providerId}-${slug || "title"}` : media.id;
+  return `/${media.kind === "movie" ? "movies" : "shows"}/${encodeURIComponent(segment)}`;
+}
+
+export function mediaIdFromRoute(segment: string, kind: MediaKind) {
+  const providerId = segment.match(/^([1-9]\d*)(?:-.+)?$/)?.[1];
+  // The title is cosmetic; old slugs and legacy IDs still identify the same media.
+  return providerId
+    ? `${kind === "movie" ? "movie:tmdb" : "series:tvdb"}:${providerId}`
+    : segment;
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {

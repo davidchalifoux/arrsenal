@@ -1,7 +1,13 @@
 // @vitest-environment node
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, qualityLabel, sizeLabel } from "@/lib/client";
+import {
+  api,
+  mediaHref,
+  mediaIdFromRoute,
+  qualityLabel,
+  sizeLabel,
+} from "@/lib/client";
 import { addMediaSchema } from "@/lib/server/schemas";
 import type { ActionResponse } from "@/lib/types";
 
@@ -14,6 +20,79 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
 });
 afterEach(() => vi.unstubAllGlobals());
+
+describe("media routes", () => {
+  it.each([
+    [
+      "movie",
+      "movie:tmdb:693134",
+      "Dune: Part Two",
+      "/movies/693134-dune-part-two",
+    ],
+    [
+      "series",
+      "series:tvdb:81189",
+      "Breaking Bad",
+      "/shows/81189-breaking-bad",
+    ],
+    [
+      "movie",
+      "movie:tmdb:1",
+      "  Am\u00e9lie / 100%?!  ",
+      "/movies/1-amelie-100",
+    ],
+    [
+      "movie",
+      "movie:tmdb:2",
+      "\u6771\u4eac",
+      `/movies/2-${encodeURIComponent("\u6771\u4eac")}`,
+    ],
+    ["movie", "movie:tmdb:3", "?!", "/movies/3-title"],
+    [
+      "series",
+      "series:instance-a:11",
+      "Example",
+      "/shows/series%3Ainstance-a%3A11",
+    ],
+  ] as const)("round-trips %s %s with a readable route", (kind, id, title, expected) => {
+    const href = mediaHref({ kind, id, title });
+    expect(href).toBe(expected);
+    expect(
+      mediaIdFromRoute(
+        decodeURIComponent(href.slice(href.lastIndexOf("/") + 1)),
+        kind,
+      ),
+    ).toBe(id);
+  });
+
+  it("keeps identically named titles distinct", () => {
+    expect(
+      mediaHref({ kind: "movie", id: "movie:tmdb:1", title: "The Thing" }),
+    ).not.toBe(
+      mediaHref({ kind: "movie", id: "movie:tmdb:2", title: "The Thing" }),
+    );
+  });
+
+  it("resolves stale slugs and bare provider IDs without relying on the title", () => {
+    expect(mediaIdFromRoute("693134-old-title", "movie")).toBe(
+      "movie:tmdb:693134",
+    );
+    expect(mediaIdFromRoute("81189", "series")).toBe("series:tvdb:81189");
+    expect(mediaIdFromRoute("81189-breaking-bad", "movie")).toBe(
+      "movie:tmdb:81189",
+    );
+  });
+
+  it.each([
+    "movie:tmdb:693134",
+    "series:tvdb:81189",
+    "series:instance-a:11",
+    "series:instance-b:11",
+  ])("preserves legacy and instance-scoped identity %s", (id) =>
+    expect(
+      mediaIdFromRoute(id, id.startsWith("movie:") ? "movie" : "series"),
+    ).toBe(id));
+});
 
 describe("sizeLabel", () => {
   it.each([
