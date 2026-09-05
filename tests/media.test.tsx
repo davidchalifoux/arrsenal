@@ -10,11 +10,14 @@ import {
 } from "@testing-library/react";
 import type { ImageProps } from "next/image";
 import type { ComponentProps, ReactElement } from "react";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AddMedia } from "@/components/add-media";
-import { Arrsenal } from "@/components/arrsenal";
+import { LibraryBrowser } from "@/components/library-browser";
 import { MediaCard } from "@/components/media-card";
 import { MediaDetails } from "@/components/media-details";
+import { MediaScreen } from "@/components/media-screen";
+import { WorkspaceProvider } from "@/components/workspace-provider";
 import type {
   AddMediaRequest,
   Episode,
@@ -27,7 +30,7 @@ import type {
 } from "@/lib/types";
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock("next/image", () => ({
   default: ({ src, alt, onError, sizes, className }: ImageProps) => (
@@ -416,6 +419,83 @@ describe("AddMedia", () => {
 });
 
 describe("Library integration", () => {
+  it("fetches on the client once and reuses the library cache across categories", async () => {
+    const pending = Promise.withResolvers<Response>();
+    fetchMock.mockImplementation(async (path) => {
+      if (path === "/api/library") return pending.promise;
+      if (path === "/api/instances") return Response.json({ instances: [hd] });
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    const content = (
+      <WorkspaceProvider>
+        <LibraryBrowser category="movies" />
+      </WorkspaceProvider>
+    );
+    const html = renderToString(
+      <QueryClientProvider client={queryClient}>{content}</QueryClientProvider>,
+    );
+    expect(html).not.toContain(movie.title);
+    expect(fetchMock).not.toHaveBeenCalled();
+    const { rerender } = renderUI(content);
+    expect(
+      screen.queryByRole("link", { name: `View ${movie.title}` }),
+    ).toBeNull();
+    await act(async () =>
+      pending.resolve(
+        Response.json({
+          items: [{ ...movie, targets: [hdTarget] }],
+          errors: [],
+        }),
+      ),
+    );
+    await screen.findByRole("link", { name: `View ${movie.title}` });
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <WorkspaceProvider>
+          <LibraryBrowser category="shows" />
+        </WorkspaceProvider>
+      </QueryClientProvider>,
+    );
+    expect(
+      screen.queryByRole("link", { name: `View ${movie.title}` }),
+    ).toBeNull();
+    rerender(
+      <QueryClientProvider client={queryClient}>{content}</QueryClientProvider>,
+    );
+    expect(
+      screen.getByRole("link", { name: `View ${movie.title}` }),
+    ).toBeTruthy();
+    expect(
+      fetchMock.mock.calls.filter(([path]) => path === "/api/library"),
+    ).toHaveLength(1);
+  });
+
+  it("retains cached library content when a background refresh fails", async () => {
+    fetchMock.mockImplementation(async (path) => {
+      if (path === "/api/library")
+        return Response.json({
+          items: [{ ...movie, targets: [hdTarget] }],
+          errors: [],
+        });
+      if (path === "/api/instances") return Response.json({ instances: [hd] });
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    renderUI(
+      <WorkspaceProvider>
+        <LibraryBrowser category="movies" />
+      </WorkspaceProvider>,
+    );
+    await screen.findByRole("link", { name: `View ${movie.title}` });
+    fetchMock.mockRejectedValueOnce(new Error("Network unavailable."));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh library" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Network unavailable.",
+    );
+    expect(
+      screen.getByRole("link", { name: `View ${movie.title}` }),
+    ).toBeTruthy();
+  });
+
   it("adds a target from its detail page and refreshes the library from the API", async () => {
     const library: LibraryResponse = {
       items: [{ ...movie, status: "available", targets: [hdTarget] }],
@@ -435,7 +515,11 @@ describe("Library integration", () => {
       }
       throw new Error(`Unexpected request: ${path}`);
     });
-    renderUI(<Arrsenal view="movies" mediaId={movie.id} />);
+    renderUI(
+      <WorkspaceProvider>
+        <MediaScreen kind="movie" mediaId={movie.id} />
+      </WorkspaceProvider>,
+    );
     await screen.findByRole("heading", { level: 1, name: movie.title });
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Add target" }));
@@ -773,6 +857,12 @@ describe("Episode actions", () => {
         onChanged={onChanged}
       />,
     );
+    const season = (
+      await screen.findByText("Season 1", { exact: true })
+    ).closest("summary");
+    if (!season) throw new Error("Season toggle missing");
+    expect(season.parentElement?.hasAttribute("open")).toBe(false);
+    fireEvent.click(season);
     const row = await screen.findByRole("row", {
       name: /S01E01.*Pilot.*Available.*Missing/,
     });

@@ -30,6 +30,27 @@ Open [localhost:3000](http://localhost:3000). Select **Connect an instance**, en
 
 The interface uses Base UI, PandaCSS, Phosphor icons, Geist, and TanStack Query. React Compiler is enabled. Validation uses Zod and tests use Vitest with React Testing Library.
 
+## App Structure
+
+Explicit App Router pages live under `src/app/(workspace)/`: the library index,
+movies, shows, missing media, discovery, queue, settings, and separate
+`movies/[id]` and `shows/[id]` detail routes. The shared layout keeps navigation
+and global dialogs mounted between pages; it does not select or render screens.
+
+Pages render their shell without waiting for Sonarr/Radarr. Client components
+fetch unified data through Next.js API routes using one persistent TanStack
+Query client. The library categories share a cached library query; episode
+details, queue activity, and instance options load independently. Library and
+connection data remain fresh for one minute, queue data for ten seconds, and
+inactive queries remain cached for thirty minutes. Active views poll as needed;
+background refetches retain existing content. Mutations invalidate affected
+queries rather than refreshing the entire Next.js route.
+
+Media data loads after JavaScript initializes on a cold visit; it is not embedded
+in server-rendered HTML. Detail routes validate URL encoding on the server and
+show unavailable-title states after client fetching. API keys, configuration,
+merging, and all upstream requests remain exclusively server-side.
+
 ## Docker
 
 ```sh

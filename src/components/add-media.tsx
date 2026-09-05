@@ -546,6 +546,7 @@ function TargetOption({
   const enabled = choice?.enabled ?? false;
   const options = useQuery({
     queryKey: ["instance-options", instance.id],
+    staleTime: 5 * 60_000,
     queryFn: ({ signal }) =>
       api<InstanceOptions>(
         `/api/instances/${encodeURIComponent(instance.id)}/options`,

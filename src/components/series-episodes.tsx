@@ -11,7 +11,7 @@ import {
   WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { css, cva } from "@styled-system/css";
-import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueries } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { api, qualityLabel, sizeLabel } from "@/lib/client";
 import type {
@@ -163,7 +163,6 @@ export function SeriesEpisodes({
   onChanged: () => void;
   onManualSearch: (target: MediaTarget, episode: Episode, code: string) => void;
 }) {
-  const queryClient = useQueryClient();
   const [pending, setPending] = useState<string | null>(null);
   const searchLock = useRef(false);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
@@ -187,6 +186,7 @@ export function SeriesEpisodes({
         return response;
       },
       refetchInterval: 30_000,
+      staleTime: 30_000,
       retry: false,
     })),
   });
@@ -217,8 +217,7 @@ export function SeriesEpisodes({
       row.targets.set(query.data.instanceId, episode);
     }
   }
-  const seasonNumbers = [...seasons.keys()].sort((a, b) => a - b);
-  const latest = Math.max(0, ...seasonNumbers.filter((number) => number > 0));
+  const seasonNumbers = [...seasons.keys()].sort((a, b) => b - a);
   const loading = queries.some((query) => query.isPending);
   const failed = queries.some(
     (query) => query.isError || Boolean(query.data?.errors.length),
@@ -244,9 +243,6 @@ export function SeriesEpisodes({
       if (!result.success) throw new Error(result.message);
       notify(result.message);
       onChanged();
-      await queryClient.invalidateQueries({
-        queryKey: ["episodes", target.instanceId, target.remoteId],
-      });
     } catch (cause) {
       notify(
         cause instanceof Error ? cause.message : "Episode search failed.",
@@ -343,7 +339,7 @@ export function SeriesEpisodes({
           const rows = [...(seasons.get(number)?.values() ?? [])].sort(
             (a, b) => a.episode.episodeNumber - b.episode.episodeNumber,
           );
-          const open = expanded[number] ?? number === latest;
+          const open = expanded[number] ?? false;
           return (
             <details
               key={number}

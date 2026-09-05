@@ -46,9 +46,8 @@ export function Poster({
           onError={() => setFailed(true)}
           className={css({
             objectFit: "cover",
-            transition: "transform 350ms, filter 350ms",
+            transition: "filter 350ms",
             _groupHover: {
-              transform: "scale(1.045)",
               filter: "brightness(.85)",
             },
           })}
