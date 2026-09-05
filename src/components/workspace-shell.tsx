@@ -15,6 +15,7 @@ import {
 } from "@phosphor-icons/react";
 import { css, cva } from "@styled-system/css";
 import { useQuery } from "@tanstack/react-query";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useState } from "react";
@@ -93,33 +94,19 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           onClick={() => setMobileOpen(false)}
           className={css({
             display: "flex",
-            gap: "10px",
             alignItems: "center",
             px: "12px",
             height: "75px",
             mb: "19px",
           })}
         >
-          <svg
-            width="31"
-            height="33"
-            viewBox="0 0 40 40"
-            fill="none"
+          <Image
+            src="/logo.svg"
+            width={34}
+            height={34}
+            alt=""
             aria-hidden="true"
-          >
-            <path d="m5 32 12-26h7l12 26h-9l-7-17-7 17H5Z" fill="#e5e5e5" />
-            <path d="M17 27h8v5h-8z" fill="#e5e5e5" />
-          </svg>
-          <span
-            className={css({
-              fontSize: "24px",
-              fontWeight: "650",
-              letterSpacing: "-1.3px",
-              color: "ink",
-            })}
-          >
-            arrsenal<span className={css({ color: "accent" })}>.</span>
-          </span>
+          />
         </Link>
         <nav aria-label={mobile ? "Mobile navigation" : "Main navigation"}>
           <div
