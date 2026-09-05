@@ -5,7 +5,6 @@ import {
   CheckIcon,
   CircleDashedIcon,
   FilmSlateIcon,
-  StackIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import Image from "next/image";
@@ -191,19 +190,6 @@ export function MediaCard({
           <span className={css({ mx: "6px", color: "#555555" })}>·</span>
           {item.kind === "movie" ? "Movie" : "Show"}
         </span>
-        {item.targets.length > 0 && (
-          <span
-            className={css({
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            })}
-            title={`${item.targets.length} quality targets`}
-          >
-            <StackIcon size={12} />
-            {item.targets.length}
-          </span>
-        )}
       </div>
       {item.targets.length > 0 && (
         <div

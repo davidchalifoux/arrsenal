@@ -954,6 +954,7 @@ describe("MediaCard", () => {
       />,
     );
     const card = screen.getByRole("button", { name: `View ${movie.title}` });
+    expect(within(card).queryByTitle("1 quality targets")).toBeNull();
     expect(within(card).getByText("1080p")).toBeTruthy();
     expect(within(card).queryByText("4K")).toBeNull();
     expect(within(card).getByText("1080p").getAttribute("title")).toContain(
