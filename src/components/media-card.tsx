@@ -46,10 +46,6 @@ export function Poster({
           onError={() => setFailed(true)}
           className={css({
             objectFit: "cover",
-            transition: "filter 350ms",
-            _groupHover: {
-              filter: "brightness(.85)",
-            },
           })}
         />
       ) : (
@@ -140,11 +136,16 @@ export function MediaCard({
           bg: "surface",
           boxShadow: "0 2px 8px #0003",
           outline: "1px solid #ffffff0a",
-          _groupHover: {
-            outlineColor: "#e5e5e580",
-            boxShadow: "0 8px 24px #0006",
+          _after: {
+            content: '""',
+            position: "absolute",
+            inset: 0,
+            borderRadius: "inherit",
+            pointerEvents: "none",
+            border: "1px solid transparent",
+            transition: "border-color 100ms linear",
+            _groupHover: { borderColor: "#ffffff80" },
           },
-          transition: "outline-color 200ms, box-shadow 200ms",
         })}
       >
         <Poster item={item} priority={index < 6} />
