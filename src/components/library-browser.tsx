@@ -22,6 +22,7 @@ import { useState } from "react";
 import { mediaHref, qualityLabel } from "@/lib/client";
 import { instancesQuery, libraryQuery } from "@/lib/queries";
 import { MediaCard, MediaList } from "./media-card";
+import { PageHeader } from "./page-header";
 import { Button, buttonStyle, Notice, SelectField } from "./ui";
 import { useWorkspace } from "./workspace-provider";
 
@@ -109,76 +110,40 @@ export function LibraryBrowser({
 
   return (
     <>
-      <div
-        className={css({
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          mb: "28px",
-          gap: "14px",
-        })}
-      >
-        <div>
-          <div
-            className={css({
-              display: "flex",
-              alignItems: "center",
-              gap: "11px",
-            })}
-          >
-            <h1
-              className={css({
-                fontSize: { base: "27px", md: "29px" },
-                letterSpacing: "-1px",
-                fontWeight: "600",
-                lineHeight: "1.3",
-              })}
-            >
-              {category === "library"
-                ? "Your library"
-                : category === "missing"
-                  ? "Fill in the gaps"
-                  : category === "movies"
-                    ? "Movie library"
-                    : "Shows"}
-            </h1>
-          </div>
-          <p
-            className={css({
-              color: "muted",
-              fontSize: "12px",
-              mt: "7px",
-              lineHeight: "1.7",
-            })}
-          >
+      <PageHeader
+        title={
+          category === "library"
+            ? "Your library"
+            : category === "missing"
+              ? "Fill in the gaps"
+              : category === "movies"
+                ? "Movie library"
+                : "Shows"
+        }
+        description={
+          <>
             {category === "missing"
               ? "A little closer to complete. See what your quality targets are missing."
-              : "All your favorites. Every quality. One place."}
-          </p>
-        </div>
-        <div
-          className={css({
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            pt: "5px",
-          })}
-        >
-          <span
-            className={css({
-              display: { base: "none", md: "inline" },
-              color: "subtle",
-              fontSize: "10px",
-            })}
-          >
-            {library.isFetching
-              ? "Syncing library..."
-              : library.isError
-                ? "Sync failed"
-                : library.data?.errors.length
-                  ? "Some instances need attention"
-                  : "Library up to date"}
-          </span>
+              : "All your favorites. Every quality. One place."}{" "}
+            <span
+              className={css({
+                display: "inline-block",
+                ml: "8px",
+                color: "subtle",
+                fontSize: "10px",
+              })}
+            >
+              {library.isFetching
+                ? "Syncing library..."
+                : library.isError
+                  ? "Sync failed"
+                  : library.data?.errors.length
+                    ? "Some instances need attention"
+                    : "Library up to date"}
+            </span>
+          </>
+        }
+        actions={
           <Button
             size="icon"
             variant="ghost"
@@ -195,8 +160,8 @@ export function LibraryBrowser({
               }
             />
           </Button>
-        </div>
-      </div>
+        }
+      />
       <div
         className={css({
           display: "grid",

@@ -19,6 +19,7 @@ import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import { z } from "zod";
 import { api } from "@/lib/client";
 import type { ActionResponse, InstanceSummary } from "@/lib/types";
+import { PageHeader } from "./page-header";
 import {
   Button,
   inputStyle,
@@ -259,35 +260,16 @@ export function Settings({
 
   return (
     <section className={css({ minWidth: 0 })} aria-labelledby={`${id}-heading`}>
-      <div
-        className={css({
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "16px",
-          mb: "26px",
-        })}
-      >
-        <div>
-          <h1
-            id={`${id}-heading`}
-            className={css({
-              fontSize: "25px",
-              fontWeight: "600",
-              letterSpacing: "-.7px",
-            })}
-          >
-            Connections
-          </h1>
-          <p className={cx(mutedStyle, css({ mt: "5px" }))}>
-            Your Sonarr and Radarr instances, connected in one place.
-          </p>
-        </div>
-        <Button variant="primary" onClick={() => changeOpen(true)}>
-          <PlusIcon size={15} /> Add instance
-        </Button>
-      </div>
+      <PageHeader
+        id={`${id}-heading`}
+        title="Connections"
+        description="Your Sonarr and Radarr instances, connected in one place."
+        actions={
+          <Button variant="secondary" onClick={() => changeOpen(true)}>
+            <PlusIcon size={15} /> Add instance
+          </Button>
+        }
+      />
 
       {instances.length ? (
         <div

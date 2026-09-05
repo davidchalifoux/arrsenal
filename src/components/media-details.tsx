@@ -26,6 +26,7 @@ import type {
   Release,
 } from "@/lib/types";
 import { Poster, QualityBadge } from "./media-card";
+import { PageToolbar } from "./page-header";
 import { SeriesEpisodes } from "./series-episodes";
 import { Button, Modal, mutedStyle, Notice, SelectField, Spinner } from "./ui";
 
@@ -97,14 +98,15 @@ export function MediaDetails({
   return (
     <>
       <article className={css({ minWidth: 0, width: "100%" })}>
-        <div
-          className={css({
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: "12px",
-            mb: "28px",
-          })}
+        <PageToolbar
+          actions={
+            media.kind === "movie" && (
+              <Button onClick={() => onAddTarget(media)}>
+                <PlusIcon size={15} />
+                Add target
+              </Button>
+            )
+          }
         >
           <Link
             href={media.kind === "movie" ? "/movies" : "/shows"}
@@ -120,13 +122,7 @@ export function MediaDetails({
             <ArrowLeftIcon size={15} /> Back to{" "}
             {media.kind === "movie" ? "Movies" : "Shows"}
           </Link>
-          {media.kind === "movie" && (
-            <Button onClick={() => onAddTarget(media)}>
-              <PlusIcon size={15} />
-              Add target
-            </Button>
-          )}
-        </div>
+        </PageToolbar>
         <div
           className={css({
             display: "flex",

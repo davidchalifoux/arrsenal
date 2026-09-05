@@ -7,6 +7,7 @@ import { useDeferredValue, useState } from "react";
 import { api } from "@/lib/client";
 import type { LibraryResponse } from "@/lib/types";
 import { MediaCard } from "./media-card";
+import { PageHeader } from "./page-header";
 import { inputStyle, Notice, SelectField, Spinner } from "./ui";
 import { useWorkspace } from "./workspace-provider";
 
@@ -39,28 +40,10 @@ export function DiscoverBrowser() {
   });
   return (
     <>
-      <div className={css({ mb: "28px" })}>
-        <h1
-          className={css({
-            fontSize: { base: "28px", md: "32px" },
-            fontWeight: "550",
-            letterSpacing: "-1px",
-            mb: "10px",
-          })}
-        >
-          Make room for a good story.
-        </h1>
-        <p
-          className={css({
-            color: "muted",
-            fontSize: "12px",
-            lineHeight: "1.7",
-          })}
-        >
-          Find a movie or show. Choose your targets. Leave the searching to your
-          instances.
-        </p>
-      </div>
+      <PageHeader
+        title="Make room for a good story."
+        description="Find a movie or show. Choose your targets. Leave the searching to your instances."
+      />
       <div
         className={css({
           display: "flex",

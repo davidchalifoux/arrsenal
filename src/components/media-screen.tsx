@@ -6,6 +6,7 @@ import Link from "next/link";
 import { libraryQuery } from "@/lib/queries";
 import type { MediaKind } from "@/lib/types";
 import { MediaDetails } from "./media-details";
+import { PageHeader } from "./page-header";
 import { Button, buttonStyle, Notice, Spinner } from "./ui";
 import { useWorkspace } from "./workspace-provider";
 
@@ -23,28 +24,11 @@ export function MediaScreen({
     (item) => item.id === mediaId && item.kind === kind,
   );
   if (library.isPending || (!media && library.isFetching))
-    return (
-      <div
-        className={css({
-          display: "flex",
-          alignItems: "center",
-          gap: "10px",
-          py: "40px",
-          color: "muted",
-        })}
-      >
-        <Spinner />
-        Loading title...
-      </div>
-    );
+    return <PageHeader title="Loading title..." actions={<Spinner />} />;
   if (!media)
     return (
-      <div className={css({ py: "32px" })}>
-        <h1
-          className={css({ fontSize: "26px", fontWeight: "550", mb: "16px" })}
-        >
-          Title unavailable
-        </h1>
+      <div>
+        <PageHeader title="Title unavailable" />
         <Notice error>
           {library.isError
             ? library.error.message

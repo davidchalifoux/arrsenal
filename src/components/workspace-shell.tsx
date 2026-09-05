@@ -2,16 +2,12 @@
 
 import {
   BroadcastIcon,
-  CaretRightIcon,
   CircleDashedIcon,
-  CommandIcon,
   CompassIcon,
   DownloadSimpleIcon,
   FilmSlateIcon,
-  FolderSimpleIcon,
   GearSixIcon,
   ListIcon,
-  MagnifyingGlassIcon,
   PlusIcon,
   SquaresFourIcon,
   SunIcon,
@@ -23,6 +19,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useState } from "react";
 import { instancesQuery, libraryQuery, queueQuery } from "@/lib/queries";
+import { PageUtilitiesContext, WorkspaceUtilities } from "./page-header";
 import { Button, Modal } from "./ui";
 import { useWorkspace } from "./workspace-provider";
 
@@ -64,7 +61,7 @@ const navStyle = cva({
 
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { add, connect, searchLibrary } = useWorkspace();
+  const { connect } = useWorkspace();
   const [mobileOpen, setMobileOpen] = useState(false);
   const library = useQuery(libraryQuery);
   const instanceQuery = useQuery(instancesQuery);
@@ -76,15 +73,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     collections.some(
       (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
     );
-  const current = [
-    ...navigation,
-    ...collections,
-    { href: "/settings", label: "Connections", icon: GearSixIcon },
-  ].find(
-    (item) =>
-      item.href !== "/" &&
-      (pathname === item.href || pathname.startsWith(`${item.href}/`)),
-  );
   const counts: Record<string, number> = {
     "/movies": items.filter((item) => item.kind === "movie").length,
     "/shows": items.filter((item) => item.kind === "series").length,
@@ -445,9 +433,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       <div className={css({ ml: { base: 0, lg: "222px" }, minWidth: 0 })}>
         <header
           className={css({
-            height: "72px",
+            height: "56px",
             borderBottom: "1px solid token(colors.line)",
-            display: "flex",
+            display: { base: "flex", lg: "none" },
             alignItems: "center",
             justifyContent: "space-between",
             gap: "14px",
@@ -469,118 +457,41 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               aria-label="Open navigation"
               onClick={() => setMobileOpen(true)}
               className={css({
-                display: { base: "inline-flex", lg: "none" },
+                width: "44px",
+                height: "44px",
                 ml: "-7px",
               })}
             >
               <ListIcon size={22} />
             </Button>
-            <span
-              className={css({
-                display: { base: "none", sm: "inline-flex" },
-                color: "subtle",
-              })}
-            >
-              {isLibrary ? (
-                <FolderSimpleIcon size={17} />
-              ) : current ? (
-                <current.icon size={17} />
-              ) : (
-                <FolderSimpleIcon size={17} />
-              )}
-            </span>
-            <span
-              className={css({
-                fontSize: "11px",
-                color: "muted",
-                display: { base: "none", sm: "inline" },
-              })}
-            >
-              {isLibrary ? "Library" : "Workspace"}
-            </span>
-            <CaretRightIcon
-              size={10}
-              className={css({
-                color: "#555555",
-                display: { base: "none", sm: "block" },
-              })}
-            />
-            <span
-              className={css({
-                fontSize: "11px",
-                color: "#d8d8d8",
-                whiteSpace: "nowrap",
-              })}
-            >
-              {current?.label ?? "All media"}
-            </span>
           </div>
           <div
             className={css({
               display: "flex",
               alignItems: "center",
-              gap: "16px",
+              gap: "8px",
             })}
           >
-            <button
-              type="button"
-              onClick={searchLibrary}
-              aria-label="Search library"
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: "9px",
-                height: "34px",
-                width: { base: "30px", md: "232px" },
-                px: { base: "5px", md: "11px" },
-                color: "subtle",
-                fontSize: "11px",
-                bg: { base: "transparent", md: "#191919" },
-                border: { base: "none", md: "1px solid token(colors.line)" },
-                borderRadius: "6px",
-                _hover: { color: "muted", borderColor: "#414141" },
-              })}
-            >
-              <MagnifyingGlassIcon size={16} />
-              <span
-                className={css({ display: { base: "none", md: "inline" } })}
-              >
-                Search your library...
-              </span>
-              <kbd
-                className={css({
-                  display: { base: "none", md: "flex" },
-                  alignItems: "center",
-                  gap: "2px",
-                  ml: "auto",
-                  fontSize: "9px",
-                  color: "#858585",
-                  border: "1px solid #353535",
-                  borderRadius: "3px",
-                  px: "3px",
-                  height: "17px",
-                })}
-              >
-                <CommandIcon size={9} />K
-              </kbd>
-            </button>
-            <Button variant="primary" onClick={() => add()}>
-              <PlusIcon size={15} weight="bold" />
-              Add media
-            </Button>
+            <WorkspaceUtilities />
           </div>
         </header>
         <main
           id="main-content"
           className={css({
             px: { base: "19px", md: "32px" },
-            pt: { base: "26px", md: "32px" },
+            pt: { base: "20px", lg: "28px" },
             pb: "30px",
             maxWidth: "1800px",
             mx: "auto",
           })}
         >
-          {children}
+          <PageUtilitiesContext
+            value={(actions) => (
+              <WorkspaceUtilities desktopOnly>{actions}</WorkspaceUtilities>
+            )}
+          >
+            {children}
+          </PageUtilitiesContext>
         </main>
       </div>
       <Modal

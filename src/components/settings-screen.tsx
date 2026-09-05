@@ -4,6 +4,7 @@ import { css } from "@styled-system/css";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { instancesQuery } from "@/lib/queries";
+import { PageHeader } from "./page-header";
 import { Settings } from "./settings";
 import { Notice, Spinner } from "./ui";
 import { useWorkspace } from "./workspace-provider";
@@ -16,16 +17,7 @@ export function SettingsScreen({ autoOpen = false }: { autoOpen?: boolean }) {
   if (instances.isPending)
     return (
       <section>
-        <h1
-          className={css({
-            fontSize: "25px",
-            fontWeight: "600",
-            letterSpacing: "-.7px",
-            mb: "18px",
-          })}
-        >
-          Connections
-        </h1>
+        <PageHeader title="Connections" />
         <div
           className={css({
             display: "flex",

@@ -19,6 +19,7 @@ import Image from "next/image";
 import { useId, useRef, useState } from "react";
 import { api, sizeLabel } from "@/lib/client";
 import type { ActionResponse, QueueItem, QueueResponse } from "@/lib/types";
+import { PageHeader } from "./page-header";
 import {
   Button,
   CheckField,
@@ -166,40 +167,23 @@ export function DownloadQueue({
 
   return (
     <section className={css({ minWidth: 0 })} aria-labelledby={`${id}-heading`}>
-      <div
-        className={css({
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "16px",
-          mb: "24px",
-        })}
-      >
-        <div>
-          <h1
-            id={`${id}-heading`}
-            className={css({
-              fontSize: "25px",
-              fontWeight: "600",
-              letterSpacing: "-.7px",
-            })}
-          >
-            Download queue
-          </h1>
-          <p className={cx(mutedStyle, css({ mt: "5px" }))}>
-            {data
-              ? `${items.length} ${items.length === 1 ? "item" : "items"} across your connected instances.`
-              : loading
-                ? "Loading downloads from your instances."
-                : "Downloads from your Sonarr and Radarr instances."}
-          </p>
-        </div>
-        <Button disabled={loading || !!busy} onClick={() => onRefresh()}>
-          {loading ? <Spinner size={15} /> : <ArrowClockwiseIcon size={15} />}
-          {loading ? "Refreshing..." : "Refresh"}
-        </Button>
-      </div>
+      <PageHeader
+        id={`${id}-heading`}
+        title="Download queue"
+        description={
+          data
+            ? `${items.length} ${items.length === 1 ? "item" : "items"} across your connected instances.`
+            : loading
+              ? "Loading downloads from your instances."
+              : "Downloads from your Sonarr and Radarr instances."
+        }
+        actions={
+          <Button disabled={loading || !!busy} onClick={() => onRefresh()}>
+            {loading ? <Spinner size={15} /> : <ArrowClockwiseIcon size={15} />}
+            {loading ? "Refreshing..." : "Refresh"}
+          </Button>
+        }
+      />
 
       <div className={css({ display: "grid", gap: "12px", mb: "20px" })}>
         {errors.map((error) => (
