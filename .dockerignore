@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.env*
+!.env.example
+styled-system
+.playwright-mcp
+coverage
+*.tsbuildinfo
+*-desktop.png
+*-mobile.png
+tests
+config

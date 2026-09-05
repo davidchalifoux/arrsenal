@@ -1,0 +1,179 @@
+import "server-only";
+
+import { randomUUID } from "node:crypto";
+import { constants } from "node:fs";
+import { type FileHandle, mkdir, open, rename, unlink } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
+import type { z } from "zod";
+import { ApiError, parseInput } from "./http";
+import {
+  configSchema,
+  instanceInputSchema,
+  type storedInstanceSchema,
+} from "./schemas";
+
+export type InstanceConfig = z.output<typeof storedInstanceSchema>;
+
+export function instanceInput(value: unknown): Omit<InstanceConfig, "id"> {
+  return parseInput(instanceInputSchema, value);
+}
+
+function configDirectory(): string {
+  return process.env.ARRSENAL_CONFIG_DIR
+    ? resolve(process.env.ARRSENAL_CONFIG_DIR)
+    : join(homedir(), ".config", "arrsenal");
+}
+
+function isCode(error: unknown, code: string): boolean {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    error.code === code
+  );
+}
+
+async function readAt(directory: string): Promise<InstanceConfig[]> {
+  let file: FileHandle | undefined;
+  try {
+    file = await open(
+      join(directory, "config.json"),
+      constants.O_RDONLY | constants.O_NOFOLLOW,
+    );
+    const stat = await file.stat();
+    if (!stat.isFile() || stat.size > 1024 * 1024)
+      throw new Error("Invalid config file");
+    return configSchema.parse(JSON.parse(await file.readFile("utf8")))
+      .instances;
+  } catch (error) {
+    if (isCode(error, "ENOENT")) return [];
+    throw new ApiError(
+      500,
+      "Unable to read Arrsenal config.json. Check its format and file permissions; it was not overwritten.",
+    );
+  } finally {
+    await file?.close();
+  }
+}
+
+export function readInstances(): Promise<InstanceConfig[]> {
+  return readAt(configDirectory());
+}
+
+const state = globalThis as typeof globalThis & {
+  __arrsenalConfigWrites?: Map<string, Promise<unknown>>;
+};
+state.__arrsenalConfigWrites ??= new Map();
+const writes = state.__arrsenalConfigWrites;
+
+async function mutateConfig<T>(
+  change: (instances: InstanceConfig[]) => T,
+): Promise<T> {
+  const directory = configDirectory();
+  const previous = writes.get(directory) ?? Promise.resolve();
+  const task = previous
+    .catch(() => {})
+    .then(async () => {
+      await mkdir(directory, { recursive: true, mode: 0o700 });
+      const lockPath = join(directory, "config.lock");
+      const deadline = Date.now() + 5000;
+      let lock: FileHandle | undefined;
+      // The process queue survives Next development reloads; the exclusive lock also
+      // serializes separate server processes sharing this config directory.
+      while (!lock) {
+        try {
+          lock = await open(lockPath, "wx", 0o600);
+        } catch (error) {
+          if (!isCode(error, "EEXIST")) throw error;
+          if (Date.now() >= deadline) {
+            throw new ApiError(
+              503,
+              "Configuration is locked. Retry; if a writer crashed, stop Arrsenal before removing config.lock.",
+            );
+          }
+          await sleep(25);
+        }
+      }
+      const temporary = join(directory, `.config-${randomUUID()}.tmp`);
+      try {
+        const instances = await readAt(directory);
+        const result = change(instances);
+        const config = configSchema.parse({ version: 1, instances });
+        const file = await open(temporary, "wx", 0o600);
+        try {
+          await file.chmod(0o600);
+          await file.writeFile(`${JSON.stringify(config, null, 2)}\n`, "utf8");
+          await file.sync();
+        } finally {
+          await file.close();
+        }
+        await rename(temporary, join(directory, "config.json"));
+        return result;
+      } finally {
+        await unlink(temporary).catch(() => {});
+        await lock.close();
+        await unlink(lockPath);
+      }
+    });
+  writes.set(directory, task);
+  try {
+    return await task;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(
+      500,
+      "Unable to save Arrsenal configuration. Check directory permissions.",
+    );
+  } finally {
+    if (writes.get(directory) === task) writes.delete(directory);
+  }
+}
+
+export function saveInstance(
+  input: Omit<InstanceConfig, "id">,
+): Promise<InstanceConfig> {
+  return mutateConfig((instances) => {
+    if (instances.some((instance) => instance.url === input.url)) {
+      throw new ApiError(
+        409,
+        "An instance with this URL is already connected.",
+      );
+    }
+    if (instances.length >= 32)
+      throw new ApiError(400, "At most 32 instances can be connected.");
+    const instance = { id: randomUUID(), ...input };
+    instances.push(instance);
+    return instance;
+  });
+}
+
+export function removeInstance(id: string): Promise<void> {
+  rejectDemo(id);
+  return mutateConfig((instances) => {
+    const index = instances.findIndex((instance) => instance.id === id);
+    if (index === -1) throw new ApiError(404, "Instance not found.");
+    instances.splice(index, 1);
+  });
+}
+
+export function rejectDemo(id: string): void {
+  if (id.startsWith("demo-")) {
+    throw new ApiError(
+      409,
+      "Connect a real Sonarr or Radarr instance to perform this action. Demo data is read-only on the server.",
+    );
+  }
+}
+
+export async function getInstance(id: string): Promise<InstanceConfig> {
+  rejectDemo(id);
+  const instance = (await readInstances()).find((entry) => entry.id === id);
+  if (!instance)
+    throw new ApiError(
+      404,
+      "Instance not found. Connect a Sonarr or Radarr instance first.",
+    );
+  return instance;
+}

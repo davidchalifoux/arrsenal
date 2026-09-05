@@ -1,0 +1,1861 @@
+// @vitest-environment node
+
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { once } from "node:events";
+import {
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { expect, test, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
+const instancesRoute = await import("../src/app/api/instances/route.ts");
+const testRoute = await import("../src/app/api/instances/test/route.ts");
+const instanceRoute = await import("../src/app/api/instances/[id]/route.ts");
+const optionsRoute = await import(
+  "../src/app/api/instances/[id]/options/route.ts"
+);
+const libraryRoute = await import("../src/app/api/library/route.ts");
+const lookupRoute = await import("../src/app/api/lookup/route.ts");
+const mediaRoute = await import("../src/app/api/media/route.ts");
+const searchRoute = await import("../src/app/api/search/route.ts");
+const releasesRoute = await import("../src/app/api/releases/route.ts");
+const queueRoute = await import("../src/app/api/queue/route.ts");
+const imageRoute = await import("../src/app/api/image/route.ts");
+const { arrRequest } = await import("../src/lib/server/arr.ts");
+const { instanceInput, readInstances, saveInstance, removeInstance } =
+  await import("../src/lib/server/config.ts");
+const { combinedStatus, coverPath, mediaImage, mergeMedia, normalizeMedia } =
+  await import("../src/lib/server/media.ts");
+const { demoLibrary, demoDiscover, demoInstances, demoQueue } = await import(
+  "../src/lib/demo.ts"
+);
+
+const origin = "http://localhost:3000";
+const secret = "arrsenal-test-secret-not-for-clients";
+const quality = (name) => ({ quality: { id: 7, name } });
+const movie = {
+  id: 11,
+  tmdbId: 693134,
+  title: "Dune: Part Two",
+  titleSlug: "dune-part-two",
+  year: 2024,
+  qualityProfileId: 1,
+  hasFile: true,
+  monitored: true,
+  sizeOnDisk: 7000,
+  movieFile: { id: 90, quality: quality("Bluray-1080p"), size: 7000 },
+  images: [
+    {
+      coverType: "poster",
+      remoteUrl:
+        "https://image.tmdb.org/t/p/w500/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg",
+    },
+  ],
+  added: "2024-03-01T00:00:00Z",
+  genres: ["Science Fiction"],
+};
+const series = {
+  id: 22,
+  tvdbId: 392573,
+  title: "Shogun",
+  titleSlug: "shogun",
+  year: 2024,
+  qualityProfileId: 1,
+  monitored: true,
+  statistics: { episodeCount: 10, episodeFileCount: 6, sizeOnDisk: 6000 },
+  seasons: [{ seasonNumber: 0 }, { seasonNumber: 1 }],
+  images: [
+    {
+      coverType: "poster",
+      url: "/sonarr/MediaCover/22/poster-250.jpg?lastWrite=123",
+    },
+  ],
+};
+
+function request(path, method = "GET", body, headers = {}) {
+  return new Request(`${origin}${path}`, {
+    method,
+    headers: {
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      ...headers,
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+}
+
+async function setup(t, definitions = {}) {
+  const directory = await mkdtemp(join(tmpdir(), "arrsenal-backend-"));
+  const previous = process.env.ARRSENAL_CONFIG_DIR;
+  process.env.ARRSENAL_CONFIG_DIR = directory;
+  t.onTestFinished(async () => {
+    if (previous === undefined) delete process.env.ARRSENAL_CONFIG_DIR;
+    else process.env.ARRSENAL_CONFIG_DIR = previous;
+    await rm(directory, { recursive: true, force: true });
+  });
+  const nodes = Object.fromEntries(
+    Object.entries(definitions).map(([name, options]) => [
+      name,
+      {
+        kind: "radarr",
+        apiKey: secret,
+        media: [],
+        queue: [],
+        lookup: [],
+        ...options,
+      },
+    ]),
+  );
+  const calls = [];
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url, "http://mock.invalid");
+    const parts = url.pathname.split("/");
+    const node = nodes[parts[1]];
+    const endpoint = parts.slice(4).join("/");
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    const body = raw ? JSON.parse(raw) : undefined;
+    calls.push({
+      node: parts[1],
+      endpoint,
+      method: req.method,
+      query: Object.fromEntries(url.searchParams),
+      body,
+      key: req.headers["x-api-key"],
+    });
+    const send = (data, status = 200) => {
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(data));
+    };
+    if (url.pathname === "/leak") return send({ leaked: true });
+    if (!node || parts[2] !== "api" || parts[3] !== "v3")
+      return send({ error: "Not found" }, 404);
+    if (node.mode === "slow") return;
+    if (node.mode === "slow-body") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.write("{");
+      return;
+    }
+    if (node.mode === "oversized") {
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Content-Length": 33 * 1024 * 1024,
+      });
+      res.write("{");
+      return;
+    }
+    if (node.mode === "redirect") {
+      res.writeHead(302, { Location: "/leak" });
+      res.end();
+      return;
+    }
+    if (req.headers["x-api-key"] !== node.apiKey)
+      return send({ error: secret }, 401);
+    if (node.mode === "error" || node.fail?.includes(endpoint))
+      return send({ error: `failure ${secret}`, apiKey: secret }, 503);
+    if (node.mode === "invalid") {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(`<html>${secret}</html>`);
+      return;
+    }
+    if (endpoint === "system/status")
+      return send({
+        appName: node.kind === "radarr" ? "Radarr" : "Sonarr",
+        version: "4.0.1",
+        apiKey: secret,
+      });
+    if (endpoint === "qualityprofile")
+      return send([{ id: 1, name: node.profile ?? "HD-1080p" }]);
+    if (endpoint === "rootfolder")
+      return send([{ id: 1, path: "/media", freeSpace: 100000 }]);
+    if (endpoint === "queue" && req.method === "GET") {
+      const page = Number(url.searchParams.get("page"));
+      if (node.queuePages) return send(node.queuePages[page - 1]);
+      const pageSize =
+        node.pageSize ?? Number(url.searchParams.get("pageSize"));
+      if (node.queuePageFailure === page) return send({ error: secret }, 503);
+      return send({
+        page,
+        pageSize,
+        totalRecords: node.queue.length,
+        records: node.queue.slice((page - 1) * pageSize, page * pageSize),
+      });
+    }
+    if (endpoint === "episodefile")
+      return send(
+        node.files ?? [
+          { quality: quality("WEBDL-1080p") },
+          { quality: quality("Bluray-1080p") },
+        ],
+      );
+    if (endpoint.endsWith("/lookup")) return send(node.lookup);
+    if (["movie", "series"].includes(endpoint) && req.method === "GET")
+      return send(node.media);
+    if (/^(movie|series)\/\d+$/.test(endpoint))
+      return send(
+        node.media.find((item) => item.id === Number(parts[5])) ?? {},
+        node.media.some((item) => item.id === Number(parts[5])) ? 200 : 404,
+      );
+    if (endpoint === "release" && req.method === "GET")
+      return send(
+        node.releases ?? [
+          {
+            guid: "release-guid",
+            indexerId: 4,
+            title: "Dune.2160p",
+            quality: quality("WEBDL-2160p"),
+            size: 12000,
+            age: 2,
+            seeders: 8,
+            protocol: "torrent",
+            indexer: "Sample indexer",
+            approved: false,
+            rejections: ["Quality cutoff already met"],
+          },
+        ],
+      );
+    if (endpoint.startsWith("MediaCover/")) {
+      res.writeHead(200, {
+        "Content-Type": node.imageType ?? "image/png",
+        "Set-Cookie": `secret=${secret}`,
+      });
+      res.end(
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a00kAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      );
+      return;
+    }
+    if (req.method === "POST" || req.method === "DELETE")
+      return send({ id: 100, apiKey: secret });
+    send({ error: "Not found" }, 404);
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.onTestFinished(async () => {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const input = (name) => ({
+    name,
+    kind: nodes[name].kind,
+    url: `${base}/${name}`,
+    apiKey: secret,
+  });
+  const connect = async (name) => {
+    const response = await instancesRoute.POST(
+      request("/api/instances", "POST", input(name), { Origin: origin }),
+    );
+    assert.equal(response.status, 200, await response.clone().text());
+    const body = await response.json();
+    assert.equal(JSON.stringify(body).includes(secret), false);
+    return body.instance;
+  };
+  return { directory, nodes, calls, base, input, connect };
+}
+
+test("demo fixtures and read endpoints are consistent and never persist", async (t) => {
+  const { directory } = await setup(t);
+  const library = await (await libraryRoute.GET()).json();
+  assert.equal(library.demo, true);
+  assert.equal(library.items.length, 18);
+  assert.deepEqual(
+    library.items.slice(0, 6).map((item) => item.title),
+    [
+      "Dune: Part Two",
+      "Shogun",
+      "Oppenheimer",
+      "The Bear",
+      "Poor Things",
+      "Fallout",
+    ],
+  );
+  assert.equal(new Set(demoLibrary.map((item) => item.id)).size, 18);
+  assert.equal(demoInstances.length, 4);
+  for (const instance of demoInstances) {
+    assert.match(instance.url, /\.invalid$/);
+    assert.equal(instance.hasApiKey, false);
+    assert.equal(instance.connected, false);
+  }
+  for (const item of demoLibrary) {
+    assert.equal(item.status, combinedStatus(item.targets));
+    assert.match(
+      item.poster,
+      /^https:\/\/image\.tmdb\.org\/t\/p\/w500\/.+\.jpg$/,
+    );
+    for (const target of item.targets) {
+      assert.ok(
+        demoInstances.some((instance) => instance.id === target.instanceId),
+      );
+      if (item.kind === "series")
+        assert.ok(target.episodeFileCount <= target.episodeCount);
+    }
+  }
+  assert.equal((await (await queueRoute.GET()).json()).items.length, 3);
+  assert.equal(demoQueue.length, 3);
+  assert.deepEqual(await (await instancesRoute.GET()).json(), {
+    instances: [],
+  });
+  const discovery = await (
+    await lookupRoute.GET(request("/api/lookup"))
+  ).json();
+  assert.equal(discovery.items.length, demoDiscover.length);
+  assert.ok(discovery.items.every((item) => item.targets.length === 0));
+  const matching = await (
+    await lookupRoute.GET(request("/api/lookup?term=dune&kind=movie"))
+  ).json();
+  assert.equal(matching.items.length, 1);
+  assert.equal(matching.items[0].targets.length, 2);
+  assert.deepEqual(await readdir(directory), []);
+});
+
+test("all demo mutations reject rather than pretending to perform network actions", async (t) => {
+  const { calls } = await setup(t);
+  const id = "demo-radarr-hd";
+  const responses = await Promise.all([
+    mediaRoute.POST(
+      request("/api/media", "POST", {
+        media: demoLibrary[0],
+        targets: [
+          { instanceId: id, qualityProfileId: 1, rootFolderPath: "/media" },
+        ],
+        search: true,
+      }),
+    ),
+    searchRoute.POST(
+      request("/api/search", "POST", {
+        instanceId: id,
+        remoteId: 1,
+        kind: "movie",
+      }),
+    ),
+    releasesRoute.POST(
+      request("/api/releases", "POST", {
+        instanceId: id,
+        guid: "guid",
+        indexerId: 1,
+      }),
+    ),
+    queueRoute.DELETE(
+      request("/api/queue", "DELETE", {
+        instanceId: id,
+        id: 1,
+        blocklist: true,
+        removeFromClient: true,
+      }),
+    ),
+    queueRoute.POST(request("/api/queue", "POST", { instanceId: id, id: 1 })),
+    instanceRoute.DELETE(request(`/api/instances/${id}`, "DELETE"), {
+      params: Promise.resolve({ id }),
+    }),
+  ]);
+  for (const response of responses) {
+    assert.equal(response.status, 409);
+    assert.match((await response.json()).error, /Connect a real/);
+  }
+  assert.equal(calls.length, 0);
+});
+
+test("mutations enforce Origin, fetch metadata, JSON types, and body limits before network access", async (t) => {
+  const env = await setup(t, { radarr: {} });
+  const input = env.input("radarr");
+  for (const headers of [
+    { Origin: "https://evil.example" },
+    { Origin: "null" },
+    { Origin: "http://localhost:3001" },
+    { "Sec-Fetch-Site": "cross-site" },
+    { "Sec-Fetch-Site": "same-site" },
+    { Origin: "https://evil.example", "X-Forwarded-Host": "evil.example" },
+  ]) {
+    const response = await testRoute.POST(
+      request("/api/instances/test", "POST", input, headers),
+    );
+    assert.equal(response.status, 403);
+  }
+  for (const type of [
+    "text/plain",
+    "application/x-www-form-urlencoded",
+    "multipart/form-data",
+  ]) {
+    const response = await testRoute.POST(
+      request("/api/instances/test", "POST", input, { "Content-Type": type }),
+    );
+    assert.equal(response.status, 415);
+  }
+  assert.equal(
+    (
+      await testRoute.POST(
+        new Request(`${origin}/api/instances/test`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{",
+        }),
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (await testRoute.POST(request("/api/instances/test", "POST", []))).status,
+    400,
+  );
+  assert.equal(
+    (
+      await testRoute.POST(
+        request("/api/instances/test", "POST", { padding: "x".repeat(140000) }),
+      )
+    ).status,
+    413,
+  );
+  assert.equal(env.calls.length, 0);
+  assert.equal(
+    (
+      await testRoute.POST(
+        request("/api/instances/test", "POST", input, {
+          "Content-Type": "Application/JSON; charset=utf-8",
+          Origin: origin,
+        }),
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await testRoute.POST(request("/api/instances/test", "POST", input)))
+      .status,
+    200,
+  );
+});
+
+test("standalone origin checks use the addressed Host, not the internal bind address or forwarded host", async (t) => {
+  const env = await setup(t, { radarr: {} });
+  for (const [url, host, origin] of [
+    [
+      "http://0.0.0.0:3000/api/instances/test",
+      "localhost:4000",
+      "http://localhost:4000",
+    ],
+    [
+      "http://0.0.0.0:3000/api/instances/test",
+      "arrsenal.local",
+      "http://arrsenal.local",
+    ],
+    [
+      "https://0.0.0.0:3000/api/instances/test",
+      "media.example",
+      "https://media.example",
+    ],
+  ]) {
+    const response = await testRoute.POST(
+      new Request(url, {
+        method: "POST",
+        headers: {
+          Host: host,
+          Origin: origin,
+          "Content-Type": "application/json",
+          "Sec-Fetch-Site": "same-origin",
+        },
+        body: JSON.stringify(env.input("radarr")),
+      }),
+    );
+    expect(response.status).toBe(200);
+  }
+  const calls = env.calls.length;
+  for (const headers of [
+    { Origin: "https://evil.example", "X-Forwarded-Host": "evil.example" },
+    { Origin: "http://localhost:4000", "Sec-Fetch-Site": "cross-site" },
+    { Origin: "http://localhost:5000" },
+    { Origin: "https://localhost:4000", "X-Forwarded-Proto": "https" },
+  ]) {
+    const response = await testRoute.POST(
+      new Request("http://0.0.0.0:3000/api/instances/test", {
+        method: "POST",
+        headers: {
+          Host: "localhost:4000",
+          "Content-Type": "application/json",
+          ...headers,
+        },
+        body: JSON.stringify(env.input("radarr")),
+      }),
+    );
+    expect(response.status).toBe(403);
+  }
+  expect(env.calls).toHaveLength(calls);
+});
+
+test("request body deadlines reject stalled JSON and cancel the reader", async (t) => {
+  vi.useFakeTimers();
+  t.onTestFinished(() => vi.useRealTimers());
+  let controller;
+  const cancel = vi.fn();
+  const stream = new ReadableStream({
+    start(value) {
+      controller = value;
+      controller.enqueue(new TextEncoder().encode("{"));
+    },
+    cancel,
+  });
+  t.onTestFinished(() => {
+    if (!cancel.mock.calls.length) controller.close();
+  });
+  const pending = testRoute.POST(
+    new Request(`${origin}/api/instances/test`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: stream,
+      duplex: "half",
+    }),
+  );
+  let response;
+  void pending.then((result) => {
+    response = result;
+  });
+  await vi.advanceTimersByTimeAsync(10000);
+  expect(response?.status).toBe(408);
+  expect(await response.json()).toEqual({ error: "Request body timed out." });
+  expect(cancel).toHaveBeenCalledOnce();
+});
+
+test("instance validation permits private HTTP(S) and subpaths, but not URL credentials or invalid headers", async (t) => {
+  const env = await setup(t, { radarr: {}, sonarr: { kind: "sonarr" } });
+  for (const url of [
+    "ftp://localhost",
+    "http://user:password@localhost",
+    "http://localhost?apiKey=secret",
+    "http://localhost/#key",
+    "not a URL",
+    "http://localhost\\evil",
+  ]) {
+    assert.equal(
+      (
+        await testRoute.POST(
+          request("/api/instances/test", "POST", {
+            ...env.input("radarr"),
+            url,
+          }),
+        )
+      ).status,
+      400,
+    );
+  }
+  for (const apiKey of ["", "key\r\nX-Evil: true", "key with space"])
+    assert.equal(
+      (
+        await testRoute.POST(
+          request("/api/instances/test", "POST", {
+            ...env.input("radarr"),
+            apiKey,
+          }),
+        )
+      ).status,
+      400,
+    );
+  for (const url of [
+    "http://192.168.1.4:7878",
+    "http://localhost:8989/sonarr",
+    "https://[::1]:8989/sonarr/api/v3/",
+  ])
+    assert.ok(instanceInput({ ...env.input("radarr"), url }).url);
+  assert.equal(
+    instanceInput({ ...env.input("radarr"), url: `${env.base}/radarr/api/v3/` })
+      .url,
+    `${env.base}/radarr`,
+  );
+  assert.equal(
+    (
+      await testRoute.POST(
+        request("/api/instances/test", "POST", {
+          ...env.input("sonarr"),
+          kind: "radarr",
+        }),
+      )
+    ).status,
+    422,
+  );
+  assert.equal(
+    (
+      await testRoute.POST(
+        request("/api/instances/test", "POST", {
+          ...env.input("radarr"),
+          apiKey: "wrong-key",
+        }),
+      )
+    ).status,
+    502,
+  );
+});
+
+test("Zod instance schemas preserve string limits, normalization, and credential-safe errors", async (t) => {
+  const env = await setup(t, { radarr: {} });
+  const input = env.input("radarr");
+  const invalid = [
+    { name: null },
+    { name: 42 },
+    { name: " " },
+    { name: "x".repeat(101) },
+    { name: "\uD83D\uDE80".repeat(51) },
+    { name: ` ${"x".repeat(100)}` },
+    { name: "\tradarr" },
+    { name: "radarr\u007f" },
+    { kind: "Radarr" },
+    { kind: secret },
+    { url: { secret } },
+    { url: `https://user:${secret}@localhost/` },
+    { url: `http://localhost?apiKey=${secret}` },
+    { url: `http://localhost/#${secret}` },
+    { apiKey: null },
+    { apiKey: 42 },
+    { apiKey: "x".repeat(513) },
+    { apiKey: `\n${secret}` },
+  ];
+  for (const [path, handler] of [
+    ["/api/instances", instancesRoute.POST],
+    ["/api/instances/test", testRoute.POST],
+  ]) {
+    for (const overrides of invalid) {
+      const response = await handler(
+        request(path, "POST", { ...input, ...overrides }),
+      );
+      assert.equal(response.status, 400, JSON.stringify(overrides));
+      const body = await response.json();
+      assert.deepEqual(Object.keys(body), ["error"]);
+      assert.equal(typeof body.error, "string");
+      assert.equal(JSON.stringify(body).includes(secret), false);
+    }
+  }
+  assert.equal(env.calls.length, 0);
+  assert.deepEqual(await readdir(env.directory), []);
+  const normalized = instanceInput({
+    ...input,
+    name: "\uD83D\uDE80".repeat(50),
+    url: ` ${input.url}/api/v3/ `,
+    apiKey: ` ${secret} `,
+    id: "client-id",
+    connected: true,
+    raw: { apiKey: secret },
+  });
+  assert.deepEqual(normalized, { ...input, name: "\uD83D\uDE80".repeat(50) });
+  assert.equal(
+    (await testRoute.POST(request("/api/instances/test", "POST", normalized)))
+      .status,
+    200,
+  );
+});
+
+test("Zod action schemas reject coercion, invalid identities, bounds, and normalized duplicate targets", async (t) => {
+  const env = await setup(t);
+  const target = {
+    instanceId: "unconfigured",
+    qualityProfileId: 1,
+    rootFolderPath: "/media",
+  };
+  const add = {
+    media: { kind: "movie", tmdbId: 693134 },
+    search: false,
+    targets: [target],
+  };
+  const search = { instanceId: target.instanceId, kind: "movie", remoteId: 11 };
+  const release = {
+    instanceId: target.instanceId,
+    guid: "release-guid",
+    indexerId: 4,
+  };
+  const retry = { instanceId: target.instanceId, id: -3 };
+  const remove = { ...retry, blocklist: false, removeFromClient: true };
+  const cases = [
+    [
+      "/api/media",
+      "POST",
+      mediaRoute.POST,
+      [
+        {},
+        { ...add, media: null },
+        { ...add, media: [] },
+        { ...add, media: { kind: secret, tmdbId: 693134 } },
+        { ...add, media: { kind: "movie", tvdbId: 693134 } },
+        { ...add, media: { kind: "series", tmdbId: 693134 } },
+        { ...add, media: { kind: "movie", tmdbId: "693134" } },
+        { ...add, media: { kind: "series", tvdbId: 1.5 } },
+        { ...add, search: "false" },
+        { ...add, search: null },
+        { ...add, targets: null },
+        { ...add, targets: [] },
+        { ...add, targets: [null] },
+        {
+          ...add,
+          targets: Array.from({ length: 33 }, (_, index) => ({
+            ...target,
+            instanceId: `target-${index}`,
+          })),
+        },
+        {
+          ...add,
+          targets: [
+            target,
+            { ...target, instanceId: ` ${target.instanceId} ` },
+          ],
+        },
+        { ...add, targets: [{ ...target, qualityProfileId: "1" }] },
+        { ...add, targets: [{ ...target, qualityProfileId: 0 }] },
+        { ...add, targets: [{ ...target, rootFolderPath: "/media\u0000" }] },
+        { ...add, targets: [{ ...target, rootFolderPath: "x".repeat(4097) }] },
+      ],
+    ],
+    [
+      "/api/search",
+      "POST",
+      searchRoute.POST,
+      [
+        { ...search, kind: secret },
+        { ...search, instanceId: null },
+        ...["11", true, null, 0, -1, 1.1, 2147483648].map((remoteId) => ({
+          ...search,
+          remoteId,
+        })),
+      ],
+    ],
+    [
+      "/api/releases",
+      "POST",
+      releasesRoute.POST,
+      [
+        { ...release, guid: "" },
+        { ...release, guid: { secret } },
+        { ...release, guid: "x".repeat(4097) },
+        ...["4", true, null, 0, -1, 1.5, 2147483648].map((indexerId) => ({
+          ...release,
+          indexerId,
+        })),
+      ],
+    ],
+    [
+      "/api/queue",
+      "POST",
+      queueRoute.POST,
+      [
+        ...["-3", false, null, 1.5, -2147483649, 2147483648].map((id) => ({
+          ...retry,
+          id,
+        })),
+      ],
+    ],
+    [
+      "/api/queue",
+      "DELETE",
+      queueRoute.DELETE,
+      [
+        { ...remove, blocklist: "false" },
+        { ...remove, blocklist: 0 },
+        { ...remove, removeFromClient: "true" },
+        { ...remove, removeFromClient: null },
+        { ...remove, id: "-3" },
+        { ...remove, instanceId: "\tbad" },
+      ],
+    ],
+  ];
+  for (const [path, method, handler, payloads] of cases) {
+    for (const payload of payloads) {
+      const response = await handler(request(path, method, payload));
+      assert.equal(
+        response.status,
+        400,
+        `${method} ${path}: ${JSON.stringify(payload)}`,
+      );
+      const body = await response.json();
+      assert.deepEqual(Object.keys(body), ["error"]);
+      assert.equal(JSON.stringify(body).includes(secret), false);
+    }
+  }
+  assert.equal(env.calls.length, 0);
+  assert.deepEqual(await readdir(env.directory), []);
+  // Legal signed queue endpoints must reach the instance lookup, not fail schema validation.
+  for (const id of [-2147483648, 0, 2147483647]) {
+    assert.equal(
+      (await queueRoute.POST(request("/api/queue", "POST", { ...retry, id })))
+        .status,
+      404,
+    );
+  }
+});
+
+test("Zod query/path schemas preserve decimal-only IDs, optional lookup defaults, and first query values", async (t) => {
+  const env = await setup(t, { radarr: {} });
+  const instance = await env.connect("radarr");
+  env.calls.length = 0;
+  const release = { instanceId: instance.id, remoteId: "11", kind: "movie" };
+  for (const remoteId of [
+    "",
+    "0",
+    "-1",
+    "+11",
+    " 11",
+    "1.1",
+    "1e2",
+    "0x10",
+    "Infinity",
+    "2147483648",
+    "\uFF11",
+    null,
+  ]) {
+    const query = new URLSearchParams(release);
+    if (remoteId === null) query.delete("remoteId");
+    else query.set("remoteId", remoteId);
+    const response = await releasesRoute.GET(request(`/api/releases?${query}`));
+    assert.equal(response.status, 400, String(remoteId));
+    assert.deepEqual(Object.keys(await response.json()), ["error"]);
+  }
+  for (const [path, handler] of [
+    ["/api/releases?remoteId=11&kind=movie", releasesRoute.GET],
+    [`/api/releases?instanceId=${instance.id}&remoteId=11`, releasesRoute.GET],
+    [`/api/lookup?kind=${secret}`, lookupRoute.GET],
+    ["/api/lookup?kind=", lookupRoute.GET],
+    ["/api/lookup?term=%20%20", lookupRoute.GET],
+    ["/api/lookup?term=%09Dune", lookupRoute.GET],
+    [
+      `/api/lookup?${new URLSearchParams({ term: "\uD83D\uDE80".repeat(151) })}`,
+      lookupRoute.GET,
+    ],
+    [`/api/image?instanceId=${instance.id}`, imageRoute.GET],
+    ["/api/image?path=%2FMediaCover%2F11%2Fposter.jpg", imageRoute.GET],
+    [
+      `/api/image?${new URLSearchParams({ instanceId: instance.id, path: "x".repeat(2049) })}`,
+      imageRoute.GET,
+    ],
+  ]) {
+    const response = await handler(request(path));
+    assert.equal(response.status, 400, path);
+    const body = await response.json();
+    assert.deepEqual(Object.keys(body), ["error"]);
+    assert.equal(JSON.stringify(body).includes(secret), false);
+  }
+  for (const id of [null, 42, "", " ", "x".repeat(101), "bad\n"]) {
+    assert.equal(
+      (
+        await optionsRoute.GET(request("/api/instances/invalid/options"), {
+          params: Promise.resolve({ id }),
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await instanceRoute.DELETE(
+          request("/api/instances/invalid", "DELETE"),
+          { params: Promise.resolve({ id }) },
+        )
+      ).status,
+      400,
+    );
+  }
+  assert.equal(env.calls.length, 0);
+  assert.deepEqual(
+    await (
+      await lookupRoute.GET(request("/api/lookup?term=&kind=movie&kind=bad"))
+    ).json(),
+    { items: [], demo: false, errors: [] },
+  );
+  assert.deepEqual(
+    await (await lookupRoute.GET(request("/api/lookup"))).json(),
+    { items: [], demo: false, errors: [] },
+  );
+  const valid = await releasesRoute.GET(
+    request(
+      `/api/releases?instanceId=${instance.id}&kind=movie&remoteId=00011&remoteId=bad`,
+    ),
+  );
+  assert.equal(valid.status, 200);
+  assert.deepEqual(env.calls.at(-1).query, { movieId: "11" });
+});
+
+test("Zod persisted config rejects invalid schemas and normalized duplicates without overwriting or leaking keys", async (t) => {
+  const env = await setup(t, { radarr: {} });
+  const record = { id: "saved-instance", ...env.input("radarr") };
+  const document = { version: 1, instances: [record] };
+  const invalid = [
+    null,
+    [],
+    {},
+    { ...document, version: "1" },
+    { ...document, version: 2 },
+    { ...document, instances: {} },
+    { ...document, instances: [null] },
+    ...[
+      { id: "" },
+      { id: "path/segment" },
+      { id: "demo-radarr-hd" },
+      { id: 42 },
+      { name: " " },
+      { kind: secret },
+      { apiKey: undefined },
+      { apiKey: 42 },
+      { apiKey: `${secret}\n` },
+      { url: `http://user:${secret}@localhost` },
+    ].map((overrides) => ({
+      ...document,
+      instances: [{ ...record, ...overrides }],
+    })),
+    {
+      ...document,
+      instances: [record, { ...record, url: `${env.base}/second` }],
+    },
+    {
+      ...document,
+      instances: [
+        record,
+        { ...record, id: "second", url: `${record.url}/api/v3/` },
+      ],
+    },
+    {
+      ...document,
+      instances: Array.from({ length: 33 }, (_, index) => ({
+        ...record,
+        id: `id-${index}`,
+        url: `${env.base}/${index}`,
+      })),
+    },
+  ];
+  const path = join(env.directory, "config.json");
+  for (const value of invalid) {
+    const serialized = JSON.stringify(value);
+    await writeFile(path, serialized, { mode: 0o600 });
+    const response = await libraryRoute.GET();
+    assert.equal(response.status, 500);
+    const body = await response.json();
+    assert.deepEqual(Object.keys(body), ["error"]);
+    assert.match(body.error, /Unable to read Arrsenal config\.json/);
+    assert.equal(JSON.stringify(body).includes(secret), false);
+    await assert.rejects(
+      saveInstance(
+        instanceInput({ ...env.input("radarr"), url: `${env.base}/new` }),
+      ),
+      (error) => error.status === 500,
+    );
+    assert.equal(await readFile(path, "utf8"), serialized);
+    assert.deepEqual(await readdir(env.directory), ["config.json"]);
+  }
+  const valid = JSON.stringify({
+    ...document,
+    ignored: secret,
+    instances: [
+      {
+        ...record,
+        name: " radarr ",
+        url: `${record.url}/api/v3/`,
+        ignored: secret,
+      },
+    ],
+  });
+  await writeFile(path, valid);
+  assert.deepEqual(await readInstances(), [record]);
+  await assert.rejects(
+    saveInstance({
+      ...env.input("radarr"),
+      url: `${env.base}/new`,
+      apiKey: 42,
+    }),
+    (error) => error.status === 500,
+  );
+  assert.equal(await readFile(path, "utf8"), valid);
+  assert.deepEqual(await readdir(env.directory), ["config.json"]);
+  assert.equal(env.calls.length, 0);
+});
+
+test("connectivity tests do not save; atomic config writes serialize and never expose keys", async (t) => {
+  const env = await setup(t, { hd: {}, uhd: {}, sonarr: { kind: "sonarr" } });
+  const checked = await testRoute.POST(
+    request("/api/instances/test", "POST", env.input("hd")),
+  );
+  assert.equal((await checked.json()).success, true);
+  assert.deepEqual(await readInstances(), []);
+  const summaries = await Promise.all([
+    env.connect("hd"),
+    env.connect("uhd"),
+    env.connect("sonarr"),
+  ]);
+  assert.equal((await readInstances()).length, 3);
+  const config = JSON.parse(
+    await readFile(join(env.directory, "config.json"), "utf8"),
+  );
+  assert.equal(config.instances[0].apiKey, secret);
+  assert.equal(
+    (await stat(join(env.directory, "config.json"))).mode & 0o777,
+    0o600,
+  );
+  assert.deepEqual(await readdir(env.directory), ["config.json"]);
+  assert.equal(
+    (
+      await instancesRoute.POST(
+        request("/api/instances", "POST", env.input("hd")),
+      )
+    ).status,
+    409,
+  );
+  env.nodes.uhd.mode = "error";
+  const listed = await instancesRoute.GET();
+  const listedText = await listed.text();
+  assert.equal(listedText.includes(secret), false);
+  const listedInstances = JSON.parse(listedText).instances;
+  assert.equal(listedInstances.filter((item) => item.connected).length, 2);
+  assert.match(
+    listedInstances.find((item) => item.name === "uhd").error,
+    /HTTP 503/,
+  );
+  env.calls.length = 0;
+  const removed = await instanceRoute.DELETE(
+    request(`/api/instances/${summaries[0].id}`, "DELETE"),
+    { params: Promise.resolve({ id: summaries[0].id }) },
+  );
+  assert.equal(removed.status, 200);
+  assert.match((await removed.json()).message, /No remote media/);
+  assert.equal(env.calls.length, 0);
+  assert.equal((await readInstances()).length, 2);
+  await Promise.all([
+    removeInstance(summaries[1].id),
+    saveInstance(instanceInput({ ...env.input("hd"), name: "Reconnected" })),
+  ]);
+  assert.equal((await readInstances()).length, 2);
+});
+
+test("separate Node processes cannot lose each other's config mutations", async (t) => {
+  const env = await setup(t);
+  const configUrl = new URL("../src/lib/server/config.ts", import.meta.url)
+    .href;
+  const loader = fileURLToPath(
+    new URL("./backend-process-register.mjs", import.meta.url),
+  );
+  await Promise.all(
+    Array.from({ length: 5 }, (_, index) =>
+      promisify(execFile)(
+        process.execPath,
+        [
+          "--import",
+          loader,
+          "--input-type=module",
+          "-e",
+          `const {saveInstance, instanceInput} = await import(${JSON.stringify(configUrl)}); await saveInstance(instanceInput({name:"Worker ${index}",kind:"radarr",url:"http://127.0.0.1:${8000 + index}",apiKey:"worker-test-secret"}));`,
+        ],
+        { env: { ...process.env, ARRSENAL_CONFIG_DIR: env.directory } },
+      ),
+    ),
+  );
+  assert.equal((await readInstances()).length, 5);
+  assert.equal(
+    (await stat(join(env.directory, "config.json"))).mode & 0o777,
+    0o600,
+  );
+  assert.deepEqual(await readdir(env.directory), ["config.json"]);
+});
+
+test("corrupt or symlinked config fails closed without demo fallback or overwrite", async (t) => {
+  const env = await setup(t, { hd: {} });
+  const path = join(env.directory, "config.json");
+  await writeFile(path, "{broken", { mode: 0o600 });
+  for (const handler of [libraryRoute.GET, queueRoute.GET, instancesRoute.GET])
+    assert.equal((await handler()).status, 500);
+  const saving = await instancesRoute.POST(
+    request("/api/instances", "POST", env.input("hd")),
+  );
+  assert.equal(saving.status, 500);
+  assert.equal(await readFile(path, "utf8"), "{broken");
+  assert.deepEqual(await readdir(env.directory), ["config.json"]);
+  await rm(path);
+  await writeFile(
+    join(env.directory, "private.json"),
+    JSON.stringify({ version: 1, instances: [] }),
+  );
+  await symlink(join(env.directory, "private.json"), path);
+  assert.equal((await libraryRoute.GET()).status, 500);
+});
+
+test("upstream redirects, slow responses, malformed JSON, and reflected credentials are safe", async (t) => {
+  const env = await setup(t, {
+    redirect: { mode: "redirect" },
+    slow: { mode: "slow" },
+    invalid: { mode: "invalid" },
+    reflected: {
+      lookup: [
+        {
+          title: secret,
+          tmdbId: 88,
+          remotePoster: `https://example.org/${secret}.jpg`,
+        },
+      ],
+    },
+  });
+  const redirected = await testRoute.POST(
+    request("/api/instances/test", "POST", env.input("redirect")),
+  );
+  assert.equal(redirected.status, 502);
+  assert.match((await redirected.json()).error, /redirect/i);
+  assert.ok(!env.calls.some((call) => call.node === "leak"));
+  await assert.rejects(
+    arrRequest(env.input("slow"), "system/status", { timeoutMs: 25 }),
+    (error) => error.status === 504,
+  );
+  const invalid = await testRoute.POST(
+    request("/api/instances/test", "POST", env.input("invalid")),
+  );
+  assert.equal(invalid.status, 502);
+  assert.equal((await invalid.text()).includes(secret), false);
+  await env.connect("reflected");
+  const response = await lookupRoute.GET(
+    request("/api/lookup?term=reflected&kind=movie"),
+  );
+  const text = await response.text();
+  assert.equal(text.includes(secret), false);
+  assert.equal(JSON.parse(text).items[0].poster, "");
+});
+
+test("timeouts cover bodies and mutations, oversized responses fail, and malformed media is not demo", async (t) => {
+  const env = await setup(t, {
+    body: { mode: "slow-body" },
+    oversized: { mode: "oversized" },
+    invalidMedia: { media: [{}] },
+  });
+  await assert.rejects(
+    arrRequest(env.input("body"), "system/status", { timeoutMs: 25 }),
+    (error) => error.status === 504,
+  );
+  await assert.rejects(
+    arrRequest(env.input("body"), "command", {
+      method: "POST",
+      body: { name: "MoviesSearch", movieIds: [11] },
+      timeoutMs: 25,
+    }),
+    (error) =>
+      error.status === 504 && /may have been accepted/.test(error.message),
+  );
+  await assert.rejects(
+    arrRequest(env.input("oversized"), "movie"),
+    (error) => error.status === 502 && /size limit/.test(error.message),
+  );
+  await env.connect("invalidMedia");
+  const response = await (await libraryRoute.GET()).json();
+  assert.equal(response.demo, false);
+  assert.equal(response.items.length, 0);
+  assert.equal(response.errors.length, 1);
+  assert.match(response.errors[0].message, /invalid media record/);
+});
+
+test("library merges by provider identity, preserves per-target quality/counts, and isolates outages", async (t) => {
+  const env = await setup(t, {
+    hd: {
+      media: [
+        movie,
+        { id: 90, title: "Unidentified", year: 2000, hasFile: false },
+      ],
+    },
+    uhd: {
+      profile: "Ultra-HD",
+      media: [
+        {
+          ...movie,
+          id: 44,
+          hasFile: false,
+          movieFile: undefined,
+          sizeOnDisk: 0,
+        },
+        { id: 90, title: "Unidentified", year: 2000, hasFile: false },
+      ],
+      queue: [{ id: -12, movieId: 44, status: "downloading" }],
+    },
+    sonarr: { kind: "sonarr", media: [series] },
+    offline: {},
+  });
+  await Promise.all(Object.keys(env.nodes).map(env.connect));
+  env.nodes.offline.mode = "error";
+  const body = await (await libraryRoute.GET()).json();
+  assert.equal(body.demo, false);
+  assert.equal(body.items.length, 4);
+  const dune = body.items.find((item) => item.tmdbId === 693134);
+  assert.equal(dune.targets.length, 2);
+  assert.equal(dune.status, "downloading");
+  assert.equal(
+    dune.targets.find((target) => target.instanceName === "hd").quality,
+    "Bluray-1080p",
+  );
+  assert.equal(
+    dune.targets.find((target) => target.instanceName === "uhd").qualityProfile,
+    "Ultra-HD",
+  );
+  const shogun = body.items.find((item) => item.kind === "series");
+  assert.equal(shogun.targets[0].episodeCount, 10);
+  assert.equal(shogun.targets[0].episodeFileCount, 6);
+  assert.equal(shogun.targets[0].sizeOnDisk, 6000);
+  assert.equal(shogun.targets[0].quality, "Bluray-1080p, WEBDL-1080p");
+  assert.equal(shogun.status, "partial");
+  assert.match(shogun.poster, /^\/api\/image\?/);
+  assert.equal(body.errors.length, 1);
+  assert.equal(body.errors[0].instanceName, "offline");
+  env.nodes.sonarr.fail = ["qualityprofile", "queue", "episodefile"];
+  const partial = await (await libraryRoute.GET()).json();
+  assert.equal(partial.items.length, 4);
+  assert.equal(
+    partial.errors.filter((error) => error.instanceName === "sonarr").length,
+    3,
+  );
+  for (const node of Object.values(env.nodes)) node.mode = "error";
+  const failed = await (await libraryRoute.GET()).json();
+  assert.equal(failed.demo, false);
+  assert.equal(failed.items.length, 0);
+  assert.equal(failed.errors.length, 4);
+});
+
+test("normalization scopes fallback identities and does not conflate movie and series IDs", () => {
+  const instance = {
+    id: "a",
+    name: "A",
+    kind: "radarr",
+    url: "http://localhost/radarr",
+    apiKey: secret,
+  };
+  const first = normalizeMedia({ id: 1, title: "Same", year: 2020 }, instance);
+  const second = normalizeMedia(
+    { id: 1, title: "Same", year: 2020 },
+    { ...instance, id: "b" },
+  );
+  assert.notEqual(first.id, second.id);
+  assert.equal(mergeMedia([first, second]).length, 2);
+  assert.equal(
+    mergeMedia([
+      normalizeMedia({ ...movie, tmdbId: 10 }, instance),
+      normalizeMedia(
+        { ...series, tvdbId: 10 },
+        { ...instance, kind: "sonarr" },
+      ),
+    ]).length,
+    2,
+  );
+  assert.equal(
+    mergeMedia([
+      normalizeMedia(movie, instance),
+      normalizeMedia(
+        { ...movie, hasFile: false, movieFile: undefined },
+        { ...instance, id: "b" },
+      ),
+    ])[0].status,
+    "partial",
+  );
+});
+
+test("live lookup merges available results, reports failed targets, and never claims trending", async (t) => {
+  const env = await setup(t, {
+    hd: { lookup: [{ ...movie, id: 0 }] },
+    uhd: { lookup: [{ ...movie, id: 0 }] },
+    failed: {},
+    sonarr: { kind: "sonarr", lookup: [{ ...series, id: 0 }] },
+  });
+  await Promise.all(Object.keys(env.nodes).map(env.connect));
+  env.nodes.failed.mode = "error";
+  env.calls.length = 0;
+  const empty = await (
+    await lookupRoute.GET(request("/api/lookup?kind=movie"))
+  ).json();
+  assert.deepEqual(empty, { items: [], demo: false, errors: [] });
+  assert.equal(env.calls.length, 0);
+  const response = await (
+    await lookupRoute.GET(
+      request("/api/lookup?kind=movie&term=Dune%20%26%20friends"),
+    )
+  ).json();
+  assert.equal(response.demo, false);
+  assert.equal(response.items.length, 1);
+  assert.equal(response.errors.length, 1);
+  assert.ok(!env.calls.some((call) => call.node === "sonarr"));
+  assert.equal(
+    env.calls.find((call) => call.endpoint === "movie/lookup").query.term,
+    "Dune & friends",
+  );
+  assert.equal(
+    (await lookupRoute.GET(request("/api/lookup?kind=bad&term=Dune"))).status,
+    400,
+  );
+  assert.equal(
+    (await lookupRoute.GET(request(`/api/lookup?term=${"x".repeat(301)}`)))
+      .status,
+    400,
+  );
+});
+
+test("options and media add resolve trusted metadata per target and report partial success", async (t) => {
+  const env = await setup(t, {
+    hd: { lookup: [{ ...movie, id: 0 }] },
+    uhd: { lookup: [{ ...movie, id: 0 }] },
+    sonarr: { kind: "sonarr", lookup: [{ ...series, id: 0 }] },
+  });
+  const hd = await env.connect("hd");
+  const uhd = await env.connect("uhd");
+  const sonarr = await env.connect("sonarr");
+  const options = await (
+    await optionsRoute.GET(request(`/api/instances/${hd.id}/options`), {
+      params: Promise.resolve({ id: hd.id }),
+    })
+  ).json();
+  assert.deepEqual(options, {
+    profiles: [{ id: 1, name: "HD-1080p" }],
+    rootFolders: [{ id: 1, path: "/media", freeSpace: 100000 }],
+  });
+  const body = {
+    media: {
+      ...demoLibrary[0],
+      title: "CLIENT FORGERY",
+      id: 99999,
+      path: "/etc",
+      images: [{ url: "https://evil.example" }],
+    },
+    targets: [
+      { instanceId: hd.id, qualityProfileId: 1, rootFolderPath: "/media" },
+      { instanceId: uhd.id, qualityProfileId: 999, rootFolderPath: "/media" },
+    ],
+    search: true,
+  };
+  const response = await mediaRoute.POST(request("/api/media", "POST", body));
+  assert.equal(response.status, 207);
+  const action = await response.json();
+  assert.equal(action.success, false);
+  assert.match(action.message, /Added to 1 of 2/);
+  assert.equal(action.errors[0].instanceId, uhd.id);
+  const adds = env.calls.filter(
+    (call) => call.endpoint === "movie" && call.method === "POST",
+  );
+  assert.equal(adds.length, 1);
+  assert.equal(adds[0].body.title, movie.title);
+  assert.equal(adds[0].body.tmdbId, movie.tmdbId);
+  assert.equal(adds[0].body.id, undefined);
+  assert.equal(adds[0].body.path, undefined);
+  assert.equal(adds[0].body.monitored, true);
+  assert.deepEqual(adds[0].body.addOptions, { searchForMovie: true });
+  assert.equal(JSON.stringify(adds[0].body).includes("evil.example"), false);
+  assert.equal(
+    env.calls.find((call) => call.endpoint === "movie/lookup").query.term,
+    "tmdb:693134",
+  );
+  const seriesAdd = await mediaRoute.POST(
+    request("/api/media", "POST", {
+      media: {
+        kind: "series",
+        tvdbId: series.tvdbId,
+        seasons: [{ seasonNumber: 99 }],
+      },
+      targets: [
+        {
+          instanceId: sonarr.id,
+          qualityProfileId: 1,
+          rootFolderPath: "/media",
+        },
+      ],
+      search: false,
+    }),
+  );
+  assert.equal(seriesAdd.status, 200);
+  const addedSeries = env.calls.find(
+    (call) => call.endpoint === "series" && call.method === "POST",
+  ).body;
+  assert.equal(addedSeries.tvdbId, series.tvdbId);
+  assert.deepEqual(addedSeries.seasons, [
+    { seasonNumber: 0, monitored: false },
+    { seasonNumber: 1, monitored: true },
+  ]);
+  assert.deepEqual(addedSeries.addOptions, {
+    monitor: "all",
+    searchForMissingEpisodes: false,
+    searchForCutoffUnmetEpisodes: false,
+  });
+  const invalidRoot = await mediaRoute.POST(
+    request("/api/media", "POST", {
+      ...body,
+      targets: [
+        {
+          instanceId: hd.id,
+          qualityProfileId: 1,
+          rootFolderPath: "/unapproved",
+        },
+      ],
+    }),
+  );
+  assert.equal(invalidRoot.status, 400);
+  env.nodes.hd.lookup = [{ ...movie, tmdbId: 123, id: 0 }];
+  assert.equal(
+    (
+      await mediaRoute.POST(
+        request("/api/media", "POST", { ...body, targets: [body.targets[0]] }),
+      )
+    ).status,
+    404,
+  );
+  env.nodes.hd.lookup = [movie];
+  assert.equal(
+    (
+      await mediaRoute.POST(
+        request("/api/media", "POST", { ...body, targets: [body.targets[0]] }),
+      )
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await mediaRoute.POST(
+        request("/api/media", "POST", {
+          ...body,
+          targets: [body.targets[0], body.targets[0]],
+        }),
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await mediaRoute.POST(
+        request("/api/media", "POST", { ...body, search: "true" }),
+      )
+    ).status,
+    400,
+  );
+});
+
+test("automatic search and release endpoints use the correct v3 IDs and commands", async (t) => {
+  const env = await setup(t, {
+    hd: { media: [movie] },
+    sonarr: { kind: "sonarr", media: [series] },
+  });
+  const hd = await env.connect("hd");
+  const sonarr = await env.connect("sonarr");
+  for (const [instance, kind, remoteId] of [
+    [hd, "movie", 11],
+    [sonarr, "series", 22],
+  ]) {
+    assert.equal(
+      (
+        await searchRoute.POST(
+          request("/api/search", "POST", {
+            instanceId: instance.id,
+            kind,
+            remoteId,
+          }),
+        )
+      ).status,
+      200,
+    );
+    const response = await releasesRoute.GET(
+      request(
+        `/api/releases?${new URLSearchParams({ instanceId: instance.id, kind, remoteId: String(remoteId) })}`,
+      ),
+    );
+    const release = (await response.json()).items[0];
+    assert.equal(release.approved, false);
+    assert.deepEqual(release.rejections, ["Quality cutoff already met"]);
+  }
+  assert.deepEqual(
+    env.calls
+      .filter((call) => call.endpoint === "command")
+      .map((call) => call.body),
+    [
+      { name: "MoviesSearch", movieIds: [11] },
+      { name: "SeriesSearch", seriesId: 22 },
+    ],
+  );
+  assert.deepEqual(
+    env.calls
+      .filter((call) => call.endpoint === "release")
+      .map((call) => call.query),
+    [{ movieId: "11" }, { seriesId: "22" }],
+  );
+  assert.equal(
+    (
+      await releasesRoute.POST(
+        request("/api/releases", "POST", {
+          instanceId: hd.id,
+          guid: "release-guid",
+          indexerId: 4,
+          downloadUrl: "https://evil.example",
+        }),
+      )
+    ).status,
+    200,
+  );
+  assert.deepEqual(env.calls.at(-1).body, {
+    guid: "release-guid",
+    indexerId: 4,
+  });
+  assert.equal(
+    (
+      await searchRoute.POST(
+        request("/api/search", "POST", {
+          instanceId: sonarr.id,
+          kind: "movie",
+          remoteId: 22,
+        }),
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await releasesRoute.GET(
+        request(`/api/releases?instanceId=${hd.id}&kind=movie&remoteId=1e2`),
+      )
+    ).status,
+    400,
+  );
+});
+
+test("queue paginates every record, preserves progress and errors, and forwards delete flags", async (t) => {
+  const downloads = Array.from({ length: 5 }, (_, index) => ({
+    id: index - 3,
+    title: `Download ${index}`,
+    movieId: 11,
+    movie,
+    quality: quality("WEBDL-1080p"),
+    size: 100,
+    sizeleft: 25,
+    timeleft: "00:01:23",
+    status: "downloading",
+    downloadId: `hash-${index}`,
+    downloadClient: "qBittorrent",
+    statusMessages: [
+      { title: "Import warning", messages: ["Waiting for files"] },
+    ],
+  }));
+  const env = await setup(t, {
+    hd: { queue: downloads, pageSize: 2 },
+    sonarr: {
+      kind: "sonarr",
+      queue: [
+        {
+          ...downloads[0],
+          id: 88,
+          series,
+          movie: undefined,
+          movieId: undefined,
+          seriesId: 22,
+        },
+      ],
+    },
+    offline: {},
+  });
+  const hd = await env.connect("hd");
+  await env.connect("sonarr");
+  await env.connect("offline");
+  env.nodes.offline.mode = "error";
+  const response = await (await queueRoute.GET()).json();
+  assert.equal(response.demo, false);
+  assert.equal(response.items.length, 6);
+  assert.equal(response.errors.length, 1);
+  assert.equal(response.items[0].sizeleft, 25);
+  assert.equal(response.items[0].timeleft, "00:01:23");
+  assert.deepEqual(response.items[0].warnings, [
+    "Import warning",
+    "Waiting for files",
+  ]);
+  assert.equal(
+    response.items.find((item) => item.kind === "series").mediaTitle,
+    series.title,
+  );
+  assert.deepEqual(
+    env.calls
+      .filter((call) => call.node === "hd" && call.endpoint === "queue")
+      .map((call) => call.query.page),
+    ["1", "2", "3"],
+  );
+  assert.equal(
+    env.calls.find((call) => call.node === "hd" && call.endpoint === "queue")
+      .query.includeMovie,
+    "true",
+  );
+  assert.equal(
+    env.calls.find(
+      (call) => call.node === "sonarr" && call.endpoint === "queue",
+    ).query.includeSeries,
+    "true",
+  );
+  assert.equal(
+    (
+      await queueRoute.DELETE(
+        request("/api/queue", "DELETE", {
+          instanceId: hd.id,
+          id: -3,
+          blocklist: true,
+          removeFromClient: false,
+        }),
+      )
+    ).status,
+    200,
+  );
+  assert.equal(env.calls.at(-1).endpoint, "queue/-3");
+  assert.deepEqual(env.calls.at(-1).query, {
+    blocklist: "true",
+    removeFromClient: "false",
+  });
+  assert.equal(
+    (
+      await queueRoute.DELETE(
+        request("/api/queue", "DELETE", {
+          instanceId: hd.id,
+          id: -3,
+          blocklist: "true",
+          removeFromClient: false,
+        }),
+      )
+    ).status,
+    400,
+  );
+  env.nodes.hd.queuePageFailure = 2;
+  assert.equal((await (await queueRoute.GET()).json()).errors.length, 2);
+});
+
+test("queue changes, clamped pages, and duplicate records are not reported as a complete queue", async (t) => {
+  const env = await setup(t, { hd: {} });
+  const instance = await env.connect("hd");
+  const page = (number, totalRecords, ids, pageSize = 2) => ({
+    page: number,
+    totalRecords,
+    pageSize,
+    records: ids.map((id) => ({ id, title: `Download ${id}` })),
+  });
+  for (const pages of [
+    [page(1, 5, [1, 2]), page(2, 4, [4, 5])],
+    [page(1, 4, [1, 2]), page(1, 4, [3, 4])],
+    [page(1, 3, [1, 2]), page(2, 3, [2, 3])],
+    [page(1, 3, [1, 2]), page(2, 3, [3], 1)],
+  ]) {
+    env.nodes.hd.queuePages = pages;
+    const response = await queueRoute.GET();
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.demo).toBe(false);
+    expect(body.items).toEqual([]);
+    expect(body.errors).toEqual([
+      expect.objectContaining({
+        instanceId: instance.id,
+        message: expect.stringMatching(/pagination|refresh/i),
+      }),
+    ]);
+  }
+});
+
+test("queue retry distinguishes delayed grabs, completed import scans, and active downloads", async (t) => {
+  const env = await setup(t, {
+    hd: {
+      queue: [
+        { id: -1, status: "delay" },
+        {
+          id: 2,
+          status: "completed",
+          trackedDownloadState: "importPending",
+          downloadId: "movie-hash",
+          outputPath: "/downloads/movie",
+        },
+        {
+          id: 3,
+          status: "downloading",
+          downloadId: "active",
+          outputPath: "/downloads/active",
+        },
+        { id: 4, status: "completed" },
+      ],
+    },
+    sonarr: {
+      kind: "sonarr",
+      queue: [
+        {
+          id: 5,
+          status: "completed",
+          downloadId: "series-hash",
+          outputPath: "/downloads/series",
+        },
+      ],
+    },
+  });
+  const hd = await env.connect("hd");
+  const sonarr = await env.connect("sonarr");
+  const delayed = await queueRoute.POST(
+    request("/api/queue", "POST", { instanceId: hd.id, id: -1 }),
+  );
+  assert.equal(delayed.status, 200);
+  assert.match((await delayed.json()).message, /not an import retry/);
+  for (const [instanceId, id] of [
+    [hd.id, 2],
+    [sonarr.id, 5],
+  ])
+    assert.equal(
+      (await queueRoute.POST(request("/api/queue", "POST", { instanceId, id })))
+        .status,
+      200,
+    );
+  assert.deepEqual(
+    env.calls
+      .filter((call) => call.endpoint === "command")
+      .map((call) => call.body),
+    [
+      {
+        name: "DownloadedMoviesScan",
+        path: "/downloads/movie",
+        downloadClientId: "movie-hash",
+        importMode: "auto",
+      },
+      {
+        name: "DownloadedEpisodesScan",
+        path: "/downloads/series",
+        downloadClientId: "series-hash",
+        importMode: "auto",
+      },
+    ],
+  );
+  assert.equal(
+    env.calls.filter((call) => call.endpoint === "queue/grab/-1").length,
+    1,
+  );
+  for (const id of [3, 4])
+    assert.equal(
+      (
+        await queueRoute.POST(
+          request("/api/queue", "POST", { instanceId: hd.id, id }),
+        )
+      ).status,
+      409,
+    );
+  assert.equal(
+    (
+      await queueRoute.POST(
+        request("/api/queue", "POST", { instanceId: hd.id, id: 999 }),
+      )
+    ).status,
+    404,
+  );
+});
+
+test("absolute local remotePoster and remoteUrl covers use the authenticated image proxy", async (t) => {
+  const env = await setup(t, { sonarr: { kind: "sonarr" } });
+  const instance = { ...(await env.connect("sonarr")), apiKey: secret };
+  const cover = `${instance.url}/api/v3/MediaCover/22/poster.jpg?lastWrite=123`;
+  expect((await fetch(cover)).status).toBe(401);
+  for (const media of [
+    { remotePoster: cover },
+    { images: [{ coverType: "poster", remoteUrl: cover }] },
+    { images: [{ coverType: "poster", url: cover }] },
+  ]) {
+    const src = mediaImage(media, instance);
+    expect(src).toMatch(/^\/api\/image\?/);
+    expect(src).not.toContain(secret);
+    const response = await imageRoute.GET(request(src));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("image/png");
+    expect(env.calls.at(-1).key).toBe(secret);
+  }
+});
+
+test("image proxy is base-aware, raster-only, key-safe, and refuses external or traversing paths", async (t) => {
+  const env = await setup(t, { sonarr: { kind: "sonarr" } });
+  const instance = await env.connect("sonarr");
+  const config = { ...instance, apiKey: secret };
+  assert.equal(
+    coverPath(config, "/sonarr/MediaCover/22/poster-250.jpg"),
+    "MediaCover/22/poster-250.jpg",
+  );
+  for (const path of [
+    "/MediaCover/22/poster.jpg",
+    "/api/v3/MediaCover/22/poster.jpg",
+    "/sonarr/api/v3/MediaCover/22/poster.jpg",
+  ]) {
+    const response = await imageRoute.GET(
+      request(
+        `/api/image?${new URLSearchParams({ instanceId: instance.id, path })}`,
+      ),
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "image/png");
+    assert.equal(response.headers.get("set-cookie"), null);
+    assert.equal(
+      response.headers.get("cross-origin-resource-policy"),
+      "same-origin",
+    );
+    assert.ok((await response.arrayBuffer()).byteLength > 0);
+    assert.equal(env.calls.at(-1).endpoint, "MediaCover/22/poster.jpg");
+    assert.equal(env.calls.at(-1).key, secret);
+  }
+  const before = env.calls.length;
+  for (const path of [
+    "https://evil.example/image.jpg",
+    "//evil.example/image.jpg",
+    "/api/v3/system/status",
+    "/MediaCover/../config.xml",
+    "/MediaCover/22/../../system/status",
+    "/MediaCover/22/%2e%2e%2fconfig.xml",
+    "/MediaCover/22/%252e%252e%252fconfig.xml",
+    "/MediaCover/22/image.svg",
+    "/MediaCover/22/poster.jpg?apikey=secret",
+    "/MediaCover\\22\\poster.jpg",
+  ]) {
+    assert.equal(
+      (
+        await imageRoute.GET(
+          request(
+            `/api/image?${new URLSearchParams({ instanceId: instance.id, path })}`,
+          ),
+        )
+      ).status,
+      400,
+      path,
+    );
+  }
+  assert.equal(env.calls.length, before);
+  env.nodes.sonarr.imageType = "image/svg+xml";
+  assert.equal(
+    (
+      await imageRoute.GET(
+        request(
+          `/api/image?${new URLSearchParams({ instanceId: instance.id, path: "/MediaCover/22/poster.jpg" })}`,
+        ),
+      )
+    ).status,
+    502,
+  );
+  assert.equal(
+    mediaImage(
+      {
+        remotePoster: "javascript:alert(1)",
+        images: [
+          {
+            coverType: "poster",
+            remoteUrl: "https://user:password@evil.example/image.jpg",
+          },
+        ],
+      },
+      config,
+    ),
+    "",
+  );
+  assert.equal(
+    mediaImage(
+      {
+        images: [
+          {
+            coverType: "poster",
+            remoteUrl: "https://example.org/poster.jpg?apiKey=secret",
+          },
+        ],
+      },
+      config,
+    ),
+    "",
+  );
+  assert.equal(
+    mediaImage(
+      { remotePoster: "https://image.tmdb.org/t/p/w500/poster.jpg" },
+      config,
+    ),
+    "https://image.tmdb.org/t/p/w500/poster.jpg",
+  );
+});
