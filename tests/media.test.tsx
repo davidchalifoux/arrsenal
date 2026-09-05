@@ -622,10 +622,98 @@ describe("MediaDetails searches", () => {
 });
 
 describe("Episode actions", () => {
-  it("merges episode rows while searching with the chosen instance's local ID", async () => {
+  it("keeps season counts instance-scoped and distinguishes missing episodes from other states", async () => {
     const targets = [
       { ...hdTarget, instanceId: "sonarr-hd", instanceName: "Sonarr HD" },
       { ...uhdTarget, instanceId: "sonarr-4k", instanceName: "Sonarr 4K" },
+      { ...hdTarget, instanceId: "offline", instanceName: "Offline Sonarr" },
+    ];
+    fetchMock.mockImplementation(async (path) => {
+      const url = new URL(String(path), "http://localhost");
+      const target = targets.find(
+        (item) => item.instanceId === url.searchParams.get("instanceId"),
+      );
+      if (!target || target.instanceId === "offline")
+        return Response.json(
+          { error: "Instance unavailable." },
+          { status: 502 },
+        );
+      const states =
+        target.instanceId === "sonarr-hd"
+          ? ([
+              "available",
+              "missing",
+              "downloading",
+              "unreleased",
+              "unmonitored",
+              "unknown",
+            ] as const)
+          : (["missing", "available", "missing"] as const);
+      const episodes: Episode[] = states.map((status, index) => ({
+        id: index + 1,
+        seriesId: target.remoteId,
+        seasonNumber: 1,
+        episodeNumber: index + 1,
+        title: `Episode ${index + 1}`,
+        overview: "",
+        monitored: status !== "unmonitored",
+        hasFile: status === "available",
+        quality: "Unknown",
+        sizeOnDisk: 0,
+        status,
+      }));
+      return Response.json({
+        instanceId: target.instanceId,
+        instanceName: target.instanceName,
+        remoteId: target.remoteId,
+        seasons: [{ seasonNumber: 1, monitored: true }],
+        episodes,
+        errors: [],
+      });
+    });
+    renderUI(
+      <MediaDetails
+        media={{ ...movie, kind: "series", targets }}
+        onAddTarget={vi.fn()}
+        notify={vi.fn()}
+        onChanged={vi.fn()}
+      />,
+    );
+    await screen.findByRole("alert");
+    expect(
+      screen.getByTitle("Sonarr HD season 1 status").textContent,
+    ).toContain("1 downloaded1 missing");
+    expect(
+      screen.getByTitle("Sonarr HD season 1 status").textContent,
+    ).toContain("4 other");
+    expect(
+      screen.getByTitle("Sonarr 4K season 1 status").textContent,
+    ).toContain("1 downloaded2 missing");
+    expect(
+      screen.getByTitle("Offline Sonarr season 1 status").textContent,
+    ).toContain("Unavailable");
+    expect(
+      screen.getByTitle("Offline Sonarr season 1 status").textContent,
+    ).not.toContain("missing");
+    expect(writes()).toHaveLength(0);
+  });
+
+  it("merges episode rows while searching with the chosen instance's local ID", async () => {
+    const targets = [
+      {
+        ...hdTarget,
+        instanceId: "sonarr-hd",
+        instanceName: "Sonarr HD",
+        episodeCount: 1,
+        episodeFileCount: 1,
+      },
+      {
+        ...uhdTarget,
+        instanceId: "sonarr-4k",
+        instanceName: "Sonarr 4K",
+        episodeCount: 1,
+        episodeFileCount: 0,
+      },
     ];
     const show: MediaItem = {
       ...movie,
@@ -689,6 +777,31 @@ describe("Episode actions", () => {
       name: /S01E01.*Pilot.*Available.*Missing/,
     });
     expect(
+      screen
+        .getByRole("progressbar", { name: "Sonarr HD episode coverage" })
+        .getAttribute("aria-valuenow"),
+    ).toBe("100");
+    expect(
+      screen
+        .getByRole("progressbar", { name: "Sonarr 4K episode coverage" })
+        .getAttribute("aria-valuenow"),
+    ).toBe("0");
+    expect(within(row).queryByText("Episode overview")).toBeNull();
+    expect(
+      screen.getByTitle("Sonarr HD season 1 status").textContent,
+    ).toContain("1 downloaded0 missing");
+    expect(
+      screen.getByTitle("Sonarr 4K season 1 status").textContent,
+    ).toContain("0 downloaded1 missing");
+    fireEvent.click(within(row).getAllByRole("cell")[0]);
+    const details = await screen.findByRole("dialog", { name: "Pilot" });
+    expect(within(details).getByText("Episode overview")).toBeTruthy();
+    expect(within(details).getByText(/WEBDL-1080p.*1 KB/)).toBeTruthy();
+    fireEvent.click(
+      within(details).getByRole("button", { name: "Close dialog" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(
       within(row).getAllByRole("button", { name: /^Actions for/ }),
     ).toHaveLength(2);
     fireEvent.click(within(row).getByRole("button", { name: /on Sonarr 4K$/ }));
@@ -698,6 +811,7 @@ describe("Episode actions", () => {
       }),
     );
     await waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("dialog")).toBeNull();
     const write = writes()[0];
     expect(JSON.parse(String(write[1]?.body))).toEqual({
       instanceId: "sonarr-4k",

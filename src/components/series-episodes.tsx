@@ -1,11 +1,19 @@
 "use client";
 
 import { Menu } from "@base-ui/react/menu";
-import { DotsThreeIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
-import { css } from "@styled-system/css";
+import {
+  ArrowDownIcon,
+  CaretRightIcon,
+  CheckCircleIcon,
+  CircleDashedIcon,
+  DotsThreeIcon,
+  MagnifyingGlassIcon,
+  WarningCircleIcon,
+} from "@phosphor-icons/react";
+import { css, cva } from "@styled-system/css";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { api } from "@/lib/client";
+import { api, qualityLabel, sizeLabel } from "@/lib/client";
 import type {
   ActionResponse,
   Episode,
@@ -14,7 +22,7 @@ import type {
   MediaItem,
   MediaTarget,
 } from "@/lib/types";
-import { Button, buttonStyle, mutedStyle, Notice, Spinner } from "./ui";
+import { Button, buttonStyle, Modal, mutedStyle, Notice, Spinner } from "./ui";
 
 const statuses: Record<EpisodeStatus, string> = {
   available: "Available",
@@ -24,12 +32,44 @@ const statuses: Record<EpisodeStatus, string> = {
   unmonitored: "Unmonitored",
   unknown: "Unknown",
 };
-
+const statusStyle = cva({
+  base: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "5px",
+    fontSize: "11px",
+    whiteSpace: "nowrap",
+  },
+  variants: {
+    status: {
+      available: { color: "positive" },
+      missing: { color: "warning" },
+      downloading: { color: "info" },
+      unreleased: { color: "muted" },
+      unmonitored: { color: "muted" },
+      unknown: { color: "muted" },
+    },
+  },
+});
 const cellStyle = css({
-  p: "14px 16px",
+  px: "12px",
+  py: "6px",
+  height: "42px",
   textAlign: "left",
-  verticalAlign: "top",
+  verticalAlign: "middle",
   borderTop: "1px solid token(colors.line)",
+});
+const dateCellStyle = css({
+  px: "12px",
+  py: "6px",
+  textAlign: "left",
+  verticalAlign: "middle",
+  borderTop: "1px solid token(colors.line)",
+  display: { base: "none", md: "table-cell" },
+  width: "110px",
+  color: "muted",
+  whiteSpace: "nowrap",
+  fontSize: "11px",
 });
 const menuItemStyle = css({
   display: "flex",
@@ -43,6 +83,74 @@ const menuItemStyle = css({
   outline: "none",
   _highlighted: { bg: "elevated" },
 });
+
+function episodeCode(episode: Episode) {
+  return `S${String(episode.seasonNumber).padStart(2, "0")}E${String(episode.episodeNumber).padStart(2, "0")}`;
+}
+
+function airDate(episode: Episode) {
+  const date = episode.airDateUtc ? new Date(episode.airDateUtc) : null;
+  return date && Number.isFinite(date.getTime())
+    ? new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        timeZone: "UTC",
+      }).format(date)
+    : "Date unknown";
+}
+
+function EpisodeAvailability({
+  episode,
+  stale = false,
+}: {
+  episode: Episode;
+  stale?: boolean;
+}) {
+  return (
+    <span
+      className={css({
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "7px",
+        minWidth: 0,
+      })}
+    >
+      <span className={statusStyle({ status: episode.status })}>
+        {episode.hasFile ? (
+          <CheckCircleIcon size={13} />
+        ) : episode.status === "downloading" ? (
+          <ArrowDownIcon size={13} />
+        ) : (
+          <CircleDashedIcon size={13} />
+        )}
+        {statuses[episode.status]}
+      </span>
+      {episode.hasFile && (
+        <span
+          title={episode.quality}
+          className={css({
+            fontSize: "10px",
+            color: "muted",
+            whiteSpace: "nowrap",
+            maxWidth: "90px",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          })}
+        >
+          {qualityLabel("", episode.quality)}
+        </span>
+      )}
+      {stale && (
+        <WarningCircleIcon
+          size={13}
+          aria-label="Last known status"
+          className={css({ color: "warning", flexShrink: 0 })}
+        />
+      )}
+    </span>
+  );
+}
 
 export function SeriesEpisodes({
   media,
@@ -59,6 +167,10 @@ export function SeriesEpisodes({
   const [pending, setPending] = useState<string | null>(null);
   const searchLock = useRef(false);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [selected, setSelected] = useState<{
+    season: number;
+    episode: number;
+  } | null>(null);
   const queries = useQueries({
     queries: media.targets.map((target) => ({
       queryKey: ["episodes", target.instanceId, target.remoteId],
@@ -70,9 +182,8 @@ export function SeriesEpisodes({
         if (
           response.instanceId !== target.instanceId ||
           response.remoteId !== target.remoteId
-        ) {
+        )
           throw new Error("Episode response does not match this target.");
-        }
         return response;
       },
       refetchInterval: 30_000,
@@ -80,7 +191,7 @@ export function SeriesEpisodes({
     })),
   });
 
-  // Only display identities are merged. Action IDs always come from the target's own response.
+  // Merge display identities only; actions retain the episode ID from their own instance.
   const seasons = new Map<
     number,
     Map<number, { episode: Episode; targets: Map<string, Episode> }>
@@ -112,6 +223,9 @@ export function SeriesEpisodes({
   const failed = queries.some(
     (query) => query.isError || Boolean(query.data?.errors.length),
   );
+  const detail = selected
+    ? seasons.get(selected.season)?.get(selected.episode)
+    : undefined;
 
   async function search(target: MediaTarget, episode: Episode) {
     if (searchLock.current) return;
@@ -148,8 +262,8 @@ export function SeriesEpisodes({
     <section
       aria-labelledby="episodes-heading"
       className={css({
-        mt: "32px",
-        pt: "24px",
+        mt: "28px",
+        pt: "22px",
         borderTop: "1px solid token(colors.line)",
         minWidth: 0,
       })}
@@ -170,8 +284,8 @@ export function SeriesEpisodes({
           >
             Seasons & episodes
           </h2>
-          <p className={css({ fontSize: "12px", color: "muted", mt: "5px" })}>
-            Availability and searches for each quality target.
+          <p className={css({ fontSize: "11px", color: "muted", mt: "5px" })}>
+            Availability by instance. Select an episode for more details.
           </p>
         </div>
         {media.targets.length > 0 && (
@@ -186,7 +300,7 @@ export function SeriesEpisodes({
           </Button>
         )}
       </div>
-      <div className={css({ display: "grid", gap: "10px" })}>
+      <div className={css({ display: "grid", gap: "8px" })}>
         {queries.map((query, index) => {
           const target = media.targets[index];
           const messages = [
@@ -229,49 +343,189 @@ export function SeriesEpisodes({
           const rows = [...(seasons.get(number)?.values() ?? [])].sort(
             (a, b) => a.episode.episodeNumber - b.episode.episodeNumber,
           );
+          const open = expanded[number] ?? number === latest;
           return (
             <details
               key={number}
-              open={expanded[number] ?? number === latest}
+              open={open}
               onToggle={(event) => {
-                const open = event.currentTarget.open;
-                if (open !== (expanded[number] ?? number === latest)) {
-                  setExpanded((current) => ({ ...current, [number]: open }));
-                }
+                const next = event.currentTarget.open;
+                if (next !== open)
+                  setExpanded((current) => ({ ...current, [number]: next }));
               }}
               className={css({
                 border: "1px solid token(colors.line)",
-                borderRadius: "8px",
+                borderRadius: "7px",
                 bg: "surface",
                 overflow: "hidden",
+                minWidth: 0,
               })}
             >
               <summary
                 className={css({
-                  p: "16px",
+                  display: "flex",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "10px 18px",
+                  px: "13px",
+                  py: "12px",
                   cursor: "pointer",
-                  fontSize: "13px",
-                  fontWeight: "550",
+                  listStyle: "none",
+                  "&::-webkit-details-marker": { display: "none" },
                   _hover: { bg: "elevated" },
                 })}
               >
-                {number === 0 ? "Specials" : `Season ${number}`}
                 <span
                   className={css({
-                    color: "muted",
-                    fontWeight: "400",
-                    ml: "12px",
-                    fontSize: "11px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    flexShrink: 0,
                   })}
                 >
-                  {rows.length} {rows.length === 1 ? "episode" : "episodes"}
+                  <CaretRightIcon
+                    size={12}
+                    weight="bold"
+                    className={css({
+                      color: "muted",
+                      transform: open ? "rotate(90deg)" : "none",
+                      transition: "transform 120ms",
+                    })}
+                  />
+                  <span
+                    className={css({ fontSize: "12px", fontWeight: "550" })}
+                  >
+                    {number === 0 ? "Specials" : `Season ${number}`}
+                  </span>
+                  <span className={css({ color: "subtle", fontSize: "10px" })}>
+                    {rows.length} {rows.length === 1 ? "episode" : "episodes"}
+                  </span>
+                </span>
+                <span
+                  className={css({
+                    display: "flex",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    gap: "8px 20px",
+                    ml: { base: "20px", md: "auto" },
+                  })}
+                >
+                  {media.targets.map((target, index) => {
+                    const query = queries[index];
+                    const episodes = rows.flatMap((row) => {
+                      const episode = row.targets.get(target.instanceId);
+                      return episode ? [episode] : [];
+                    });
+                    const downloaded = episodes.filter(
+                      (episode) => episode.hasFile,
+                    ).length;
+                    const missing = episodes.filter(
+                      (episode) => episode.status === "missing",
+                    ).length;
+                    const others = episodes.filter(
+                      (episode) =>
+                        !episode.hasFile && episode.status !== "missing",
+                    );
+                    const otherDescription = Object.entries(statuses)
+                      .filter(([status]) =>
+                        others.some((episode) => episode.status === status),
+                      )
+                      .map(
+                        ([status, label]) =>
+                          `${others.filter((episode) => episode.status === status).length} ${label.toLowerCase()}`,
+                      )
+                      .join(", ");
+                    const stale =
+                      query.isError || Boolean(query.data?.errors.length);
+                    return (
+                      <span
+                        key={target.instanceId}
+                        title={`${target.instanceName} season ${number} status`}
+                        className={css({
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          fontSize: "10px",
+                          fontWeight: "400",
+                          whiteSpace: "nowrap",
+                        })}
+                      >
+                        <span
+                          title={target.instanceName}
+                          className={css({
+                            color: "muted",
+                            maxWidth: "120px",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          })}
+                        >
+                          {target.instanceName}
+                        </span>
+                        {!query.data ? (
+                          <span className={css({ color: "subtle" })}>
+                            {query.isPending ? "Loading..." : "Unavailable"}
+                          </span>
+                        ) : !episodes.length ? (
+                          <span className={css({ color: "subtle" })}>
+                            No episodes
+                          </span>
+                        ) : (
+                          <>
+                            <span
+                              className={css({
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                                color: "positive",
+                              })}
+                            >
+                              <CheckCircleIcon size={12} />
+                              {downloaded} downloaded
+                            </span>
+                            <span
+                              title="Aired, monitored episodes without a file. Active downloads are counted separately."
+                              className={css({
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                                color: missing ? "warning" : "subtle",
+                              })}
+                            >
+                              <CircleDashedIcon size={12} />
+                              {missing} missing
+                            </span>
+                            {others.length > 0 && (
+                              <span
+                                title={otherDescription}
+                                className={css({ color: "subtle" })}
+                              >
+                                <span aria-hidden="true">
+                                  +{others.length} other
+                                </span>
+                                <span className={css({ srOnly: true })}>
+                                  {otherDescription}
+                                </span>
+                              </span>
+                            )}
+                            {stale && (
+                              <WarningCircleIcon
+                                size={12}
+                                aria-label="Counts may be incomplete or out of date"
+                                className={css({ color: "warning" })}
+                              />
+                            )}
+                          </>
+                        )}
+                      </span>
+                    );
+                  })}
                 </span>
               </summary>
               {rows.length === 0 ? (
                 <p
                   className={css({
                     px: "16px",
-                    pb: "16px",
+                    pb: "14px",
                     fontSize: "12px",
                     color: "muted",
                   })}
@@ -293,125 +547,115 @@ export function SeriesEpisodes({
                       {number === 0 ? "Specials" : `Season ${number}`} episode
                       availability by instance
                     </caption>
-                    <thead>
+                    <thead
+                      className={css({
+                        bg: "canvas",
+                        color: "muted",
+                        fontSize: "10px",
+                      })}
+                    >
                       <tr>
                         <th scope="col" className={cellStyle}>
                           Episode
+                        </th>
+                        <th scope="col" className={dateCellStyle}>
+                          Aired
                         </th>
                         {media.targets.map((target) => (
                           <th
                             key={target.instanceId}
                             scope="col"
                             className={cellStyle}
+                            title={target.qualityProfile}
                           >
-                            <span>{target.instanceName}</span>
-                            <span
-                              className={css({
-                                display: "block",
-                                fontSize: "10px",
-                                fontWeight: "400",
-                                color: "muted",
-                                mt: "4px",
-                              })}
-                            >
-                              {target.qualityProfile}
-                            </span>
+                            {target.instanceName}
                           </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map(({ episode, targets }) => {
-                        const code = `S${String(number).padStart(2, "0")}E${String(episode.episodeNumber).padStart(2, "0")}`;
-                        const date = episode.airDateUtc
-                          ? new Date(episode.airDateUtc)
-                          : null;
-                        const airDate =
-                          date && !Number.isNaN(date.getTime())
-                            ? new Intl.DateTimeFormat("en-US", {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                                timeZone: "UTC",
-                              }).format(date)
-                            : null;
+                        const code = episodeCode(episode);
                         return (
-                          <tr key={episode.episodeNumber}>
+                          <tr
+                            key={episode.episodeNumber}
+                            onClick={(event) => {
+                              if (
+                                (event.target as HTMLElement).closest(
+                                  "button, a, [role='menu'], [role='menuitem']",
+                                ) ||
+                                window.getSelection()?.toString()
+                              )
+                                return;
+                              event.currentTarget
+                                .querySelector("button")
+                                ?.focus({ preventScroll: true });
+                              setSelected({
+                                season: number,
+                                episode: episode.episodeNumber,
+                              });
+                            }}
+                            className={css({
+                              cursor: "pointer",
+                              transition: "background 100ms",
+                              _hover: { bg: "elevated" },
+                              _focusWithin: { bg: "elevated" },
+                            })}
+                          >
                             <th scope="row" className={cellStyle}>
-                              <div
+                              <button
+                                type="button"
+                                aria-label={`View details for ${code} ${episode.title}`}
+                                onClick={() =>
+                                  setSelected({
+                                    season: number,
+                                    episode: episode.episodeNumber,
+                                  })
+                                }
                                 className={css({
-                                  minWidth: "210px",
-                                  maxWidth: "480px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "12px",
+                                  minWidth: "200px",
+                                  width: "100%",
+                                  textAlign: "left",
+                                  height: "28px",
+                                  borderRadius: "3px",
                                   fontWeight: "400",
                                 })}
                               >
                                 <span
                                   className={css({
+                                    color: "subtle",
                                     fontFamily: "mono",
-                                    color: "muted",
                                     fontSize: "10px",
+                                    flexShrink: 0,
                                   })}
                                 >
                                   {code}
                                 </span>
-                                <p
+                                <span
+                                  title={episode.title}
                                   className={css({
                                     fontWeight: "500",
-                                    mt: "4px",
+                                    fontSize: "12px",
+                                    maxWidth: { base: "180px", xl: "440px" },
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
                                   })}
                                 >
                                   {episode.title || "Untitled episode"}
-                                </p>
-                                <p
-                                  className={css({
-                                    fontSize: "10px",
-                                    color: "muted",
-                                    mt: "5px",
-                                  })}
-                                >
-                                  {[
-                                    airDate,
-                                    episode.runtime
-                                      ? `${episode.runtime} min`
-                                      : null,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" · ")}
-                                </p>
-                                {episode.overview && (
-                                  <details
-                                    className={css({
-                                      mt: "6px",
-                                      color: "muted",
-                                      fontSize: "11px",
-                                    })}
-                                  >
-                                    <summary
-                                      className={css({ cursor: "pointer" })}
-                                    >
-                                      Overview
-                                      <span className={css({ srOnly: true })}>
-                                        {" "}
-                                        for {code}
-                                      </span>
-                                    </summary>
-                                    <p
-                                      className={css({
-                                        mt: "6px",
-                                        lineHeight: "1.7",
-                                        fontWeight: "400",
-                                      })}
-                                    >
-                                      {episode.overview}
-                                    </p>
-                                  </details>
-                                )}
-                              </div>
+                                </span>
+                              </button>
                             </th>
+                            <td className={dateCellStyle}>
+                              {airDate(episode)}
+                            </td>
                             {media.targets.map((target, index) => {
                               const local = targets.get(target.instanceId);
                               const query = queries[index];
-                              const unavailable =
+                              const stale =
                                 query.isError ||
                                 Boolean(query.data?.errors.length);
                               const isPending =
@@ -425,71 +669,44 @@ export function SeriesEpisodes({
                                   <div
                                     className={css({
                                       display: "flex",
-                                      gap: "12px",
                                       alignItems: "center",
                                       justifyContent: "space-between",
-                                      minWidth: "155px",
+                                      gap: "8px",
+                                      minWidth: "145px",
                                     })}
                                   >
-                                    <div>
-                                      <span
+                                    {isPending ? (
+                                      <output
                                         className={css({
-                                          color:
-                                            local?.status === "available"
-                                              ? "positive"
-                                              : local?.status === "downloading"
-                                                ? "info"
-                                                : local?.status === "missing"
-                                                  ? "warning"
-                                                  : "muted",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "5px",
+                                          fontSize: "11px",
+                                          color: "muted",
                                         })}
                                       >
-                                        {local
-                                          ? statuses[local.status]
-                                          : query.isPending
-                                            ? "Loading..."
-                                            : unavailable
-                                              ? "Unavailable"
-                                              : "No record"}
+                                        <Spinner size={12} />
+                                        Searching...
+                                      </output>
+                                    ) : local ? (
+                                      <EpisodeAvailability
+                                        episode={local}
+                                        stale={stale}
+                                      />
+                                    ) : (
+                                      <span
+                                        className={css({
+                                          fontSize: "11px",
+                                          color: "subtle",
+                                        })}
+                                      >
+                                        {query.isPending
+                                          ? "Loading..."
+                                          : stale
+                                            ? "Unavailable"
+                                            : "No record"}
                                       </span>
-                                      {local?.quality && (
-                                        <p
-                                          className={css({
-                                            mt: "4px",
-                                            color: "muted",
-                                            fontSize: "10px",
-                                          })}
-                                        >
-                                          {local.quality}
-                                        </p>
-                                      )}
-                                      {local && unavailable && (
-                                        <p
-                                          className={css({
-                                            mt: "4px",
-                                            color: "warning",
-                                            fontSize: "10px",
-                                          })}
-                                        >
-                                          Last known status
-                                        </p>
-                                      )}
-                                      {isPending && (
-                                        <output
-                                          className={css({
-                                            display: "flex",
-                                            gap: "5px",
-                                            alignItems: "center",
-                                            fontSize: "10px",
-                                            color: "muted",
-                                            mt: "5px",
-                                          })}
-                                        >
-                                          <Spinner size={12} />
-                                          Searching...
-                                        </output>
-                                      )}
-                                    </div>
+                                    )}
                                     {local && (
                                       <Menu.Root modal={false}>
                                         <Menu.Trigger
@@ -497,10 +714,10 @@ export function SeriesEpisodes({
                                           aria-label={`Actions for ${code} ${episode.title} on ${target.instanceName}`}
                                           className={buttonStyle({
                                             variant: "ghost",
-                                            size: "icon",
+                                            size: "sm",
                                           })}
                                         >
-                                          <DotsThreeIcon size={20} />
+                                          <DotsThreeIcon size={18} />
                                         </Menu.Trigger>
                                         <Menu.Portal>
                                           <Menu.Positioner
@@ -562,6 +779,162 @@ export function SeriesEpisodes({
           );
         })}
       </div>
+      <Modal
+        open={Boolean(detail)}
+        onOpenChange={(open) => {
+          if (!open) setSelected(null);
+        }}
+        title={detail?.episode.title || "Episode details"}
+        description={
+          detail ? `${media.title} · ${episodeCode(detail.episode)}` : undefined
+        }
+        wide
+      >
+        {detail && (
+          <>
+            <div
+              className={css({
+                display: "flex",
+                alignItems: "center",
+                gap: "16px",
+                fontSize: "12px",
+                color: "muted",
+                mb: "16px",
+              })}
+            >
+              <span>{airDate(detail.episode)}</span>
+              {detail.episode.runtime ? (
+                <span>{detail.episode.runtime} min</span>
+              ) : null}
+            </div>
+            <p className={mutedStyle}>
+              {detail.episode.overview ||
+                [...detail.targets.values()].find((episode) => episode.overview)
+                  ?.overview ||
+                "No synopsis is available for this episode."}
+            </p>
+            <h3
+              className={css({
+                fontSize: "13px",
+                fontWeight: "550",
+                mt: "25px",
+                mb: "12px",
+              })}
+            >
+              Files & availability
+            </h3>
+            <div className={css({ display: "grid", gap: "10px" })}>
+              {media.targets.map((target, index) => {
+                const local = detail.targets.get(target.instanceId);
+                const query = queries[index];
+                const stale =
+                  query.isError || Boolean(query.data?.errors.length);
+                return (
+                  <div
+                    key={target.instanceId}
+                    className={css({
+                      border: "1px solid token(colors.line)",
+                      borderRadius: "7px",
+                      p: "14px",
+                      bg: "canvas",
+                    })}
+                  >
+                    <div
+                      className={css({
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                        gap: "10px",
+                      })}
+                    >
+                      <span
+                        className={css({ fontSize: "12px", fontWeight: "500" })}
+                      >
+                        {target.instanceName}
+                      </span>
+                      {local ? (
+                        <EpisodeAvailability episode={local} stale={stale} />
+                      ) : (
+                        <span
+                          className={css({ color: "muted", fontSize: "11px" })}
+                        >
+                          {query.isPending
+                            ? "Loading..."
+                            : stale
+                              ? "Unavailable"
+                              : "No record"}
+                        </span>
+                      )}
+                    </div>
+                    <p
+                      className={css({
+                        fontSize: "11px",
+                        color: "muted",
+                        mt: "8px",
+                      })}
+                    >
+                      {target.qualityProfile}
+                      {local
+                        ? ` · ${local.monitored ? "Monitored" : "Unmonitored"}`
+                        : ""}
+                      {local?.hasFile
+                        ? ` · ${local.quality} · ${sizeLabel(local.sizeOnDisk)}`
+                        : ""}
+                    </p>
+                    {stale && (
+                      <p
+                        className={css({
+                          fontSize: "11px",
+                          color: "warning",
+                          mt: "8px",
+                        })}
+                      >
+                        This instance's episode information may be incomplete or
+                        out of date.
+                      </p>
+                    )}
+                    {local && (
+                      <div
+                        className={css({
+                          display: "flex",
+                          justifyContent: "flex-end",
+                          gap: "8px",
+                          mt: "12px",
+                        })}
+                      >
+                        <Button
+                          size="sm"
+                          disabled={pending !== null}
+                          onClick={() => void search(target, local)}
+                        >
+                          {pending === `${target.instanceId}:${local.id}` ? (
+                            <Spinner size={13} />
+                          ) : (
+                            <MagnifyingGlassIcon size={13} />
+                          )}
+                          Auto search
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={pending !== null}
+                          onClick={() => {
+                            setSelected(null);
+                            onManualSearch(target, local, episodeCode(local));
+                          }}
+                        >
+                          Manual search
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </Modal>
     </section>
   );
 }
