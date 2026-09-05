@@ -148,43 +148,6 @@ export function MediaCard({
         })}
       >
         <Poster item={item} priority={index < 6} />
-        <div
-          className={css({
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(180deg, #0002 0%, transparent 40%, transparent 62%, #0d0d0db3 100%)",
-          })}
-        />
-        <div
-          className={css({
-            position: "absolute",
-            bottom: "10px",
-            left: "10px",
-            right: "8px",
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "5px",
-          })}
-        >
-          {item.targets.slice(0, 3).map((target) => (
-            <QualityBadge key={target.instanceId} target={target} />
-          ))}
-          {item.targets.length > 3 && (
-            <span
-              className={css({
-                fontSize: "10px",
-                px: "5px",
-                bg: "#141414cf",
-                borderRadius: "4px",
-                display: "flex",
-                alignItems: "center",
-              })}
-            >
-              +{item.targets.length - 3}
-            </span>
-          )}
-        </div>
       </div>
       <div
         className={css({
@@ -241,6 +204,34 @@ export function MediaCard({
           </span>
         )}
       </div>
+      {item.targets.length > 0 && (
+        <div
+          className={css({
+            mt: "8px",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "5px",
+          })}
+        >
+          {item.targets.slice(0, 3).map((target) => (
+            <QualityBadge key={target.instanceId} target={target} />
+          ))}
+          {item.targets.length > 3 && (
+            <span
+              className={css({
+                fontSize: "10px",
+                px: "5px",
+                bg: "#141414cf",
+                borderRadius: "4px",
+                display: "flex",
+                alignItems: "center",
+              })}
+            >
+              +{item.targets.length - 3}
+            </span>
+          )}
+        </div>
+      )}
     </>
   );
   return href ? (
