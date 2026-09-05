@@ -252,7 +252,7 @@ function AddMediaContent({
                 placeholder={
                   kind === "movie"
                     ? "Search for a movie..."
-                    : "Search for a TV show..."
+                    : "Search for a show..."
                 }
                 value={term}
                 onChange={(event) => setTerm(event.target.value)}
@@ -266,7 +266,7 @@ function AddMediaContent({
               label="Media type"
               options={[
                 { value: "movie", label: "Movies" },
-                { value: "series", label: "TV shows" },
+                { value: "series", label: "Shows" },
               ]}
             />
           </div>
@@ -280,8 +280,7 @@ function AddMediaContent({
           )}
           {!demo && instances.length === 0 ? (
             <Notice>
-              Connect Radarr for movies or Sonarr for TV shows to start
-              searching.
+              Connect Radarr for movies or Sonarr for shows to start searching.
             </Notice>
           ) : !demo && term.trim().length < 2 ? (
             <div
@@ -375,7 +374,7 @@ function AddMediaContent({
                         })}
                       >
                         {item.year || "TBA"} ·{" "}
-                        {item.kind === "movie" ? "Movie" : "TV series"}
+                        {item.kind === "movie" ? "Movie" : "Show"}
                         {library.some((entry) => entry.id === item.id)
                           ? " · In your library"
                           : ""}
@@ -620,9 +619,9 @@ function TargetOption({
     <div
       className={css({
         border: "1px solid",
-        borderColor: enabled ? "#677b4c" : "line",
+        borderColor: enabled ? "#6e6e6e" : "line",
         borderRadius: "8px",
-        bg: enabled ? "#222a1c" : "#1b201b",
+        bg: enabled ? "#242424" : "surface",
         padding: "15px",
         opacity: existing ? 0.55 : 1,
       })}

@@ -352,7 +352,7 @@ export function Settings({
                         mt: "3px",
                       })}
                     >
-                      {sonarr ? "Sonarr / TV series" : "Radarr / Movies"}
+                      {sonarr ? "Sonarr / Shows" : "Radarr / Movies"}
                     </p>
                   </div>
                   <span
@@ -540,7 +540,7 @@ export function Settings({
                       mt: "7px",
                     })}
                   >
-                    {kind === "sonarr" ? "Your TV series" : "Your movies"}
+                    {kind === "sonarr" ? "Your shows" : "Your movies"}
                   </p>
                 </div>
               ))}
@@ -665,7 +665,7 @@ export function Settings({
                       changeField("kind", value);
                   }}
                   options={[
-                    { label: "Sonarr - TV series", value: "sonarr" },
+                    { label: "Sonarr - Shows", value: "sonarr" },
                     { label: "Radarr - Movies", value: "radarr" },
                   ]}
                 />

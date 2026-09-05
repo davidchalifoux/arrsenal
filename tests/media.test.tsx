@@ -17,6 +17,7 @@ import { MediaCard } from "@/components/media-card";
 import { MediaDetails } from "@/components/media-details";
 import type {
   AddMediaRequest,
+  Episode,
   InstanceOptions,
   InstanceSummary,
   LibraryResponse,
@@ -151,7 +152,6 @@ function renderDetails(demo = false) {
   const props = {
     media: { ...movie, targets: [hdTarget, uhdTarget] },
     demo,
-    onClose: vi.fn(),
     onAddTarget: vi.fn(),
     onChanged: vi.fn(),
     notify: vi.fn(),
@@ -432,14 +432,10 @@ describe("Demo library integration", () => {
         return Response.json({ items: [], demo: true, errors: [] });
       throw new Error(`Unexpected demo request: ${path}`);
     });
-    renderUI(<Arrsenal view="library" />);
-    fireEvent.click(
-      await screen.findByRole("button", { name: `View ${movie.title}` }),
-    );
-    const details = await screen.findByRole("dialog", { name: movie.title });
-    fireEvent.click(
-      within(details).getByRole("button", { name: "Add target" }),
-    );
+    renderUI(<Arrsenal view="movies" mediaId={movie.id} />);
+    await screen.findByRole("heading", { level: 1, name: movie.title });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add target" }));
     await screen.findByRole("dialog", { name: "Add a quality target" });
     await selectTarget({ ...uhd, id: "demo-radarr-4k" }, "Ultra-HD", "/movies");
     fireEvent.click(
@@ -471,7 +467,7 @@ describe("Demo library integration", () => {
       "/api/queue",
     ]);
     expect(
-      screen.getByRole("button", { name: `View ${movie.title}` }),
+      screen.getByRole("heading", { level: 1, name: movie.title }),
     ).toBeTruthy();
   });
 });
@@ -479,7 +475,7 @@ describe("Demo library integration", () => {
 describe("MediaDetails searches", () => {
   it("auto-searches the selected instance and preserves server failures without reporting success", async () => {
     const props = renderDetails();
-    await screen.findByRole("dialog");
+    await screen.findByRole("heading", { level: 1, name: movie.title });
     fetchMock.mockResolvedValueOnce(
       Response.json({ success: false, message: "Search was not accepted." }),
     );
@@ -507,7 +503,7 @@ describe("MediaDetails searches", () => {
   it("requires explicit confirmation for a rejected release and keeps it retryable after HTTP and action failures", async () => {
     fetchMock.mockResolvedValueOnce(Response.json({ items: [rejected] }));
     const props = renderDetails();
-    await screen.findByRole("dialog");
+    await screen.findByRole("heading", { level: 1, name: movie.title });
     fireEvent.click(
       screen.getAllByRole("button", { name: "Manual search" })[1],
     );
@@ -599,7 +595,7 @@ describe("MediaDetails searches", () => {
   it("clears release confirmation when switching instances and uses that instance's remote ID", async () => {
     fetchMock.mockResolvedValueOnce(Response.json({ items: [rejected] }));
     renderDetails();
-    await screen.findByRole("dialog");
+    await screen.findByRole("heading", { level: 1, name: movie.title });
     fireEvent.click(
       screen.getAllByRole("button", { name: "Manual search" })[0],
     );
@@ -631,7 +627,7 @@ describe("MediaDetails searches", () => {
 
   it("does not search indexers or offer live releases in demo mode", async () => {
     const props = renderDetails(true);
-    await screen.findByRole("dialog");
+    await screen.findByRole("heading", { level: 1, name: movie.title });
     fireEvent.click(screen.getAllByRole("button", { name: "Auto search" })[0]);
     expect(props.notify).toHaveBeenCalledWith(
       expect.stringContaining("Demo: automatic search"),
@@ -651,6 +647,124 @@ describe("MediaDetails searches", () => {
     expect(within(dialog).queryByRole("button", { name: "Grab" })).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(props.onChanged).not.toHaveBeenCalled();
+  });
+});
+
+describe("Episode actions", () => {
+  it("merges episode rows while searching with the chosen instance's local ID", async () => {
+    const targets = [
+      { ...hdTarget, instanceId: "sonarr-hd", instanceName: "Sonarr HD" },
+      { ...uhdTarget, instanceId: "sonarr-4k", instanceName: "Sonarr 4K" },
+    ];
+    const show: MediaItem = {
+      ...movie,
+      id: "series-1",
+      title: "Example show",
+      kind: "series",
+      targets,
+    };
+    const notify = vi.fn();
+    const onChanged = vi.fn();
+    fetchMock.mockImplementation(async (path, init) => {
+      const url = new URL(String(path), "http://localhost");
+      if (url.pathname === "/api/episodes") {
+        const target = targets.find(
+          (item) => item.instanceId === url.searchParams.get("instanceId"),
+        );
+        if (!target) throw new Error("Unknown instance");
+        const hd = target.instanceId === "sonarr-hd";
+        const episode: Episode = {
+          id: hd ? 101 : 901,
+          seriesId: target.remoteId,
+          seasonNumber: 1,
+          episodeNumber: 1,
+          title: "Pilot",
+          overview: "Episode overview",
+          monitored: true,
+          hasFile: hd,
+          quality: hd ? "WEBDL-1080p" : "Not downloaded",
+          sizeOnDisk: hd ? 1024 : 0,
+          status: hd ? "available" : "missing",
+        };
+        return Response.json({
+          instanceId: target.instanceId,
+          instanceName: target.instanceName,
+          remoteId: target.remoteId,
+          seasons: [
+            { seasonNumber: 0, monitored: false },
+            { seasonNumber: 1, monitored: true },
+          ],
+          episodes: [episode],
+          demo: false,
+          errors: [],
+        });
+      }
+      if (url.pathname === "/api/search" && init?.method === "POST")
+        return Response.json({
+          success: true,
+          message: "Episode search queued.",
+        });
+      if (url.pathname === "/api/releases") return Response.json({ items: [] });
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    renderUI(
+      <MediaDetails
+        media={show}
+        demo={false}
+        onAddTarget={vi.fn()}
+        notify={notify}
+        onChanged={onChanged}
+      />,
+    );
+    const row = await screen.findByRole("row", {
+      name: /S01E01.*Pilot.*Available.*Missing/,
+    });
+    expect(
+      within(row).getAllByRole("button", { name: /^Actions for/ }),
+    ).toHaveLength(2);
+    fireEvent.click(within(row).getByRole("button", { name: /on Sonarr 4K$/ }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: "Auto search S01E01 on Sonarr 4K",
+      }),
+    );
+    await waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
+    const write = writes()[0];
+    expect(JSON.parse(String(write[1]?.body))).toEqual({
+      instanceId: "sonarr-4k",
+      remoteId: 22,
+      kind: "series",
+      episodeId: 901,
+    });
+    await waitFor(() =>
+      expect(
+        within(row)
+          .getByRole("button", { name: /on Sonarr 4K$/ })
+          .hasAttribute("disabled"),
+      ).toBe(false),
+    );
+    fireEvent.click(within(row).getByRole("button", { name: /on Sonarr 4K$/ }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: "Manual search S01E01 on Sonarr 4K",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Manual search" });
+    expect(
+      within(dialog)
+        .getByRole("combobox", { name: "Search instance" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([path]) =>
+            path ===
+            "/api/releases?instanceId=sonarr-4k&remoteId=22&kind=series&episodeId=901",
+        ),
+      ).toBe(true),
+    );
+    expect(writes()).toHaveLength(1);
   });
 });
 

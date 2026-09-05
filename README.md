@@ -8,6 +8,8 @@ Arrsenal is a self-hosted Next.js client for Sonarr and Radarr's v3 APIs. It com
 
 - Poster and list views, title search, sorting, and filters for instances, quality, and availability.
 - Unified titles with independent quality targets across HD and 4K instances.
+- Dedicated movie and show pages with bookmarkable URLs, metadata, and quality targets.
+- Expandable show seasons and episode availability per Sonarr instance, with automatic and manual episode searches.
 - Catalog lookup and multi-instance adding with a quality profile and root folder per target.
 - Automatic search and manual release search, including rejection reasons and confirmed release grabs.
 - Combined download queues with progress, removal/blocklisting, pending-release grabs, and import retries.
@@ -64,6 +66,6 @@ Vitest covers configuration persistence, request validation, origin checks, secr
 
 Arrsenal is intended for a single user on a trusted local network. It has no built-in login. Do not publish it to the internet without an authenticated reverse proxy or VPN. Same-origin mutation protection is not authentication. Reverse proxies must preserve the request host and scheme.
 
-Sonarr/Radarr remain the source of truth. Partial instance failures are shown without hiding healthy instances. Multi-target additions report partial success so only failed targets need retrying. An accepted search or grab does not guarantee a completed download. Manual episode-level selection, media/file deletion, and download-client pause/resume controls are not implemented.
+Sonarr/Radarr remain the source of truth. Partial instance failures are shown without hiding healthy instances. Multi-target additions report partial success so only failed targets need retrying. Episode searches use the selected instance's own episode ID. An accepted search or grab does not guarantee a completed download. Media/file deletion and download-client pause/resume controls are not implemented.
 
 Sample poster artwork is served by TMDB. Arrsenal is not endorsed by TMDB, Sonarr, or Radarr.

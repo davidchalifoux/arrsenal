@@ -3,8 +3,8 @@
 @layer base {
   :root {
     color-scheme: dark;
-    background: #111312;
-    color: #f0f2ef;
+    background: #111111;
+    color: #f0f0f0;
     font-family: var(--font-geist-sans), sans-serif;
     font-size: 14px;
     -webkit-font-smoothing: antialiased;
@@ -45,13 +45,13 @@
   }
 
   :focus-visible {
-    outline: 2px solid #c5f277;
+    outline: 2px solid #e5e5e5;
     outline-offset: 4px;
   }
 
   ::selection {
-    color: #111312;
-    background: #c5f277;
+    color: #111111;
+    background: #e5e5e5;
   }
 
   ::-webkit-scrollbar {
@@ -61,7 +61,7 @@
 
   ::-webkit-scrollbar-thumb {
     border-radius: 10px;
-    background: #363d36;
+    background: #3c3c3c;
   }
 
   input[type="search"]::-webkit-search-cancel-button {

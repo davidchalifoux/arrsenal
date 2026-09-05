@@ -10,8 +10,9 @@ import {
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
-import { qualityLabel } from "@/lib/client";
+import { mediaHref, qualityLabel } from "@/lib/client";
 import type { MediaItem, MediaTarget } from "@/lib/types";
 
 export function Poster({
@@ -29,7 +30,7 @@ export function Poster({
       className={css({
         position: "absolute",
         inset: 0,
-        bg: "#232923",
+        bg: "elevated",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -87,9 +88,9 @@ export function QualityBadge({ target }: { target: MediaTarget }) {
         px: "6px",
         height: "22px",
         borderRadius: "4px",
-        bg: "#101610cf",
+        bg: "#141414cf",
         backdropFilter: "blur(8px)",
-        border: "1px solid #c6d4b82b",
+        border: "1px solid #c7c7c72b",
         color: available ? "#d1e8c4" : downloading ? "#b4cff1" : "#e4c894",
         fontSize: "10px",
         fontWeight: "550",
@@ -112,29 +113,27 @@ export function QualityBadge({ target }: { target: MediaTarget }) {
 export function MediaCard({
   item,
   onClick,
+  href,
   index = 10,
 }: {
   item: MediaItem;
-  onClick: () => void;
+  onClick?: () => void;
+  href?: string;
   index?: number;
 }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={`View ${item.title}`}
-      className={cx(
-        "group",
-        css({
-          display: "block",
-          minWidth: 0,
-          textAlign: "left",
-          borderRadius: "9px",
-          width: "100%",
-          animation: "enter .35s ease-out both",
-        }),
-      )}
-    >
+  const className = cx(
+    "group",
+    css({
+      display: "block",
+      minWidth: 0,
+      textAlign: "left",
+      borderRadius: "9px",
+      width: "100%",
+      animation: "enter .35s ease-out both",
+    }),
+  );
+  const content = (
+    <>
       <div
         className={css({
           position: "relative",
@@ -145,7 +144,7 @@ export function MediaCard({
           boxShadow: "0 2px 8px #0003",
           outline: "1px solid #ffffff0a",
           _groupHover: {
-            outlineColor: "#c5f27780",
+            outlineColor: "#e5e5e580",
             boxShadow: "0 8px 24px #0006",
           },
           transition: "outline-color 200ms, box-shadow 200ms",
@@ -157,7 +156,7 @@ export function MediaCard({
             position: "absolute",
             inset: 0,
             background:
-              "linear-gradient(180deg, #0002 0%, transparent 40%, transparent 62%, #071107b3 100%)",
+              "linear-gradient(180deg, #0002 0%, transparent 40%, transparent 62%, #0d0d0db3 100%)",
           })}
         />
         <span
@@ -171,8 +170,8 @@ export function MediaCard({
             width: "25px",
             height: "25px",
             borderRadius: "5px",
-            background: "#101410a3",
-            color: "#f0f2efe0",
+            background: "#141414a3",
+            color: "#f0f0f0e0",
             backdropFilter: "blur(8px)",
           })}
         >
@@ -201,7 +200,7 @@ export function MediaCard({
               className={css({
                 fontSize: "10px",
                 px: "5px",
-                bg: "#101610cf",
+                bg: "#141414cf",
                 borderRadius: "4px",
                 display: "flex",
                 alignItems: "center",
@@ -229,7 +228,7 @@ export function MediaCard({
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
-            color: "#e7eae4",
+            color: "#e5e5e5",
             _groupHover: { color: "accent" },
             transition: "color 150ms",
           })}
@@ -250,8 +249,8 @@ export function MediaCard({
       >
         <span>
           {item.year || "TBA"}
-          <span className={css({ mx: "6px", color: "#485045" })}>·</span>
-          {item.kind === "movie" ? "Movie" : "TV series"}
+          <span className={css({ mx: "6px", color: "#555555" })}>·</span>
+          {item.kind === "movie" ? "Movie" : "Show"}
         </span>
         {item.targets.length > 0 && (
           <span
@@ -267,17 +266,25 @@ export function MediaCard({
           </span>
         )}
       </div>
+    </>
+  );
+  return href ? (
+    <Link href={href} aria-label={`View ${item.title}`} className={className}>
+      {content}
+    </Link>
+  ) : (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`View ${item.title}`}
+      className={className}
+    >
+      {content}
     </button>
   );
 }
 
-export function MediaList({
-  items,
-  onSelect,
-}: {
-  items: MediaItem[];
-  onSelect: (item: MediaItem) => void;
-}) {
+export function MediaList({ items }: { items: MediaItem[] }) {
   return (
     <div
       className={css({
@@ -306,10 +313,9 @@ export function MediaList({
         <span>Status</span>
       </div>
       {items.map((item) => (
-        <button
-          type="button"
+        <Link
+          href={mediaHref(item)}
           key={item.id}
-          onClick={() => onSelect(item)}
           className={css({
             width: "100%",
             display: "grid",
@@ -365,7 +371,7 @@ export function MediaList({
                   mt: "3px",
                 })}
               >
-                {item.kind === "movie" ? "Movie" : "TV series"}
+                {item.kind === "movie" ? "Movie" : "Show"}
               </span>
             </span>
           </span>
@@ -400,7 +406,7 @@ export function MediaList({
           >
             {item.status === "partial" ? "Incomplete" : item.status}
           </span>
-        </button>
+        </Link>
       ))}
     </div>
   );

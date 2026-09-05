@@ -32,7 +32,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useDeferredValue, useEffect, useEffectEvent, useState } from "react";
-import { api, qualityLabel } from "@/lib/client";
+import { api, mediaHref, qualityLabel } from "@/lib/client";
 import { demoInstances } from "@/lib/demo";
 import type {
   InstanceSummary,
@@ -67,7 +67,7 @@ export type View =
 const viewNames: Record<View, string> = {
   library: "All media",
   movies: "Movies",
-  shows: "TV shows",
+  shows: "Shows",
   missing: "Missing",
   discover: "Discover",
   queue: "Download queue",
@@ -96,14 +96,14 @@ const navStyle = cva({
     fontSize: "12px",
     transition: "background 150ms, color 150ms",
     border: "1px solid transparent",
-    _hover: { bg: "#242922", color: "ink" },
+    _hover: { bg: "elevated", color: "ink" },
   },
   variants: {
     active: {
       true: {
-        bg: "#273020",
+        bg: "#2a2a2a",
         color: "accent",
-        borderColor: "#c5f2770b",
+        borderColor: "#e5e5e50b",
         fontWeight: "500",
       },
       false: { color: "muted" },
@@ -111,7 +111,7 @@ const navStyle = cva({
   },
 });
 
-export function Arrsenal({ view }: { view: View }) {
+export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
   const queryClient = useQueryClient();
   const router = useRouter();
   const library = useQuery({
@@ -130,7 +130,6 @@ export function Arrsenal({ view }: { view: View }) {
     queryFn: ({ signal }) => api<QueueResponse>("/api/queue", { signal }),
     refetchInterval: 15_000,
   });
-  const [selected, setSelected] = useState<MediaItem | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addSeed, setAddSeed] = useState<MediaItem | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -149,6 +148,13 @@ export function Arrsenal({ view }: { view: View }) {
   } | null>(null);
   const demo = library.data?.demo ?? false;
   const items = library.data?.items ?? [];
+  const detail = mediaId
+    ? items.find(
+        (item) =>
+          item.id === mediaId &&
+          item.kind === (view === "movies" ? "movie" : "series"),
+      )
+    : undefined;
   const instances = instanceQuery.data?.instances ?? [];
   const displayInstances = demo ? demoInstances : instances;
   const isLibrary = ["library", "movies", "shows", "missing"].includes(view);
@@ -205,6 +211,7 @@ export function Arrsenal({ view }: { view: View }) {
     void queryClient.invalidateQueries({ queryKey: ["library"] });
     void queryClient.invalidateQueries({ queryKey: ["queue"] });
     void queryClient.invalidateQueries({ queryKey: ["instances"] });
+    void queryClient.invalidateQueries({ queryKey: ["episodes"] });
   }
   function add(item: MediaItem | null = null) {
     setAddSeed(item);
@@ -254,7 +261,7 @@ export function Arrsenal({ view }: { view: View }) {
               fontSize: "24px",
               fontWeight: "650",
               letterSpacing: "-1.3px",
-              color: "#e9eee2",
+              color: "ink",
             })}
           >
             arrsenal<span className={css({ color: "accent" })}>.</span>
@@ -309,9 +316,9 @@ export function Arrsenal({ view }: { view: View }) {
                 {item.id === "queue" && (queue.data?.items.length ?? 0) > 0 && (
                   <span
                     className={css({
-                      bg: "#28311f",
+                      bg: "#2a2a2a",
                       color: "accent",
-                      border: "1px solid #38452b",
+                      border: "1px solid #414141",
                       borderRadius: "4px",
                       minWidth: "19px",
                       height: "18px",
@@ -459,7 +466,7 @@ export function Arrsenal({ view }: { view: View }) {
                   height: "5px",
                   borderRadius: "50%",
                   bg: demo
-                    ? "#657455"
+                    ? "#757575"
                     : instance.connected
                       ? "positive"
                       : "negative",
@@ -492,9 +499,9 @@ export function Arrsenal({ view }: { view: View }) {
               mx: "5px",
               mb: "19px",
               p: "14px",
-              border: "1px solid #333d2b",
+              border: "1px solid #353535",
               borderRadius: "8px",
-              background: "linear-gradient(125deg, #252d1e, #1b2118)",
+              background: "linear-gradient(125deg, #242424, #191919)",
             })}
           >
             <div
@@ -505,7 +512,7 @@ export function Arrsenal({ view }: { view: View }) {
                 mb: "8px",
                 fontSize: "11px",
                 fontWeight: "550",
-                color: "#d8e6c8",
+                color: "#d8d8d8",
               })}
             >
               <StackIcon size={15} className={css({ color: "accent" })} />
@@ -514,7 +521,7 @@ export function Arrsenal({ view }: { view: View }) {
             <p
               className={css({
                 fontSize: "10px",
-                color: "#8f9c84",
+                color: "muted",
                 lineHeight: "1.7",
                 mb: "12px",
               })}
@@ -531,7 +538,7 @@ export function Arrsenal({ view }: { view: View }) {
                 alignItems: "center",
                 justifyContent: "space-between",
                 width: "100%",
-                color: "#c5dfa7",
+                color: "#c7c7c7",
                 fontWeight: "500",
                 fontSize: "10px",
                 _hover: { color: "accent" },
@@ -569,7 +576,7 @@ export function Arrsenal({ view }: { view: View }) {
               height: "5px",
               borderRadius: "50%",
               bg: demo
-                ? "#829665"
+                ? "#929292"
                 : instances.length &&
                     instances.every((instance) => instance.connected)
                   ? "positive"
@@ -585,7 +592,7 @@ export function Arrsenal({ view }: { view: View }) {
           <span
             className={css({
               ml: "auto",
-              color: "#4d564b",
+              color: "#555555",
               fontFamily: "mono",
               fontSize: "8px",
             })}
@@ -644,7 +651,7 @@ export function Arrsenal({ view }: { view: View }) {
             justifyContent: "space-between",
             gap: "14px",
             px: { base: "19px", md: "32px" },
-            bg: "#111312f5",
+            bg: "#111111f5",
           })}
         >
           <div
@@ -695,14 +702,14 @@ export function Arrsenal({ view }: { view: View }) {
             <CaretRightIcon
               size={10}
               className={css({
-                color: "#4d574c",
+                color: "#555555",
                 display: { base: "none", sm: "block" },
               })}
             />
             <span
               className={css({
                 fontSize: "11px",
-                color: "#d8ded2",
+                color: "#d8d8d8",
                 whiteSpace: "nowrap",
               })}
             >
@@ -729,10 +736,10 @@ export function Arrsenal({ view }: { view: View }) {
                 px: { base: "5px", md: "11px" },
                 color: "subtle",
                 fontSize: "11px",
-                bg: { base: "transparent", md: "#181b17" },
-                border: { base: "none", md: "1px solid #272d25" },
+                bg: { base: "transparent", md: "#191919" },
+                border: { base: "none", md: "1px solid token(colors.line)" },
                 borderRadius: "6px",
-                _hover: { color: "muted", borderColor: "#404a37" },
+                _hover: { color: "muted", borderColor: "#414141" },
               })}
             >
               <MagnifyingGlassIcon size={16} />
@@ -748,8 +755,8 @@ export function Arrsenal({ view }: { view: View }) {
                   gap: "2px",
                   ml: "auto",
                   fontSize: "9px",
-                  color: "#818c76",
-                  border: "1px solid #32392e",
+                  color: "#858585",
+                  border: "1px solid #353535",
                   borderRadius: "3px",
                   px: "3px",
                   height: "17px",
@@ -774,7 +781,73 @@ export function Arrsenal({ view }: { view: View }) {
             mx: "auto",
           })}
         >
-          {isLibrary ? (
+          {mediaId ? (
+            library.isPending ? (
+              <div
+                className={css({
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  py: "40px",
+                  color: "muted",
+                })}
+              >
+                <Spinner />
+                Loading title...
+              </div>
+            ) : detail ? (
+              <>
+                {library.data?.errors.map((error) => (
+                  <div
+                    key={`${error.instanceId}:${error.message}`}
+                    className={css({ mb: "14px" })}
+                  >
+                    <Notice error>
+                      {error.instanceName}: {error.message}
+                    </Notice>
+                  </div>
+                ))}
+                <MediaDetails
+                  key={detail.id}
+                  media={detail}
+                  onAddTarget={add}
+                  demo={demo}
+                  notify={notify}
+                  onChanged={refresh}
+                />
+              </>
+            ) : (
+              <div className={css({ py: "32px" })}>
+                <h1
+                  className={css({
+                    fontSize: "26px",
+                    fontWeight: "550",
+                    mb: "16px",
+                  })}
+                >
+                  Title unavailable
+                </h1>
+                <Notice error>
+                  {library.isError
+                    ? library.error.message
+                    : library.data?.errors.length
+                      ? "Some instances could not be reached. This title may still be in your library."
+                      : "This title is not in the current library, or its media type does not match this page."}
+                </Notice>
+                <div
+                  className={css({ display: "flex", gap: "12px", mt: "20px" })}
+                >
+                  <Button onClick={refresh}>Try again</Button>
+                  <Link
+                    href={`/${view}`}
+                    className={buttonStyle({ variant: "ghost" })}
+                  >
+                    Back to {view === "movies" ? "movies" : "shows"}
+                  </Link>
+                </div>
+              </div>
+            )
+          ) : isLibrary ? (
             <>
               <div
                 className={css({
@@ -807,7 +880,7 @@ export function Arrsenal({ view }: { view: View }) {
                           ? "Fill in the gaps"
                           : view === "movies"
                             ? "Movie library"
-                            : "TV show library"}
+                            : "Shows"}
                     </h1>
                     {demo && (
                       <span
@@ -816,9 +889,9 @@ export function Arrsenal({ view }: { view: View }) {
                           fontWeight: "500",
                           textTransform: "uppercase",
                           letterSpacing: "1px",
-                          color: "#9ba68b",
-                          bg: "#23291e",
-                          border: "1px solid #343e2b",
+                          color: "muted",
+                          bg: "#242424",
+                          border: "1px solid #353535",
                           borderRadius: "4px",
                           px: "6px",
                           py: "3px",
@@ -900,9 +973,9 @@ export function Arrsenal({ view }: { view: View }) {
                   {
                     label: "Total titles",
                     count: items.length,
-                    note: `${counts.movies} movies · ${counts.shows} TV shows`,
+                    note: `${counts.movies} movies · ${counts.shows} shows`,
                     icon: StackIcon,
-                    color: "#bdc5b5",
+                    color: "#c7c7c7",
                     filter: "all",
                   },
                   {
@@ -940,12 +1013,12 @@ export function Arrsenal({ view }: { view: View }) {
                     }}
                     className={css({
                       textAlign: "left",
-                      bg: "#181b17",
-                      border: "1px solid #2b3027",
+                      bg: "#191919",
+                      border: "1px solid token(colors.line)",
                       borderRadius: "8px",
                       px: { base: "14px", md: "17px" },
                       py: "15px",
-                      _hover: { bg: "#1e241b", borderColor: "#46533b" },
+                      _hover: { bg: "#202020", borderColor: "#414141" },
                       transition: "background 150ms, border-color 150ms",
                     })}
                   >
@@ -1056,8 +1129,8 @@ export function Arrsenal({ view }: { view: View }) {
                           borderRadius: "4px",
                           px: "5px",
                           py: "1px",
-                          color: view === tab ? "#c5d7b1" : "#7e8a73",
-                          bg: view === tab ? "#2b3523" : "#21261e",
+                          color: view === tab ? "#c7c7c7" : "#858585",
+                          bg: view === tab ? "#303030" : "#242424",
                         })}
                       >
                         {counts[tab]}
@@ -1093,8 +1166,8 @@ export function Arrsenal({ view }: { view: View }) {
                           className={css({
                             width: "260px",
                             p: "18px",
-                            bg: "#1d231b",
-                            border: "1px solid #394431",
+                            bg: "#202020",
+                            border: "1px solid #414141",
                             borderRadius: "10px",
                             boxShadow: "0 12px 40px #0006",
                           })}
@@ -1228,8 +1301,8 @@ export function Arrsenal({ view }: { view: View }) {
                     className={css({
                       display: "flex",
                       alignItems: "center",
-                      bg: "#181d16",
-                      border: "1px solid #2b3326",
+                      bg: "#191919",
+                      border: "1px solid token(colors.line)",
                       borderRadius: "6px",
                       padding: "3px",
                       ml: "4px",
@@ -1246,8 +1319,8 @@ export function Arrsenal({ view }: { view: View }) {
                         placeItems: "center",
                         width: "27px",
                         height: "24px",
-                        bg: layout === "grid" ? "#343e2c" : "transparent",
-                        color: layout === "grid" ? "#d3dfc6" : "subtle",
+                        bg: layout === "grid" ? "#353535" : "transparent",
+                        color: layout === "grid" ? "#d8d8d8" : "subtle",
                         borderRadius: "3px",
                       })}
                     >
@@ -1266,8 +1339,8 @@ export function Arrsenal({ view }: { view: View }) {
                         placeItems: "center",
                         width: "27px",
                         height: "24px",
-                        bg: layout === "list" ? "#343e2c" : "transparent",
-                        color: layout === "list" ? "#d3dfc6" : "subtle",
+                        bg: layout === "list" ? "#353535" : "transparent",
+                        color: layout === "list" ? "#d8d8d8" : "subtle",
                         borderRadius: "3px",
                       })}
                     >
@@ -1321,7 +1394,7 @@ export function Arrsenal({ view }: { view: View }) {
                       <div
                         className={css({
                           aspectRatio: "2 / 3",
-                          bg: "#1b2118",
+                          bg: "#191919",
                           borderRadius: "8px",
                         })}
                       />
@@ -1330,7 +1403,7 @@ export function Arrsenal({ view }: { view: View }) {
                           height: "12px",
                           width: "70%",
                           mt: "13px",
-                          bg: "#22291d",
+                          bg: "#242424",
                           borderRadius: "3px",
                         })}
                       />
@@ -1345,12 +1418,12 @@ export function Arrsenal({ view }: { view: View }) {
                         key={item.id}
                         item={item}
                         index={index}
-                        onClick={() => setSelected(item)}
+                        href={mediaHref(item)}
                       />
                     ))}
                   </div>
                 ) : (
-                  <MediaList items={filtered} onSelect={setSelected} />
+                  <MediaList items={filtered} />
                 )
               ) : (
                 <div
@@ -1419,11 +1492,11 @@ export function Arrsenal({ view }: { view: View }) {
               >
                 <span>
                   {filtered.length} titles
-                  <span className={css({ mx: "7px", color: "#444e3e" })}>
+                  <span className={css({ mx: "7px", color: "#4d4d4d" })}>
                     ·
                   </span>
                   {displayInstances.length} {demo ? "sample " : ""}instances
-                  <span className={css({ mx: "7px", color: "#444e3e" })}>
+                  <span className={css({ mx: "7px", color: "#4d4d4d" })}>
                     ·
                   </span>
                   One library
@@ -1523,22 +1596,6 @@ export function Arrsenal({ view }: { view: View }) {
           )}
         </main>
       </div>
-      <MediaDetails
-        key={selected?.id ?? "closed"}
-        media={
-          selected
-            ? (items.find((item) => item.id === selected.id) ?? selected)
-            : null
-        }
-        onClose={() => setSelected(null)}
-        onAddTarget={(item) => {
-          setSelected(null);
-          add(item);
-        }}
-        demo={demo}
-        notify={notify}
-        onChanged={refresh}
-      />
       <AddMedia
         open={addOpen}
         onClose={() => setAddOpen(false)}
@@ -1596,12 +1653,11 @@ export function Arrsenal({ view }: { view: View }) {
             )
             .slice(0, 20)
             .map((item) => (
-              <button
-                type="button"
+              <Link
+                href={mediaHref(item)}
                 key={item.id}
                 onClick={() => {
                   setSearchOpen(false);
-                  setSelected(item);
                 }}
                 className={css({
                   display: "flex",
@@ -1643,8 +1699,7 @@ export function Arrsenal({ view }: { view: View }) {
                       mt: "4px",
                     })}
                   >
-                    {item.year} ·{" "}
-                    {item.kind === "movie" ? "Movie" : "TV series"} ·{" "}
+                    {item.year} · {item.kind === "movie" ? "Movie" : "Show"} ·{" "}
                     {item.targets.length} targets
                   </span>
                 </span>
@@ -1652,7 +1707,7 @@ export function Arrsenal({ view }: { view: View }) {
                   size={15}
                   className={css({ color: "subtle" })}
                 />
-              </button>
+              </Link>
             ))}
         </div>
         {!items.some((item) =>
@@ -1762,8 +1817,8 @@ function BrandMark() {
       fill="none"
       aria-hidden="true"
     >
-      <path d="m5 32 12-26h7l12 26h-9l-7-17-7 17H5Z" fill="#c5f277" />
-      <path d="M17 27h8v5h-8z" fill="#c5f277" />
+      <path d="m5 32 12-26h7l12 26h-9l-7-17-7 17H5Z" fill="#e5e5e5" />
+      <path d="M17 27h8v5h-8z" fill="#e5e5e5" />
     </svg>
   );
 }
@@ -1862,7 +1917,7 @@ function Discover({
           label="Discover media type"
           options={[
             { value: "movie", label: "Movies" },
-            { value: "series", label: "TV shows" },
+            { value: "series", label: "Shows" },
           ]}
         />
       </div>

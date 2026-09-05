@@ -32,15 +32,15 @@ export const buttonStyle = cva({
     variant: {
       primary: {
         bg: "accent",
-        color: "#192211",
+        color: "#191919",
         border: "1px solid transparent",
-        _hover: { bg: "#d4fa9a" },
+        _hover: { bg: "#ffffff" },
       },
       secondary: {
         bg: "surface",
         border: "1px solid token(colors.line)",
         color: "ink",
-        _hover: { bg: "elevated", borderColor: "#444d40" },
+        _hover: { bg: "elevated", borderColor: "#414141" },
       },
       ghost: {
         color: "muted",
@@ -95,13 +95,13 @@ export const inputStyle = css({
   color: "ink",
   outline: "none",
   _placeholder: { color: "subtle" },
-  _focus: { borderColor: "accent", boxShadow: "0 0 0 2px #c5f27712" },
+  _focus: { borderColor: "accent", boxShadow: "0 0 0 2px #e5e5e512" },
 });
 export const labelStyle = css({
   display: "flex",
   flexDirection: "column",
   gap: "8px",
-  color: "#d3d8d0",
+  color: "#d8d8d8",
   fontSize: "12px",
   fontWeight: "500",
 });
@@ -173,8 +173,8 @@ export function SelectField({
         <Select.Positioner sideOffset={6} className={css({ zIndex: 100 })}>
           <Select.Popup
             className={css({
-              bg: "#20251f",
-              border: "1px solid #3a4236",
+              bg: "#202020",
+              border: "1px solid #414141",
               borderRadius: "8px",
               padding: "5px",
               boxShadow: "0 12px 40px #0006",
@@ -199,7 +199,7 @@ export function SelectField({
                     justifyContent: "space-between",
                     gap: "24px",
                     outline: "none",
-                    _highlighted: { bg: "#35402b", color: "accent" },
+                    _highlighted: { bg: "#353535", color: "accent" },
                   })}
                 >
                   <Select.ItemText>{option.label}</Select.ItemText>
@@ -248,13 +248,13 @@ export function CheckField({
         className={css({
           width: "17px",
           height: "17px",
-          border: "1px solid #495044",
+          border: "1px solid #555555",
           borderRadius: "4px",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           flexShrink: 0,
-          _checked: { bg: "accent", color: "#17200f", borderColor: "accent" },
+          _checked: { bg: "accent", color: "#191919", borderColor: "accent" },
         })}
       >
         <Checkbox.Indicator>
@@ -288,7 +288,7 @@ export function Modal({
           className={css({
             position: "fixed",
             inset: 0,
-            bg: "#030603b8",
+            bg: "#050505b8",
             backdropFilter: "blur(7px)",
             zIndex: 60,
             transition: "opacity 180ms",
@@ -314,8 +314,8 @@ export function Modal({
               maxWidth: wide ? "800px" : "540px",
               maxHeight: "calc(100dvh - 40px)",
               overflowY: "auto",
-              bg: "#181c18",
-              border: "1px solid #363e32",
+              bg: "surface",
+              border: "1px solid #414141",
               borderRadius: "14px",
               boxShadow: "0 24px 100px #0008",
               p: { base: "20px", md: "28px" },
@@ -392,9 +392,9 @@ export function Notice({
         alignItems: "flex-start",
         padding: "12px 14px",
         border: "1px solid",
-        borderColor: error ? "#633a35" : "#3c4730",
-        bg: error ? "#30211f" : "#222a1c",
-        color: error ? "negative" : "#bfcea9",
+        borderColor: error ? "#633a35" : "#414141",
+        bg: error ? "#30211f" : "#242424",
+        color: error ? "negative" : "#bfbfbf",
         borderRadius: "7px",
         fontSize: "12px",
         lineHeight: "1.6",

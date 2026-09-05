@@ -33,6 +33,24 @@ function integerSchema(name: string, min = 1) {
     .max(2147483647, { error });
 }
 
+function queryIntegerSchema(name: string) {
+  const error = `${name} must be a positive integer.`;
+  return z
+    .string({ error })
+    .regex(/^\d+$/, { error })
+    .transform(Number)
+    .pipe(integerSchema(name));
+}
+
+function seriesEpisodeOnly(value: { kind: string; episodeId?: number }) {
+  return value.episodeId === undefined || value.kind === "series";
+}
+
+const episodeKindError = {
+  error: "episodeId is only valid for series.",
+  path: ["episodeId"],
+};
+
 const instanceIdSchema = textSchema("instanceId", 100);
 const mediaKindSchema = z.enum(["movie", "series"], {
   error: "kind must be movie or series.",
@@ -154,14 +172,17 @@ export const addMediaSchema = z.object(
   objectError,
 );
 
-export const searchSchema = z.object(
-  {
-    kind: mediaKindSchema,
-    remoteId: integerSchema("remoteId"),
-    instanceId: instanceIdSchema,
-  },
-  objectError,
-);
+export const searchSchema = z
+  .object(
+    {
+      kind: mediaKindSchema,
+      remoteId: integerSchema("remoteId"),
+      instanceId: instanceIdSchema,
+      episodeId: integerSchema("episodeId").optional(),
+    },
+    objectError,
+  )
+  .refine(seriesEpisodeOnly, episodeKindError);
 
 export const grabReleaseSchema = z.object(
   {
@@ -195,16 +216,19 @@ export const lookupQuerySchema = z.object({
   kind: mediaKindSchema.optional(),
 });
 
-export const releasesQuerySchema = searchSchema.extend({
-  // Do not coerce arbitrary strings, booleans, hex, or exponent notation into IDs.
-  remoteId: z
-    .string({ error: "remoteId must be a positive integer." })
-    .regex(/^\d+$/, {
-      error: "remoteId must be a positive integer.",
-    })
-    .transform(Number)
-    .pipe(integerSchema("remoteId")),
+export const episodesQuerySchema = z.object({
+  instanceId: instanceIdSchema,
+  remoteId: queryIntegerSchema("remoteId"),
 });
+
+export const releasesQuerySchema = z
+  .object({
+    ...episodesQuerySchema.shape,
+    kind: mediaKindSchema,
+    // Do not coerce arbitrary strings, booleans, hex, or exponent notation into IDs.
+    episodeId: queryIntegerSchema("episodeId").optional(),
+  })
+  .refine(seriesEpisodeOnly, episodeKindError);
 
 export const imageQuerySchema = z.object({
   instanceId: instanceIdSchema,

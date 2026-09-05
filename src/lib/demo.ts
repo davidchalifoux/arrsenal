@@ -1,4 +1,6 @@
 import type {
+  Episode,
+  EpisodesResponse,
   InstanceSummary,
   MediaItem,
   MediaStatus,
@@ -484,3 +486,116 @@ export const demoQueue: QueueItem[] = [
   downloadId: `demo-download-${index + 1}`,
   warnings: [],
 }));
+
+export function demoEpisodes(
+  instanceId: string,
+  remoteId: number,
+): EpisodesResponse | undefined {
+  const instance = demoInstances.find(
+    (entry) => entry.id === instanceId && entry.kind === "sonarr",
+  );
+  if (!instance) return undefined;
+  const item = demoLibrary.find(
+    (entry) =>
+      entry.kind === "series" &&
+      entry.targets.some(
+        (target) =>
+          target.instanceId === instanceId && target.remoteId === remoteId,
+      ),
+  );
+  const target = item?.targets.find(
+    (entry) => entry.instanceId === instanceId && entry.remoteId === remoteId,
+  );
+  if (!item || !target) return undefined;
+  const count = target.episodeCount ?? 0;
+  const fileCount = target.episodeFileCount ?? 0;
+  const layouts: Record<number, number[]> = {
+    392573: [10],
+    371980: [9, 10],
+    403294: [8, 10, 10],
+    416744: [8],
+    392256: [9, 7],
+    406905: [10, 10],
+    338186: [10, 10, 9, 10],
+    393189: [12, 12],
+    390430: [6, 7, 8],
+  };
+  const layout = layouts[item.tvdbId ?? 0] ?? [count];
+  const lengths =
+    layout.reduce((sum, length) => sum + length, 0) === count
+      ? layout
+      : [count];
+  const shogunTitles = [
+    "Anjin",
+    "Servants of Two Masters",
+    "Tomorrow Is Tomorrow",
+    "The Eightfold Fence",
+    "Broken to the Fist",
+    "Ladies of the Willow World",
+    "A Stick of Time",
+    "The Abyss of Life",
+    "Crimson Sky",
+    "A Dream of a Dream",
+  ];
+  const download = demoQueue
+    .find(
+      (entry) =>
+        entry.instanceId === instanceId && entry.mediaTitle === item.title,
+    )
+    ?.title.match(/\.S(\d+)E(\d+)\./);
+  const baseSize =
+    fileCount > 0 ? Math.floor(target.sizeOnDisk / fileCount) : 0;
+  const remainder = fileCount > 0 ? target.sizeOnDisk % fileCount : 0;
+  let index = 0;
+  const episodes: Episode[] = lengths.flatMap((length, season) =>
+    Array.from({ length }, (_, number) => {
+      const position = index++;
+      const hasFile = position < fileCount;
+      const downloading =
+        target.status === "downloading" &&
+        Number(download?.[1]) === season + 1 &&
+        Number(download?.[2]) === number + 1;
+      return {
+        id: remoteId * 1000 + position + 1,
+        seriesId: remoteId,
+        seasonNumber: season + 1,
+        episodeNumber: number + 1,
+        title:
+          item.tvdbId === 392573
+            ? (shogunTitles[position] ?? `Episode ${number + 1}`)
+            : `Episode ${number + 1}`,
+        overview: `Sample episode metadata for ${item.title}. Availability represents this demo target only.`,
+        airDateUtc: new Date(
+          Date.UTC(item.year, 0, 1 + position * 7),
+        ).toISOString(),
+        runtime: item.runtime,
+        monitored: target.monitored,
+        hasFile,
+        quality: hasFile ? target.quality : "Not downloaded",
+        sizeOnDisk: hasFile ? baseSize + (position < remainder ? 1 : 0) : 0,
+        status: hasFile
+          ? "available"
+          : downloading
+            ? "downloading"
+            : target.monitored
+              ? "missing"
+              : "unmonitored",
+      };
+    }),
+  );
+  return {
+    instanceId,
+    instanceName: instance.name,
+    remoteId,
+    seasons: [
+      { seasonNumber: 0, monitored: false },
+      ...lengths.map((_, season) => ({
+        seasonNumber: season + 1,
+        monitored: target.monitored,
+      })),
+    ],
+    episodes,
+    demo: true,
+    errors: [],
+  };
+}

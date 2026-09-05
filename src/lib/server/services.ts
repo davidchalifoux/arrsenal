@@ -25,6 +25,7 @@ import {
   readInstances,
   rejectDemo,
 } from "./config";
+import { verifyEpisode } from "./episodes";
 import { ApiError, errorMessage, parseInput } from "./http";
 import {
   mergeMedia,
@@ -430,17 +431,24 @@ export async function addMedia(input: unknown): Promise<Response> {
 }
 
 export async function automaticSearch(input: unknown): Promise<Response> {
-  const { kind, remoteId, instanceId } = parseInput(searchSchema, input);
+  const { kind, remoteId, instanceId, episodeId } = parseInput(
+    searchSchema,
+    input,
+  );
   const instance = await getInstance(instanceId);
   requireKind(instance, kind);
   return runAction(instance, async () => {
-    await arrRequest(instance, `${kind}/${remoteId}`);
+    if (episodeId !== undefined)
+      await verifyEpisode(instance, remoteId, episodeId);
+    else await arrRequest(instance, `${kind}/${remoteId}`);
     await arrRequest(instance, "command", {
       method: "POST",
       body:
-        kind === "movie"
-          ? { name: "MoviesSearch", movieIds: [remoteId] }
-          : { name: "SeriesSearch", seriesId: remoteId },
+        episodeId !== undefined
+          ? { name: "EpisodeSearch", episodeIds: [episodeId] }
+          : kind === "movie"
+            ? { name: "MoviesSearch", movieIds: [remoteId] }
+            : { name: "SeriesSearch", seriesId: remoteId },
     });
     return "Automatic search was queued on the instance. A matching download is not guaranteed.";
   });
@@ -450,12 +458,20 @@ export async function releases(
   instanceId: string,
   remoteId: number,
   kind: MediaKind,
+  episodeId?: number,
 ) {
   const instance = await getInstance(instanceId);
   requireKind(instance, kind);
+  if (episodeId !== undefined)
+    await verifyEpisode(instance, remoteId, episodeId);
   const result = await arrRequest(instance, "release", {
     timeoutMs: 30000,
-    query: kind === "movie" ? { movieId: remoteId } : { seriesId: remoteId },
+    query:
+      episodeId !== undefined
+        ? { episodeId }
+        : kind === "movie"
+          ? { movieId: remoteId }
+          : { seriesId: remoteId },
   });
   return { items: rows(result).map(normalizeRelease) };
 }

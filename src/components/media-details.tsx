@@ -2,6 +2,7 @@
 
 import {
   ArrowDownIcon,
+  ArrowLeftIcon,
   ArrowSquareOutIcon,
   CheckCircleIcon,
   ClockIcon,
@@ -14,7 +15,8 @@ import {
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import Link from "next/link";
+import { useRef, useState } from "react";
 import { api, sizeLabel } from "@/lib/client";
 import type {
   ActionResponse,
@@ -23,18 +25,17 @@ import type {
   Release,
 } from "@/lib/types";
 import { Poster, QualityBadge } from "./media-card";
+import { SeriesEpisodes } from "./series-episodes";
 import { Button, Modal, mutedStyle, Notice, SelectField, Spinner } from "./ui";
 
 export function MediaDetails({
   media,
-  onClose,
   onAddTarget,
   demo,
   notify,
   onChanged,
 }: {
-  media: MediaItem | null;
-  onClose: () => void;
+  media: MediaItem;
   onAddTarget: (item: MediaItem) => void;
   demo: boolean;
   notify: (message: string, error?: boolean) => void;
@@ -42,15 +43,21 @@ export function MediaDetails({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [releaseTarget, setReleaseTarget] = useState<MediaTarget | null>(null);
+  const [episodeScope, setEpisodeScope] = useState<{
+    id: number;
+    code: string;
+  } | null>(null);
+  const searchLock = useRef(false);
   const [error, setError] = useState("");
   async function search(target: MediaTarget) {
-    if (!media) return;
+    if (searchLock.current) return;
     if (demo) {
       notify(
         `Demo: automatic search for ${media.title} on ${target.instanceName}. Connect an instance to search for real releases.`,
       );
       return;
     }
+    searchLock.current = true;
     setBusy(target.instanceId);
     setError("");
     try {
@@ -68,353 +75,397 @@ export function MediaDetails({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Search failed.");
     } finally {
+      searchLock.current = false;
       setBusy(null);
     }
   }
   return (
     <>
-      <Modal
-        open={Boolean(media)}
-        onOpenChange={(open) => {
-          if (!open) {
-            onClose();
-            setError("");
-            setReleaseTarget(null);
-          }
-        }}
-        title={media?.title ?? "Media details"}
-        description={
-          media
-            ? `${media.year || "Release date unknown"} · ${media.kind === "movie" ? "Movie" : "TV series"} · ${media.genres.slice(0, 3).join(" / ")}`
-            : undefined
-        }
-        wide
-      >
-        {media && (
-          <>
+      <article className={css({ minWidth: 0, width: "100%" })}>
+        <div
+          className={css({
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "12px",
+            mb: "28px",
+          })}
+        >
+          <Link
+            href={media.kind === "movie" ? "/movies" : "/shows"}
+            className={css({
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              color: "muted",
+              fontSize: "12px",
+              _hover: { color: "ink" },
+            })}
+          >
+            <ArrowLeftIcon size={15} /> Back to{" "}
+            {media.kind === "movie" ? "Movies" : "Shows"}
+          </Link>
+          <Button onClick={() => onAddTarget(media)}>
+            <PlusIcon size={15} />
+            Add target
+          </Button>
+        </div>
+        <div
+          className={css({
+            display: "flex",
+            flexDirection: { base: "column", sm: "row" },
+            gap: { base: "18px", md: "26px" },
+            mb: "26px",
+          })}
+        >
+          <div
+            className={css({
+              width: { base: "130px", md: "190px" },
+              aspectRatio: "2 / 3",
+              flexShrink: 0,
+              position: "relative",
+              borderRadius: "7px",
+              overflow: "hidden",
+              alignSelf: "flex-start",
+            })}
+          >
+            <Poster
+              item={media}
+              sizes="(min-width: 768px) 190px, 130px"
+              priority
+            />
+          </div>
+          <div className={css({ minWidth: 0, pt: "3px" })}>
+            <h1
+              className={css({
+                fontSize: { base: "28px", md: "36px" },
+                fontWeight: "600",
+                letterSpacing: "-.9px",
+                lineHeight: "1.2",
+                mb: "10px",
+              })}
+            >
+              {media.title}
+            </h1>
+            <p className={cx(mutedStyle, css({ mb: "20px" }))}>
+              {[
+                media.year || "Release date unknown",
+                media.kind === "movie" ? "Movie" : "Show",
+                ...media.genres,
+              ].join(" · ")}
+            </p>
             <div
               className={css({
                 display: "flex",
-                gap: { base: "18px", md: "26px" },
-                mb: "26px",
+                flexWrap: "wrap",
+                gap: "14px",
+                alignItems: "center",
+                mb: "14px",
+                color: "muted",
+                fontSize: "12px",
               })}
             >
-              <div
-                className={css({
-                  width: { base: "105px", md: "145px" },
-                  aspectRatio: "2 / 3",
-                  flexShrink: 0,
-                  position: "relative",
-                  borderRadius: "7px",
-                  overflow: "hidden",
-                  alignSelf: "flex-start",
-                })}
-              >
-                <Poster item={media} sizes="145px" />
-              </div>
-              <div className={css({ minWidth: 0, pt: "3px" })}>
-                <div
+              {media.rating ? (
+                <span
                   className={css({
                     display: "flex",
-                    flexWrap: "wrap",
-                    gap: "14px",
                     alignItems: "center",
-                    mb: "14px",
-                    color: "muted",
-                    fontSize: "12px",
+                    gap: "5px",
+                    color: "ink",
                   })}
                 >
-                  {media.rating ? (
-                    <span
-                      className={css({
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "5px",
-                        color: "#e3ca87",
-                      })}
-                    >
-                      <StarIcon size={15} weight="fill" />
-                      {media.rating.toFixed(1)}
-                      <span
-                        className={css({ color: "subtle", fontSize: "10px" })}
-                      >
-                        / 10
-                      </span>
-                    </span>
-                  ) : null}
-                  {media.runtime ? (
-                    <span
-                      className={css({
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "5px",
-                      })}
-                    >
-                      <ClockIcon size={14} />
-                      {media.runtime} min
-                    </span>
-                  ) : null}
-                  <span
-                    className={css({
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "5px",
-                    })}
-                  >
-                    <HardDrivesIcon size={14} />
-                    {sizeLabel(
-                      media.targets.reduce(
-                        (sum, target) => sum + target.sizeOnDisk,
-                        0,
-                      ),
-                    )}
+                  <StarIcon size={15} weight="fill" />
+                  {media.rating.toFixed(1)}
+                  <span className={css({ color: "subtle", fontSize: "10px" })}>
+                    / 10
                   </span>
-                </div>
-                <p
-                  className={cx(
-                    mutedStyle,
-                    css({
-                      fontSize: { base: "12px", md: "13px" },
-                      lineHeight: "1.8",
-                    }),
-                  )}
+                </span>
+              ) : null}
+              {media.runtime ? (
+                <span
+                  className={css({
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "5px",
+                  })}
                 >
-                  {media.overview || "No overview is available for this title."}
-                </p>
-                {media.tmdbId && (
-                  <a
-                    href={`https://www.themoviedb.org/${media.kind === "movie" ? "movie" : "tv"}/${media.tmdbId}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={css({
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      fontSize: "11px",
-                      color: "subtle",
-                      mt: "16px",
-                      _hover: { color: "accent" },
-                    })}
-                  >
-                    View on TMDB
-                    <ArrowSquareOutIcon size={13} />
-                  </a>
-                )}
-              </div>
-            </div>
-            <div
-              className={css({
-                borderTop: "1px solid token(colors.line)",
-                pt: "22px",
-              })}
-            >
-              <div
+                  <ClockIcon size={14} />
+                  {media.runtime} min
+                </span>
+              ) : null}
+              <span
                 className={css({
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "space-between",
-                  mb: "16px",
+                  gap: "5px",
                 })}
               >
-                <h3
+                <HardDrivesIcon size={14} />
+                Total on disk:{" "}
+                {sizeLabel(
+                  media.targets.reduce(
+                    (sum, target) => sum + target.sizeOnDisk,
+                    0,
+                  ),
+                )}
+              </span>
+            </div>
+            <p
+              className={cx(
+                mutedStyle,
+                css({
+                  fontSize: { base: "12px", md: "13px" },
+                  lineHeight: "1.8",
+                  maxWidth: "780px",
+                }),
+              )}
+            >
+              {media.overview || "No overview is available for this title."}
+            </p>
+            {(media.tmdbId || media.tvdbId) && (
+              <a
+                href={
+                  media.tmdbId
+                    ? `https://www.themoviedb.org/${media.kind === "movie" ? "movie" : "tv"}/${media.tmdbId}`
+                    : `https://www.thetvdb.com/?tab=series&id=${media.tvdbId}`
+                }
+                target="_blank"
+                rel="noreferrer"
+                className={css({
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  fontSize: "11px",
+                  color: "subtle",
+                  mt: "16px",
+                  _hover: { color: "accent" },
+                })}
+              >
+                View on {media.tmdbId ? "TMDB" : "TVDB"}
+                <ArrowSquareOutIcon size={13} />
+              </a>
+            )}
+          </div>
+        </div>
+        <div
+          className={css({
+            borderTop: "1px solid token(colors.line)",
+            pt: "22px",
+          })}
+        >
+          <div
+            className={css({
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              mb: "16px",
+            })}
+          >
+            <h2
+              className={css({
+                display: "flex",
+                gap: "8px",
+                alignItems: "center",
+                fontSize: "14px",
+                fontWeight: "550",
+              })}
+            >
+              <TargetIcon size={18} className={css({ color: "accent" })} />
+              Quality targets
+              <span
+                className={css({
+                  color: "subtle",
+                  fontSize: "11px",
+                  fontWeight: "400",
+                })}
+              >
+                {media.targets.length}
+              </span>
+            </h2>
+          </div>
+          <div
+            className={css({
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(min(100%, 360px), 1fr))",
+              gap: "10px",
+            })}
+          >
+            {media.targets.map((target) => (
+              <div
+                key={target.instanceId}
+                className={css({
+                  p: "15px",
+                  border: "1px solid token(colors.line)",
+                  borderRadius: "8px",
+                  bg: "#202020",
+                })}
+              >
+                <div
                   className={css({
                     display: "flex",
-                    gap: "8px",
+                    justifyContent: "space-between",
                     alignItems: "center",
-                    fontSize: "14px",
-                    fontWeight: "550",
+                    gap: "10px",
+                    flexWrap: "wrap",
                   })}
                 >
-                  <TargetIcon size={18} className={css({ color: "accent" })} />
-                  Quality targets
-                  <span
-                    className={css({
-                      color: "subtle",
-                      fontSize: "11px",
-                      fontWeight: "400",
-                    })}
-                  >
-                    {media.targets.length}
-                  </span>
-                </h3>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onAddTarget(media)}
-                >
-                  <PlusIcon size={14} />
-                  Add target
-                </Button>
-              </div>
-              <div
-                className={css({
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "10px",
-                })}
-              >
-                {media.targets.map((target) => (
                   <div
-                    key={target.instanceId}
                     className={css({
-                      p: "15px",
-                      border: "1px solid token(colors.line)",
-                      borderRadius: "8px",
-                      bg: "#1c211b",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
                     })}
                   >
-                    <div
+                    <span
                       className={css({
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        gap: "10px",
-                        flexWrap: "wrap",
+                        width: "30px",
+                        height: "30px",
+                        display: "grid",
+                        placeItems: "center",
+                        borderRadius: "7px",
+                        bg: "#303030",
+                        color: "#c7c7c7",
                       })}
                     >
-                      <div
+                      <HardDrivesIcon size={17} />
+                    </span>
+                    <div>
+                      <h4
                         className={css({
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "10px",
+                          fontSize: "12px",
+                          fontWeight: "550",
                         })}
                       >
-                        <span
-                          className={css({
-                            width: "30px",
-                            height: "30px",
-                            display: "grid",
-                            placeItems: "center",
-                            borderRadius: "7px",
-                            bg: "#2b3325",
-                            color: "#b6ca9f",
-                          })}
-                        >
-                          <HardDrivesIcon size={17} />
-                        </span>
-                        <div>
-                          <h4
-                            className={css({
-                              fontSize: "12px",
-                              fontWeight: "550",
-                            })}
-                          >
-                            {target.instanceName}
-                          </h4>
-                          <p
-                            className={css({
-                              color: "subtle",
-                              fontSize: "10px",
-                              mt: "3px",
-                            })}
-                          >
-                            {target.qualityProfile} ·{" "}
-                            {target.monitored ? "Monitored" : "Unmonitored"}
-                          </p>
-                        </div>
-                      </div>
-                      <QualityBadge target={target} />
-                    </div>
-                    <div
-                      className={css({
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        flexWrap: "wrap",
-                        gap: "10px",
-                        mt: "14px",
-                      })}
-                    >
-                      <span
+                        {target.instanceName}
+                      </h4>
+                      <p
                         className={css({
-                          fontSize: "11px",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          color:
-                            target.status === "available"
-                              ? "positive"
-                              : target.status === "downloading"
-                                ? "info"
-                                : "warning",
+                          color: "subtle",
+                          fontSize: "10px",
+                          mt: "3px",
                         })}
                       >
-                        {target.status === "available" ? (
-                          <CheckCircleIcon size={14} />
-                        ) : target.status === "downloading" ? (
-                          <ArrowDownIcon size={14} />
-                        ) : (
-                          <WarningCircleIcon size={14} />
-                        )}
-                        {target.status === "available"
-                          ? "Available"
-                          : target.status === "downloading"
-                            ? "Downloading"
-                            : target.status === "partial"
-                              ? "Some episodes missing"
-                              : "Missing"}
-                        <span className={css({ color: "subtle" })}>
-                          {target.episodeCount !== undefined
-                            ? ` · ${target.episodeFileCount ?? 0}/${target.episodeCount} episodes`
-                            : target.sizeOnDisk
-                              ? ` · ${sizeLabel(target.sizeOnDisk)}`
-                              : ""}
-                        </span>
-                      </span>
-                      <div className={css({ display: "flex", gap: "6px" })}>
-                        <Button
-                          size="sm"
-                          disabled={busy !== null}
-                          onClick={() => search(target)}
-                        >
-                          {busy === target.instanceId ? (
-                            <Spinner size={13} />
-                          ) : (
-                            <MagnifyingGlassIcon size={13} />
-                          )}
-                          Auto search
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setReleaseTarget(target)}
-                        >
-                          Manual search
-                        </Button>
-                      </div>
+                        {target.qualityProfile} ·{" "}
+                        {target.monitored ? "Monitored" : "Unmonitored"}
+                      </p>
                     </div>
                   </div>
-                ))}
-              </div>
-              {media.targets.length === 0 && (
-                <p className={mutedStyle}>
-                  This title is not in your library yet. Add a target to get
-                  started.
-                </p>
-              )}
-              {error && (
-                <div className={css({ mt: "14px" })}>
-                  <Notice error>{error}</Notice>
+                  <QualityBadge target={target} />
                 </div>
-              )}
-              {demo && (
-                <p
+                <div
                   className={css({
-                    color: "subtle",
-                    fontSize: "11px",
-                    mt: "17px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: "10px",
+                    mt: "14px",
                   })}
                 >
-                  Sample library. Searches in demo mode do not contact any
-                  indexers.
-                </p>
-              )}
+                  <span
+                    className={css({
+                      fontSize: "11px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      color:
+                        target.status === "available"
+                          ? "positive"
+                          : target.status === "downloading"
+                            ? "info"
+                            : "warning",
+                    })}
+                  >
+                    {target.status === "available" ? (
+                      <CheckCircleIcon size={14} />
+                    ) : target.status === "downloading" ? (
+                      <ArrowDownIcon size={14} />
+                    ) : (
+                      <WarningCircleIcon size={14} />
+                    )}
+                    {target.status === "available"
+                      ? "Available"
+                      : target.status === "downloading"
+                        ? "Downloading"
+                        : target.status === "partial"
+                          ? "Some episodes missing"
+                          : "Missing"}
+                    <span className={css({ color: "subtle" })}>
+                      {target.episodeCount !== undefined
+                        ? ` · ${target.episodeFileCount ?? 0}/${target.episodeCount} episodes`
+                        : target.sizeOnDisk
+                          ? ` · ${sizeLabel(target.sizeOnDisk)}`
+                          : ""}
+                    </span>
+                  </span>
+                  <div className={css({ display: "flex", gap: "6px" })}>
+                    <Button
+                      size="sm"
+                      disabled={busy !== null}
+                      onClick={() => search(target)}
+                    >
+                      {busy === target.instanceId ? (
+                        <Spinner size={13} />
+                      ) : (
+                        <MagnifyingGlassIcon size={13} />
+                      )}
+                      Auto search
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setEpisodeScope(null);
+                        setReleaseTarget(target);
+                      }}
+                    >
+                      Manual search
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {media.targets.length === 0 && (
+            <p className={mutedStyle}>
+              This title is not in your library yet. Add a target to get
+              started.
+            </p>
+          )}
+          {error && (
+            <div className={css({ mt: "14px" })}>
+              <Notice error>{error}</Notice>
             </div>
-          </>
+          )}
+          {demo && (
+            <p
+              className={css({
+                color: "subtle",
+                fontSize: "11px",
+                mt: "17px",
+              })}
+            >
+              Sample library. Searches in demo mode do not contact any indexers.
+            </p>
+          )}
+        </div>
+        {media.kind === "series" && (
+          <SeriesEpisodes
+            media={media}
+            demo={demo}
+            notify={notify}
+            onChanged={onChanged}
+            onManualSearch={(target, episode, code) => {
+              setEpisodeScope({ id: episode.id, code });
+              setReleaseTarget(target);
+            }}
+          />
         )}
-      </Modal>
-      {media && releaseTarget && (
+      </article>
+      {releaseTarget && (
         <ReleaseSearch
+          key={episodeScope?.id ?? "all"}
           media={media}
           target={releaseTarget}
           targets={media.targets}
@@ -423,6 +474,7 @@ export function MediaDetails({
           onTarget={setReleaseTarget}
           notify={notify}
           onChanged={onChanged}
+          episodeScope={episodeScope}
         />
       )}
     </>
@@ -438,6 +490,7 @@ function ReleaseSearch({
   onTarget,
   notify,
   onChanged,
+  episodeScope,
 }: {
   media: MediaItem;
   target: MediaTarget;
@@ -447,20 +500,30 @@ function ReleaseSearch({
   onTarget: (target: MediaTarget) => void;
   notify: (message: string, error?: boolean) => void;
   onChanged: () => void;
+  episodeScope?: { id: number; code: string } | null;
 }) {
+  const grabLock = useRef(false);
   const [grabbing, setGrabbing] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Release | null>(null);
   const releases = useQuery({
-    queryKey: ["releases", target.instanceId, target.remoteId, media.kind],
+    queryKey: [
+      "releases",
+      target.instanceId,
+      target.remoteId,
+      media.kind,
+      ...(episodeScope ? [episodeScope.id] : []),
+    ],
     queryFn: ({ signal }) =>
       api<{ items: Release[] }>(
-        `/api/releases?instanceId=${encodeURIComponent(target.instanceId)}&remoteId=${target.remoteId}&kind=${media.kind}`,
+        `/api/releases?instanceId=${encodeURIComponent(target.instanceId)}&remoteId=${target.remoteId}&kind=${media.kind}${episodeScope ? `&episodeId=${episodeScope.id}` : ""}`,
         { signal },
       ),
     enabled: !demo,
     retry: false,
   });
   async function grab(release: Release) {
+    if (demo || grabLock.current) return;
+    grabLock.current = true;
     setGrabbing(release.guid);
     try {
       const result = await api<ActionResponse>("/api/releases", {
@@ -481,6 +544,7 @@ function ReleaseSearch({
         true,
       );
     } finally {
+      grabLock.current = false;
       setGrabbing(null);
     }
   }
@@ -491,7 +555,7 @@ function ReleaseSearch({
         if (!open) onClose();
       }}
       title="Manual search"
-      description={`Find a release for ${media.title}. Your instance's indexers and quality rules are used.`}
+      description={`Find a release for ${media.title}${episodeScope ? ` · ${episodeScope.code}` : ""}. Your instance's indexers and quality rules are used.`}
       wide
     >
       <div
@@ -499,10 +563,12 @@ function ReleaseSearch({
           display: "flex",
           alignItems: "center",
           gap: "12px",
+          flexWrap: "wrap",
           mb: "20px",
         })}
       >
         <SelectField
+          disabled={Boolean(episodeScope) || grabbing !== null}
           value={target.instanceId}
           onChange={(id) => {
             const next = targets.find((item) => item.instanceId === id);

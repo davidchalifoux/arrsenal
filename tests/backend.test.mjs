@@ -34,6 +34,7 @@ const searchRoute = await import("../src/app/api/search/route.ts");
 const releasesRoute = await import("../src/app/api/releases/route.ts");
 const queueRoute = await import("../src/app/api/queue/route.ts");
 const imageRoute = await import("../src/app/api/image/route.ts");
+const episodesRoute = await import("../src/app/api/episodes/route.ts");
 const { arrRequest } = await import("../src/lib/server/arr.ts");
 const { instanceInput, readInstances, saveInstance, removeInstance } =
   await import("../src/lib/server/config.ts");
@@ -200,6 +201,13 @@ async function setup(t, definitions = {}) {
           { quality: quality("Bluray-1080p") },
         ],
       );
+    if (endpoint === "episode") return send(node.episodes ?? []);
+    if (/^episode\/\d+$/.test(endpoint)) {
+      const episode = node.episodes?.find(
+        (item) => item.id === Number(parts[5]),
+      );
+      return send(episode ?? {}, episode ? 200 : 404);
+    }
     if (endpoint.endsWith("/lookup")) return send(node.lookup);
     if (["movie", "series"].includes(endpoint) && req.method === "GET")
       return send(node.media);
@@ -267,6 +275,186 @@ async function setup(t, definitions = {}) {
   };
   return { directory, nodes, calls, base, input, connect };
 }
+
+test("episode reads preserve per-instance identities, exact download matches, seasons, and partial file failures", async (t) => {
+  const episode = {
+    id: 101,
+    seriesId: 22,
+    seasonNumber: 1,
+    episodeNumber: 1,
+    title: "Pilot",
+    monitored: true,
+    hasFile: false,
+    airDateUtc: "2024-01-01T00:00:00Z",
+  };
+  const env = await setup(t, {
+    hd: {
+      kind: "sonarr",
+      media: [series],
+      files: [
+        { id: 9, seriesId: 22, quality: quality("WEBDL-1080p"), size: 500 },
+      ],
+      episodes: [
+        { ...episode, hasFile: true, episodeFileId: 9 },
+        { ...episode, id: 102, episodeNumber: 2 },
+        { ...episode, id: 103, episodeNumber: 3 },
+        {
+          ...episode,
+          id: 104,
+          episodeNumber: 4,
+          airDateUtc: "2999-01-01T00:00:00Z",
+        },
+        { ...episode, id: 105, episodeNumber: 5, monitored: false },
+        { ...episode, id: 106, seasonNumber: 0, airDateUtc: undefined },
+      ],
+      queue: [
+        { id: 1, seriesId: 22, episodeId: 103, status: "downloading" },
+        { id: 2, seriesId: 22, status: "downloading" },
+      ],
+    },
+    uhd: {
+      kind: "sonarr",
+      media: [{ ...series, id: 44 }],
+      files: [],
+      episodes: [{ ...episode, id: 901, seriesId: 44 }],
+    },
+  });
+  const hd = await env.connect("hd");
+  const uhd = await env.connect("uhd");
+  const read = (id, remoteId) =>
+    episodesRoute.GET(
+      request(`/api/episodes?instanceId=${id}&remoteId=${remoteId}`),
+    );
+  const first = await (await read(hd.id, 22)).json();
+  expect(first.episodes.map((item) => [item.id, item.status])).toEqual([
+    [106, "unknown"],
+    [101, "available"],
+    [102, "missing"],
+    [103, "downloading"],
+    [104, "unreleased"],
+    [105, "unmonitored"],
+  ]);
+  expect(first.seasons.map((season) => season.seasonNumber)).toEqual([0, 1]);
+  expect(first.episodes.find((item) => item.id === 101)).toMatchObject({
+    quality: "WEBDL-1080p",
+    sizeOnDisk: 500,
+  });
+  const second = await (await read(uhd.id, 44)).json();
+  expect(second.episodes[0]).toMatchObject({
+    id: 901,
+    seriesId: 44,
+    seasonNumber: 1,
+    episodeNumber: 1,
+    status: "missing",
+  });
+  env.nodes.hd.fail = ["episodefile"];
+  const partial = await (await read(hd.id, 22)).json();
+  expect(partial.episodes.find((item) => item.id === 101)).toMatchObject({
+    hasFile: true,
+    status: "available",
+    quality: "Unknown",
+  });
+  expect(partial.errors).toHaveLength(1);
+  env.nodes.hd.fail = ["episode"];
+  expect((await read(hd.id, 22)).status).toBe(502);
+});
+
+test("episode searches and releases use local episode IDs and reject wrong-series or movie scopes", async (t) => {
+  const env = await setup(t, {
+    sonarr: { kind: "sonarr", episodes: [{ id: 901, seriesId: 44 }] },
+    radarr: {},
+  });
+  const instance = await env.connect("sonarr");
+  const radarr = await env.connect("radarr");
+  const payload = {
+    instanceId: instance.id,
+    remoteId: 44,
+    kind: "series",
+    episodeId: 901,
+  };
+  expect(
+    (await searchRoute.POST(request("/api/search", "POST", payload))).status,
+  ).toBe(200);
+  expect(env.calls.find((call) => call.endpoint === "command").body).toEqual({
+    name: "EpisodeSearch",
+    episodeIds: [901],
+  });
+  expect(
+    (
+      await releasesRoute.GET(
+        request(
+          `/api/releases?instanceId=${instance.id}&remoteId=44&kind=series&episodeId=901`,
+        ),
+      )
+    ).status,
+  ).toBe(200);
+  expect(env.calls.find((call) => call.endpoint === "release").query).toEqual({
+    episodeId: "901",
+  });
+  const actions = env.calls.filter((call) =>
+    ["command", "release"].includes(call.endpoint),
+  ).length;
+  expect(
+    (
+      await searchRoute.POST(
+        request("/api/search", "POST", { ...payload, remoteId: 22 }),
+      )
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await releasesRoute.GET(
+        request(
+          `/api/releases?instanceId=${instance.id}&remoteId=22&kind=series&episodeId=901`,
+        ),
+      )
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await searchRoute.POST(
+        request("/api/search", "POST", {
+          ...payload,
+          kind: "movie",
+          instanceId: radarr.id,
+        }),
+      )
+    ).status,
+  ).toBe(400);
+  for (const episodeId of ["", "true", "1e3", "-1", "0"]) {
+    expect(
+      (
+        await releasesRoute.GET(
+          request(
+            `/api/releases?instanceId=${instance.id}&remoteId=44&kind=series&episodeId=${episodeId}`,
+          ),
+        )
+      ).status,
+    ).toBe(400);
+  }
+  expect(
+    env.calls.filter((call) => ["command", "release"].includes(call.endpoint)),
+  ).toHaveLength(actions);
+});
+
+test("demo episodes are consistent with each target and never contact an instance", async (t) => {
+  const env = await setup(t);
+  for (const target of demoLibrary[1].targets) {
+    const response = await episodesRoute.GET(
+      request(
+        `/api/episodes?instanceId=${target.instanceId}&remoteId=${target.remoteId}`,
+      ),
+    );
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result.demo).toBe(true);
+    expect(result.episodes).toHaveLength(target.episodeCount);
+    expect(result.episodes.filter((episode) => episode.hasFile)).toHaveLength(
+      target.episodeFileCount,
+    );
+  }
+  expect(env.calls).toHaveLength(0);
+});
 
 test("demo fixtures and read endpoints are consistent and never persist", async (t) => {
   const { directory } = await setup(t);

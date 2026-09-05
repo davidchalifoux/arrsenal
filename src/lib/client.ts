@@ -1,3 +1,9 @@
+import type { MediaItem } from "./types";
+
+export function mediaHref(media: Pick<MediaItem, "id" | "kind">) {
+  return `/${media.kind === "movie" ? "movies" : "shows"}/${encodeURIComponent(media.id)}`;
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,

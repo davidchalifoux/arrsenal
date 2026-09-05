@@ -77,6 +77,17 @@ option checks, and per-target action errors retain their existing behavior.
 
 ## Action Semantics
 
+`GET /api/episodes?instanceId=...&remoteId=...` loads a Sonarr series' seasons,
+episodes, file metadata, and episode-specific queue status. Episode lists are only
+fetched on detail pages. File/queue enrichment failures retain useful episode
+data with explicit errors; failed episode or series reads fail the request.
+
+Search POST bodies and release GET queries accept an optional `episodeId` for
+shows only. The backend verifies that this episode belongs to `remoteId` on the
+selected instance before issuing `EpisodeSearch` or `release?episodeId=...`.
+Episode IDs are never interchangeable between instances. Whole-title search
+behavior is unchanged when `episodeId` is omitted.
+
 - Adds always monitor the media. Movies use `minimumAvailability: released` and
   `searchForMovie: request.search`. Series use season folders, monitor non-special
   seasons, and set `monitor: all`, `searchForMissingEpisodes: request.search`, and

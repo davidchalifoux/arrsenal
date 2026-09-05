@@ -115,3 +115,37 @@ export interface ActionResponse {
   message: string;
   errors?: ServiceError[];
 }
+
+export type EpisodeStatus =
+  | "available"
+  | "missing"
+  | "downloading"
+  | "unreleased"
+  | "unmonitored"
+  | "unknown";
+
+export interface Episode {
+  id: number;
+  seriesId: number;
+  seasonNumber: number;
+  episodeNumber: number;
+  title: string;
+  overview: string;
+  airDateUtc?: string;
+  runtime?: number;
+  monitored: boolean;
+  hasFile: boolean;
+  quality: string;
+  sizeOnDisk: number;
+  status: EpisodeStatus;
+}
+
+export interface EpisodesResponse {
+  instanceId: string;
+  instanceName: string;
+  remoteId: number;
+  seasons: { seasonNumber: number; monitored: boolean }[];
+  episodes: Episode[];
+  demo: boolean;
+  errors: ServiceError[];
+}
