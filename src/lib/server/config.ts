@@ -150,7 +150,6 @@ export function saveInstance(
 }
 
 export function removeInstance(id: string): Promise<void> {
-  rejectDemo(id);
   return mutateConfig((instances) => {
     const index = instances.findIndex((instance) => instance.id === id);
     if (index === -1) throw new ApiError(404, "Instance not found.");
@@ -158,17 +157,7 @@ export function removeInstance(id: string): Promise<void> {
   });
 }
 
-export function rejectDemo(id: string): void {
-  if (id.startsWith("demo-")) {
-    throw new ApiError(
-      409,
-      "Connect a real Sonarr or Radarr instance to perform this action. Demo data is read-only on the server.",
-    );
-  }
-}
-
 export async function getInstance(id: string): Promise<InstanceConfig> {
-  rejectDemo(id);
   const instance = (await readInstances()).find((entry) => entry.id === id);
   if (!instance)
     throw new ApiError(

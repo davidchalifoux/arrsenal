@@ -34,8 +34,8 @@ const download: QueueItem = {
   warnings: [],
 };
 
-function queue(items: QueueItem[] = [download], demo = false): QueueResponse {
-  return { items, demo, errors: [] };
+function queue(items: QueueItem[] = [download]): QueueResponse {
+  return { items, errors: [] };
 }
 
 beforeEach(() => vi.mocked(api).mockReset());
@@ -150,7 +150,6 @@ describe("DownloadQueue", () => {
         {...props}
         data={{
           items: [],
-          demo: false,
           errors: [
             {
               instanceId: "sonarr-hd",
@@ -245,77 +244,6 @@ describe("DownloadQueue", () => {
       screen.getByRole("article", { name: "Severance download" }),
     ).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toContain("may be missing");
-  });
-
-  it("hides demo downloads locally using instance-scoped IDs and can restore the preview", async () => {
-    const notify = vi.fn();
-    const onRefresh = vi.fn();
-    render(
-      <DownloadQueue
-        data={queue(
-          [
-            download,
-            {
-              ...download,
-              instanceId: "other",
-              instanceName: "Other Sonarr",
-              mediaTitle: "Silo",
-            },
-          ],
-          true,
-        )}
-        loading={false}
-        onRefresh={onRefresh}
-        notify={notify}
-      />,
-    );
-    expect(
-      screen.getByText(/Sample downloads, not live activity/),
-    ).toBeTruthy();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Remove Severance from queue" }),
-    );
-    let dialog = await screen.findByRole("dialog");
-    expect(
-      within(dialog)
-        .getByRole("checkbox", { name: "Remove from download client" })
-        .getAttribute("aria-checked"),
-    ).toBe("true");
-    expect(
-      within(dialog)
-        .getByRole("checkbox", { name: "Blocklist this release" })
-        .getAttribute("aria-checked"),
-    ).toBe("false");
-    fireEvent.click(
-      within(dialog).getByRole("button", {
-        name: "Remove sample",
-      }),
-    );
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(
-      screen.queryByRole("article", { name: "Severance download" }),
-    ).toBeNull();
-    expect(screen.getByRole("article", { name: "Silo download" })).toBeTruthy();
-    expect(notify).toHaveBeenCalledWith(
-      "Demo: Sample download hidden. No real downloads were changed.",
-    );
-    expect(api).not.toHaveBeenCalled();
-    expect(onRefresh).not.toHaveBeenCalled();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Remove Silo from queue" }),
-    );
-    dialog = await screen.findByRole("dialog");
-    fireEvent.click(
-      within(dialog).getByRole("button", {
-        name: "Remove sample",
-      }),
-    );
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.getByText("Sample queue cleared")).toBeTruthy();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Restore sample downloads" }),
-    );
-    expect(screen.getAllByRole("article")).toHaveLength(2);
   });
 
   it("confirms real removal, sends both boolean flags, and blocks duplicate submissions", async () => {
@@ -512,20 +440,24 @@ describe("DownloadQueue", () => {
     );
   });
 
-  it("never turns a demo confirmation into a real mutation if the data mode changes", async () => {
+  it("blocks stale removal when the queue item disappears", async () => {
     const props = { onRefresh: vi.fn(), notify: vi.fn(), loading: false };
-    const { rerender } = render(
-      <DownloadQueue {...props} data={queue([download], true)} />,
-    );
+    const { rerender } = render(<DownloadQueue {...props} data={queue()} />);
     fireEvent.click(
       screen.getByRole("button", { name: "Remove Severance from queue" }),
     );
     await screen.findByRole("dialog");
-    rerender(<DownloadQueue {...props} data={queue()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Remove sample" }));
+    rerender(
+      <DownloadQueue
+        {...props}
+        data={queue([{ ...download, instanceId: "other" }])}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove download" }));
     expect(screen.getByRole("alert").textContent).toContain(
       "queue has changed",
     );
     expect(api).not.toHaveBeenCalled();
+    expect(props.onRefresh).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,6 @@
 import "server-only";
 
 import { z } from "zod";
-import { demoEpisodes } from "../demo";
 import type { Episode, EpisodesResponse, ServiceError } from "../types";
 import { arrRequest, num, queueRecords, type Row, row, rows, str } from "./arr";
 import { getInstance, type InstanceConfig } from "./config";
@@ -55,11 +54,6 @@ export async function episodes(
   instanceId: string,
   remoteId: number,
 ): Promise<EpisodesResponse> {
-  if (instanceId.startsWith("demo-")) {
-    const sample = demoEpisodes(instanceId, remoteId);
-    if (!sample) throw new ApiError(404, "Demo series target not found.");
-    return sample;
-  }
   const instance = await getInstance(instanceId);
   if (instance.kind !== "sonarr")
     throw new ApiError(400, "Episodes require a Sonarr instance.");
@@ -212,7 +206,6 @@ export async function episodes(
         a.episodeNumber - b.episodeNumber ||
         a.id - b.id,
     ),
-    demo: false,
     errors,
   };
 }

@@ -70,12 +70,8 @@ export function DownloadQueue({
   const id = useId();
   const [instanceFilter, setInstanceFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [hiddenDemoIds, setHiddenDemoIds] = useState<Set<string>>(new Set());
   const [failedPosters, setFailedPosters] = useState<Set<string>>(new Set());
-  const [removing, setRemoving] = useState<{
-    item: QueueItem;
-    demo: boolean;
-  } | null>(null);
+  const [removing, setRemoving] = useState<QueueItem | null>(null);
   const [removeFromClient, setRemoveFromClient] = useState(true);
   const [blocklist, setBlocklist] = useState(false);
   const [actionError, setActionError] = useState<string>();
@@ -85,11 +81,8 @@ export function DownloadQueue({
   } | null>(null);
   const actionLock = useRef(false);
 
-  const demo = data?.demo === true;
   const errors = data?.errors ?? [];
-  const items = (data?.items ?? []).filter(
-    (item) => !demo || !hiddenDemoIds.has(queueKey(item)),
-  );
+  const items = data?.items ?? [];
   const instances = new Map([
     ...errors.map((error) => [error.instanceId, error.instanceName] as const),
     ...(data?.items ?? []).map(
@@ -120,36 +113,15 @@ export function DownloadQueue({
     (error) => error.instanceId === selectedInstance,
   );
 
-  async function mutate(
-    item: QueueItem,
-    action: "remove" | "retry",
-    sample: boolean,
-  ) {
+  async function mutate(item: QueueItem, action: "remove" | "retry") {
     if (actionLock.current || loading) return;
-    if (
-      !data ||
-      sample !== data.demo ||
-      !items.some((entry) => queueKey(entry) === queueKey(item))
-    ) {
+    if (!data || !items.some((entry) => queueKey(entry) === queueKey(item))) {
       setActionError(
         "The queue has changed. Close this dialog and refresh before trying again.",
       );
       return;
     }
     setActionError(undefined);
-    if (sample) {
-      if (action === "remove") {
-        setHiddenDemoIds((previous) => new Set(previous).add(queueKey(item)));
-        setRemoving(null);
-        notify("Demo: Sample download hidden. No real downloads were changed.");
-      } else {
-        notify(
-          "Demo: This is a sample action. No real downloads were changed.",
-        );
-      }
-      return;
-    }
-
     actionLock.current = true;
     setBusy({ key: queueKey(item), action });
     try {
@@ -217,7 +189,7 @@ export function DownloadQueue({
           </h1>
           <p className={cx(mutedStyle, css({ mt: "5px" }))}>
             {data
-              ? `${items.length} ${demo ? "sample " : ""}${items.length === 1 ? "item" : "items"} across your ${demo ? "example" : "connected"} instances.`
+              ? `${items.length} ${items.length === 1 ? "item" : "items"} across your connected instances.`
               : loading
                 ? "Loading downloads from your instances."
                 : "Downloads from your Sonarr and Radarr instances."}
@@ -230,12 +202,6 @@ export function DownloadQueue({
       </div>
 
       <div className={css({ display: "grid", gap: "12px", mb: "20px" })}>
-        {demo && (
-          <Notice>
-            Sample downloads, not live activity. Demo actions only affect this
-            preview; no real downloads are changed.
-          </Notice>
-        )}
         {errors.map((error) => (
           <Notice error key={error.instanceId}>
             <div className={css({ minWidth: 0, overflowWrap: "anywhere" })}>
@@ -277,7 +243,7 @@ export function DownloadQueue({
             label: "Active downloads",
             value: data ? String(activeCount) : "--",
             icon: DownloadSimpleIcon,
-            detail: demo ? "In this sample queue" : "Currently downloading",
+            detail: "Currently downloading",
           },
           {
             label: "Remaining size",
@@ -289,7 +255,7 @@ export function DownloadQueue({
             label: "Instances involved",
             value: data ? String(instanceCount) : "--",
             icon: StackIcon,
-            detail: demo ? "Example instances" : "With items in the queue",
+            detail: "With items in the queue",
           },
         ].map(({ label, value, icon: Icon, detail }) => (
           <div
@@ -441,9 +407,7 @@ export function DownloadQueue({
                   ? "No downloads could be loaded"
                   : items.length
                     ? "No matching downloads"
-                    : demo
-                      ? "Sample queue cleared"
-                      : "Nothing in the queue"}
+                    : "Nothing in the queue"}
             </h2>
             <p
               className={cx(
@@ -455,9 +419,7 @@ export function DownloadQueue({
                 ? "Check the service errors above and refresh. This does not mean your downloads have stopped."
                 : items.length
                   ? "Try a different instance or status filter."
-                  : demo
-                    ? "You have hidden the sample downloads in this preview. No real downloads were changed."
-                    : "Downloads will appear here when Sonarr or Radarr sends them to your download client."}
+                  : "Downloads will appear here when Sonarr or Radarr sends them to your download client."}
             </p>
             {(selectedInstance !== "all" || statusFilter !== "all") && (
               <Button
@@ -469,15 +431,6 @@ export function DownloadQueue({
                 }}
               >
                 Clear filters
-              </Button>
-            )}
-            {demo && !items.length && hiddenDemoIds.size > 0 && (
-              <Button
-                size="sm"
-                className={css({ mt: "16px" })}
-                onClick={() => setHiddenDemoIds(new Set())}
-              >
-                Restore sample downloads
               </Button>
             )}
           </div>
@@ -560,7 +513,7 @@ export function DownloadQueue({
                           alt=""
                           width={52}
                           height={78}
-                          unoptimized
+                          sizes="(min-width: 768px) 52px, 44px"
                           loading="lazy"
                           referrerPolicy="no-referrer"
                           onError={() =>
@@ -703,14 +656,14 @@ export function DownloadQueue({
                       <progress
                         value={progress}
                         max={100}
-                        aria-label={`${demo ? "Sample download" : "Download"} progress for ${item.mediaTitle}`}
+                        aria-label={`Download progress for ${item.mediaTitle}`}
                         aria-valuemin={0}
                         aria-valuemax={100}
                         aria-valuenow={progress}
                         aria-valuetext={
                           progress === undefined
                             ? "Progress unavailable"
-                            : `${progress}% downloaded${demo ? " (sample)" : ""}`
+                            : `${progress}% downloaded`
                         }
                         className={css({
                           display: "block",
@@ -794,7 +747,7 @@ export function DownloadQueue({
                               ? "Bypass the release delay and request a download"
                               : "Request an import scan; manual import may still be needed"
                           }
-                          onClick={() => void mutate(item, "retry", demo)}
+                          onClick={() => void mutate(item, "retry")}
                         >
                           {busy?.key === key && busy.action === "retry" ? (
                             <Spinner size={14} />
@@ -812,7 +765,7 @@ export function DownloadQueue({
                         aria-label={`Remove ${item.mediaTitle} from queue`}
                         disabled={!!busy || loading}
                         onClick={() => {
-                          setRemoving({ item, demo });
+                          setRemoving(item);
                           setRemoveFromClient(true);
                           setBlocklist(false);
                           setActionError(undefined);
@@ -887,12 +840,8 @@ export function DownloadQueue({
             setActionError(undefined);
           }
         }}
-        title={removing?.demo ? "Remove sample download?" : "Remove download?"}
-        description={
-          removing?.demo
-            ? "This only hides the sample item in this preview."
-            : "Choose what happens in the instance and download client."
-        }
+        title="Remove download?"
+        description="Choose what happens in the instance and download client."
       >
         <div className={css({ display: "grid", gap: "18px", minWidth: 0 })}>
           <div className={cx(panelStyle, css({ p: "13px", minWidth: 0 }))}>
@@ -903,10 +852,10 @@ export function DownloadQueue({
                 overflowWrap: "anywhere",
               })}
             >
-              {removing?.item.mediaTitle}
+              {removing?.mediaTitle}
             </p>
             <p
-              title={removing?.item.title}
+              title={removing?.title}
               className={css({
                 fontSize: "11px",
                 color: "subtle",
@@ -916,7 +865,7 @@ export function DownloadQueue({
                 mt: "4px",
               })}
             >
-              {removing?.item.title}
+              {removing?.title}
             </p>
             <p
               className={css({
@@ -926,7 +875,7 @@ export function DownloadQueue({
                 overflowWrap: "anywhere",
               })}
             >
-              {removing?.item.instanceName}
+              {removing?.instanceName}
             </p>
           </div>
           <fieldset
@@ -983,12 +932,6 @@ export function DownloadQueue({
                 : "The release will not be blocklisted and can be grabbed again."}
             </p>
           </fieldset>
-          {removing?.demo && (
-            <Notice>
-              Demo only. These options will not be sent to an instance or
-              download client. No real downloads will be changed.
-            </Notice>
-          )}
           {actionError && (
             <Notice error>
               <span className={css({ minWidth: 0, overflowWrap: "anywhere" })}>
@@ -1017,8 +960,7 @@ export function DownloadQueue({
               variant="danger"
               disabled={!!busy || loading}
               onClick={() => {
-                if (removing)
-                  void mutate(removing.item, "remove", removing.demo);
+                if (removing) void mutate(removing, "remove");
               }}
             >
               {busy?.action === "remove" ? (
@@ -1026,11 +968,7 @@ export function DownloadQueue({
               ) : (
                 <TrashIcon size={15} />
               )}
-              {busy?.action === "remove"
-                ? "Removing..."
-                : removing?.demo
-                  ? "Remove sample"
-                  : "Remove download"}
+              {busy?.action === "remove" ? "Removing..." : "Remove download"}
             </Button>
           </div>
         </div>

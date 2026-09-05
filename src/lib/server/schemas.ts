@@ -100,9 +100,7 @@ export const instanceInputSchema = z.object(
 );
 
 export const storedInstanceSchema = instanceInputSchema.extend({
-  id: textSchema("id", 100)
-    .regex(/^[a-zA-Z0-9_-]+$/)
-    .refine((id) => !id.startsWith("demo-")),
+  id: textSchema("id", 100).regex(/^[a-zA-Z0-9_-]+$/),
 });
 
 export const configSchema = z.object({

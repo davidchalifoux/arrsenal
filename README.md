@@ -14,7 +14,8 @@ Arrsenal is a self-hosted Next.js client for Sonarr and Radarr's v3 APIs. It com
 - Automatic search and manual release search, including rejection reasons and confirmed release grabs.
 - Combined download queues with progress, removal/blocklisting, pending-release grabs, and import retries.
 - UI-managed connections, server-side API keys, and Zod-validated local configuration. No database.
-- A clearly labeled sample library when no instances are configured. Demo actions never contact real instances; preview changes reset on refresh.
+- Real instance data only; an unconfigured workspace starts with an empty library.
+- Optimized, responsive posters served through Next.js Image from TMDB, TheTVDB, or the authenticated local-cover proxy.
 
 ## Development
 
@@ -68,4 +69,4 @@ Arrsenal is intended for a single user on a trusted local network. It has no bui
 
 Sonarr/Radarr remain the source of truth. Partial instance failures are shown without hiding healthy instances. Multi-target additions report partial success so only failed targets need retrying. Episode searches use the selected instance's own episode ID. An accepted search or grab does not guarantee a completed download. Media/file deletion and download-client pause/resume controls are not implemented.
 
-Sample poster artwork is served by TMDB. Arrsenal is not endorsed by TMDB, Sonarr, or Radarr.
+Arrsenal is not endorsed by TMDB, TheTVDB, Sonarr, or Radarr.

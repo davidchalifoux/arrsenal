@@ -1,6 +1,5 @@
 import "server-only";
 
-import { demoDiscover, demoLibrary, demoQueue } from "../demo";
 import type {
   ActionResponse,
   LibraryResponse,
@@ -19,12 +18,7 @@ import {
   rows,
   str,
 } from "./arr";
-import {
-  getInstance,
-  type InstanceConfig,
-  readInstances,
-  rejectDemo,
-} from "./config";
+import { getInstance, type InstanceConfig, readInstances } from "./config";
 import { verifyEpisode } from "./episodes";
 import { ApiError, errorMessage, parseInput } from "./http";
 import {
@@ -93,7 +87,6 @@ async function instanceMedia(
   if (mediaResult.status === "rejected")
     return {
       items: [],
-      demo: false,
       errors: [serviceError(instance, mediaResult.reason)],
     };
   if (profileResult.status === "rejected")
@@ -187,20 +180,17 @@ async function instanceMedia(
         episodeQualities.get(num(item.id)),
       ),
     ),
-    demo: false,
     errors,
   };
 }
 
 export async function library(): Promise<LibraryResponse> {
   const instances = await readInstances();
-  if (!instances.length) return { items: demoLibrary, demo: true, errors: [] };
   const results = await Promise.all(
     instances.map((instance) => instanceMedia(instance)),
   );
   return {
     items: mergeMedia(results.flatMap((result) => result.items)),
-    demo: false,
     errors: results.flatMap((result) => result.errors),
   };
 }
@@ -210,21 +200,7 @@ export async function lookup(
   kind?: MediaKind,
 ): Promise<LibraryResponse> {
   const instances = await readInstances();
-  if (!instances.length) {
-    const items = term
-      ? mergeMedia([...demoLibrary, ...demoDiscover]).filter((item) =>
-          `${item.title} ${item.year} ${item.genres.join(" ")}`
-            .toLowerCase()
-            .includes(term.toLowerCase()),
-        )
-      : demoDiscover;
-    return {
-      items: items.filter((item) => !kind || item.kind === kind),
-      demo: true,
-      errors: [],
-    };
-  }
-  if (!term) return { items: [], demo: false, errors: [] };
+  if (!instances.length || !term) return { items: [], errors: [] };
   const eligible = instances.filter(
     (instance) =>
       !kind || instance.kind === (kind === "movie" ? "radarr" : "sonarr"),
@@ -232,7 +208,6 @@ export async function lookup(
   if (!eligible.length)
     return {
       items: [],
-      demo: false,
       errors: [
         {
           instanceId: kind === "movie" ? "radarr" : "sonarr",
@@ -246,14 +221,12 @@ export async function lookup(
   );
   return {
     items: mergeMedia(results.flatMap((result) => result.items)),
-    demo: false,
     errors: results.flatMap((result) => result.errors),
   };
 }
 
 export async function queue(): Promise<QueueResponse> {
   const instances = await readInstances();
-  if (!instances.length) return { items: demoQueue, demo: true, errors: [] };
   const results = await Promise.all(
     instances.map(async (instance) => {
       try {
@@ -270,7 +243,6 @@ export async function queue(): Promise<QueueResponse> {
   );
   return {
     items: results.flatMap((result) => result.items),
-    demo: false,
     errors: results.flatMap((result) => result.errors),
   };
 }
@@ -308,12 +280,11 @@ export async function addMedia(input: unknown): Promise<Response> {
   const kind = media.kind;
   const identityKey = kind === "movie" ? "tmdbId" : "tvdbId";
   const identity = media.kind === "movie" ? media.tmdbId : media.tvdbId;
-  for (const target of targets) rejectDemo(target.instanceId);
   const instances = await readInstances();
   if (!instances.length)
     throw new ApiError(
       409,
-      "Connect a real Sonarr or Radarr instance before adding media.",
+      "Connect a Sonarr or Radarr instance before adding media.",
     );
   const results = await Promise.all(
     targets.map(async (target) => {

@@ -33,7 +33,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useDeferredValue, useEffect, useEffectEvent, useState } from "react";
 import { api, mediaHref, qualityLabel } from "@/lib/client";
-import { demoInstances } from "@/lib/demo";
 import type {
   InstanceSummary,
   LibraryResponse,
@@ -117,7 +116,7 @@ export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
   const library = useQuery({
     queryKey: ["library"],
     queryFn: ({ signal }) => api<LibraryResponse>("/api/library", { signal }),
-    refetchInterval: (query) => (query.state.data?.demo ? false : 60_000),
+    refetchInterval: 60_000,
   });
   const instanceQuery = useQuery({
     queryKey: ["instances"],
@@ -146,7 +145,6 @@ export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
     message: string;
     error: boolean;
   } | null>(null);
-  const demo = library.data?.demo ?? false;
   const items = library.data?.items ?? [];
   const detail = mediaId
     ? items.find(
@@ -156,7 +154,6 @@ export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
       )
     : undefined;
   const instances = instanceQuery.data?.instances ?? [];
-  const displayInstances = demo ? demoInstances : instances;
   const isLibrary = ["library", "movies", "shows", "missing"].includes(view);
   const incomplete = items.filter(
     (item) => item.status === "partial" || item.status === "missing",
@@ -401,7 +398,7 @@ export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
               textTransform: "uppercase",
             })}
           >
-            {demo ? "Sample instances" : "Instances"}
+            Instances
           </p>
           <button
             type="button"
@@ -424,7 +421,7 @@ export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
             gap: "2px",
           })}
         >
-          {displayInstances.map((instance) => (
+          {instances.map((instance) => (
             <Link
               key={instance.id}
               href="/settings"
@@ -454,27 +451,17 @@ export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
               </span>
               <span className={css({ flex: 1 })}>{instance.name}</span>
               <span
-                title={
-                  demo
-                    ? "Sample instance"
-                    : instance.connected
-                      ? "Connected"
-                      : "Unavailable"
-                }
+                title={instance.connected ? "Connected" : "Unavailable"}
                 className={css({
                   width: "5px",
                   height: "5px",
                   borderRadius: "50%",
-                  bg: demo
-                    ? "#757575"
-                    : instance.connected
-                      ? "positive"
-                      : "negative",
+                  bg: instance.connected ? "positive" : "negative",
                 })}
               />
             </Link>
           ))}
-          {!displayInstances.length && (
+          {!instances.length && (
             <button
               type="button"
               onClick={connect}
@@ -493,62 +480,6 @@ export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
           )}
         </div>
         <div className={css({ flex: 1, minHeight: "35px" })} />
-        {demo && (
-          <div
-            className={css({
-              mx: "5px",
-              mb: "19px",
-              p: "14px",
-              border: "1px solid #353535",
-              borderRadius: "8px",
-              background: "linear-gradient(125deg, #242424, #191919)",
-            })}
-          >
-            <div
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: "7px",
-                mb: "8px",
-                fontSize: "11px",
-                fontWeight: "550",
-                color: "#d8d8d8",
-              })}
-            >
-              <StackIcon size={15} className={css({ color: "accent" })} />
-              Better, together.
-            </div>
-            <p
-              className={css({
-                fontSize: "10px",
-                color: "muted",
-                lineHeight: "1.7",
-                mb: "12px",
-              })}
-            >
-              Your instances. One beautiful library.
-              <br />
-              Make this space yours.
-            </p>
-            <button
-              type="button"
-              onClick={connect}
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                width: "100%",
-                color: "#c7c7c7",
-                fontWeight: "500",
-                fontSize: "10px",
-                _hover: { color: "accent" },
-              })}
-            >
-              Connect an instance
-              <ArrowRightIcon size={13} />
-            </button>
-          </div>
-        )}
         <Link
           href="/settings"
           onClick={() => setMobileOpen(false)}
@@ -575,20 +506,16 @@ export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
               width: "5px",
               height: "5px",
               borderRadius: "50%",
-              bg: demo
-                ? "#929292"
-                : instances.length &&
-                    instances.every((instance) => instance.connected)
+              bg:
+                instances.length &&
+                instances.every((instance) => instance.connected)
                   ? "positive"
                   : "warning",
             })}
           />
-          {demo
-            ? "Demo workspace"
-            : instances.length &&
-                instances.every((instance) => instance.connected)
-              ? "All instances connected"
-              : "Local workspace"}
+          {instances.length && instances.every((instance) => instance.connected)
+            ? "All instances connected"
+            : "Local workspace"}
           <span
             className={css({
               ml: "auto",
@@ -811,7 +738,6 @@ export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
                   key={detail.id}
                   media={detail}
                   onAddTarget={add}
-                  demo={demo}
                   notify={notify}
                   onChanged={refresh}
                 />
@@ -882,25 +808,6 @@ export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
                             ? "Movie library"
                             : "Shows"}
                     </h1>
-                    {demo && (
-                      <span
-                        className={css({
-                          fontSize: "8px",
-                          fontWeight: "500",
-                          textTransform: "uppercase",
-                          letterSpacing: "1px",
-                          color: "muted",
-                          bg: "#242424",
-                          border: "1px solid #353535",
-                          borderRadius: "4px",
-                          px: "6px",
-                          py: "3px",
-                          mt: "2px",
-                        })}
-                      >
-                        Demo
-                      </span>
-                    )}
                   </div>
                   <p
                     className={css({
@@ -930,15 +837,13 @@ export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
                       fontSize: "10px",
                     })}
                   >
-                    {demo
-                      ? "Sample library"
-                      : library.isFetching
-                        ? "Syncing library..."
-                        : library.isError
-                          ? "Sync failed"
-                          : library.data?.errors.length
-                            ? "Some instances need attention"
-                            : "Library up to date"}
+                    {library.isFetching
+                      ? "Syncing library..."
+                      : library.isError
+                        ? "Sync failed"
+                        : library.data?.errors.length
+                          ? "Some instances need attention"
+                          : "Library up to date"}
                   </span>
                   <Button
                     size="icon"
@@ -1204,7 +1109,7 @@ export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
                                 label="Filter by instance"
                                 options={[
                                   { value: "all", label: "All instances" },
-                                  ...displayInstances.map((instance) => ({
+                                  ...instances.map((instance) => ({
                                     value: instance.id,
                                     label: instance.name,
                                   })),
@@ -1495,7 +1400,7 @@ export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
                   <span className={css({ mx: "7px", color: "#4d4d4d" })}>
                     ·
                   </span>
-                  {displayInstances.length} {demo ? "sample " : ""}instances
+                  {instances.length} instances
                   <span className={css({ mx: "7px", color: "#4d4d4d" })}>
                     ·
                   </span>
@@ -1563,7 +1468,7 @@ export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
               </footer>
             </>
           ) : view === "discover" ? (
-            <Discover demo={demo} onSelect={(item) => add(item)} />
+            <Discover onSelect={(item) => add(item)} />
           ) : view === "queue" ? (
             <>
               {queue.isError && (
@@ -1600,24 +1505,9 @@ export function Arrsenal({ view, mediaId }: { view: View; mediaId?: string }) {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         seed={addSeed}
-        instances={displayInstances}
+        instances={instances}
         library={items}
-        demo={demo}
-        onAdded={(item) => {
-          if (item)
-            queryClient.setQueryData<LibraryResponse>(["library"], (current) =>
-              current
-                ? {
-                    ...current,
-                    items: [
-                      item,
-                      ...current.items.filter((entry) => entry.id !== item.id),
-                    ],
-                  }
-                : current,
-            );
-          else refresh();
-        }}
+        onAdded={refresh}
         notify={notify}
         onConnect={connect}
       />
@@ -1823,13 +1713,7 @@ function BrandMark() {
   );
 }
 
-function Discover({
-  demo,
-  onSelect,
-}: {
-  demo: boolean;
-  onSelect: (item: MediaItem) => void;
-}) {
+function Discover({ onSelect }: { onSelect: (item: MediaItem) => void }) {
   const [term, setTerm] = useState("");
   const deferred = useDeferredValue(term);
   const [kind, setKind] = useState("movie");
@@ -1840,7 +1724,7 @@ function Discover({
         `/api/lookup?term=${encodeURIComponent(deferred)}&kind=${kind}`,
         { signal },
       ),
-    enabled: demo || deferred.trim().length > 1,
+    enabled: deferred.trim().length > 1,
   });
   return (
     <>
@@ -1931,21 +1815,12 @@ function Discover({
         })}
       >
         <h2 className={css({ fontSize: "16px", fontWeight: "500" })}>
-          {term
-            ? "Search results"
-            : demo
-              ? "A little inspiration"
-              : "A world of stories awaits"}
+          {term ? "Search results" : "A world of stories awaits"}
         </h2>
-        {demo && (
-          <span className={css({ fontSize: "10px", color: "subtle" })}>
-            Sample catalog
-          </span>
-        )}
       </div>
       {results.isError ? (
         <Notice error>{results.error.message}</Notice>
-      ) : !demo && deferred.trim().length < 2 ? (
+      ) : deferred.trim().length < 2 ? (
         <div
           className={css({
             py: "80px",

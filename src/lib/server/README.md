@@ -2,7 +2,7 @@
 
 The public DTOs in `src/lib/types.ts` are the fixed contract. Route handlers use
 the Node.js runtime and standard Request/Response APIs. Server modules are marked
-`server-only`; `demo.ts` exports data only and can be imported by the UI.
+`server-only`.
 
 ## Storage And Security
 
@@ -14,8 +14,8 @@ the Node.js runtime and standard Request/Response APIs. Server modules are marke
   file with mode `0600`, fsync it, and atomically rename it over the configuration.
   A process-wide mutation queue survives development reloads. An exclusive
   `config.lock` also serializes writers in separate Node processes.
-- Missing configuration enables demo reads. Invalid, unreadable, oversized, or
-  symlinked configuration fails closed and is not replaced with demo data.
+- Missing configuration returns empty library, lookup, and queue collections.
+  Invalid, unreadable, oversized, or symlinked configuration fails closed.
 - A writer killed while holding the lock can leave `config.lock`. Writes then
   return `503` after five seconds. Stop all Arrsenal writers before removing a
   stale lock. Reads remain available. Use a persistent local filesystem, not an
@@ -52,7 +52,7 @@ control characters before trimming. Local/private HTTP(S) URLs remain valid.
 Schema failures at the request boundary return `400` with a safe `{error}` message,
 never serialized Zod issues, paths, or input values. Invalid persisted config
 returns the existing generic `500` and is not overwritten. Transport guards still
-run before payload validation (`403`, `415`, `413`, `408`); demo restrictions, upstream
+run before payload validation (`403`, `415`, `413`, `408`); upstream
 option checks, and per-target action errors retain their existing behavior.
 
 ## Endpoints
@@ -104,19 +104,20 @@ behavior is unchanged when `episodeId` is omitted.
 - Input/security/config errors return `{error: string}`. Once an instance action
   is running, failures return an `ActionResponse` with `success: false`, a message,
   and per-instance errors. Read aggregation returns `200` plus an `errors` array
-  even when every configured instance is unavailable; `demo` stays false.
+  even when every configured instance is unavailable.
 - Queue POST grabs a delayed/pending release with `POST queue/grab/{id}` only
   when no download ID exists. This bypasses the delay and starts a download.
   For completed downloads awaiting import it sends `DownloadedMoviesScan` or
   `DownloadedEpisodesScan` with the upstream-reported `outputPath`, download ID
   as `downloadClientId`, and `importMode: auto`. Active downloads, missing paths,
   and missing download IDs are rejected; manual intervention can still be needed.
-- Poster mapping prefers credential-free remote HTTP(S) poster URLs. Covers at
+- Poster mapping prefers trusted TMDB/TVDB poster URLs, falling back to local
+  covers for unsupported remote sources. Covers at
   the configured instance origin use the server proxy even when supplied as
   absolute `remotePoster`/`remoteUrl` values. Proxy responses forward no upstream cookies,
   auth headers, or redirect locations, and are private-cacheable for one hour.
 
-## Bounds And Demo Data
+## Bounds
 
 Connectivity checks time out after four seconds. General upstream requests have
 an eight-second timeout covering headers and body. Queue pagination and each
@@ -135,12 +136,7 @@ errors and unknown quality labels rather than invented values. A combined item
 is available only when every target is available; an available/missing mix is
 partial, and an active download takes precedence.
 
-With zero configured instances, library and queue use 18 curated titles and three
-sample downloads. Discovery adds fresh sample titles to a target-free collection;
-demo term searches combine and deduplicate both views. Demo instance URLs use the
-reserved `.invalid` domain, have no API keys, and are not claimed to be connected.
-Every server-side demo mutation returns a connect-instance error. Any interactive
-demo simulation belongs explicitly in UI-local state.
+Unknown instance IDs return `404`; episode reads resolve only configured instances.
 
 ## Focused Verification
 
@@ -153,5 +149,5 @@ The suite uses real local HTTP mock servers and isolated temporary config
 directories. It covers API contracts, JSON/Origin validation, key redaction,
 redirect and timeout protection, multi-process config serialization, file modes,
 invalid request/query/config schemas, aggregation, trusted adds, commands/releases, pagination,
-queue retry semantics, demo invariants, and image-proxy restrictions. It does not
+queue retry semantics, unconfigured reads, and image-proxy restrictions. It does not
 replace a smoke test against an operator's actual Sonarr/Radarr installations.

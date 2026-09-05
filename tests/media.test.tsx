@@ -137,7 +137,6 @@ function renderAdd(overrides: Partial<ComponentProps<typeof AddMedia>> = {}) {
     seed: movie,
     instances: [hd, uhd, archive, sonarr],
     library: [],
-    demo: false,
     onClose: vi.fn(),
     onAdded: vi.fn(),
     onConnect: vi.fn(),
@@ -148,10 +147,9 @@ function renderAdd(overrides: Partial<ComponentProps<typeof AddMedia>> = {}) {
   return props;
 }
 
-function renderDetails(demo = false) {
+function renderDetails() {
   const props = {
     media: { ...movie, targets: [hdTarget, uhdTarget] },
-    demo,
     onAddTarget: vi.fn(),
     onChanged: vi.fn(),
     notify: vi.fn(),
@@ -417,54 +415,51 @@ describe("AddMedia", () => {
   });
 });
 
-describe("Demo library integration", () => {
-  it("adds a sample target through Arrsenal into the query cache without a write or options API call", async () => {
-    const existing: MediaTarget = { ...hdTarget, instanceId: "demo-radarr-hd" };
+describe("Library integration", () => {
+  it("adds a target from its detail page and refreshes the library from the API", async () => {
     const library: LibraryResponse = {
-      items: [{ ...movie, status: "available", targets: [existing] }],
-      demo: true,
+      items: [{ ...movie, status: "available", targets: [hdTarget] }],
       errors: [],
     };
     fetchMock.mockImplementation(async (path) => {
       if (path === "/api/library") return Response.json(library);
-      if (path === "/api/instances") return Response.json({ instances: [] });
+      if (path === "/api/instances")
+        return Response.json({ instances: [hd, uhd] });
       if (path === "/api/queue")
-        return Response.json({ items: [], demo: true, errors: [] });
-      throw new Error(`Unexpected demo request: ${path}`);
+        return Response.json({ items: [], errors: [] });
+      if (path === `/api/instances/${uhd.id}/options`)
+        return Response.json(options[uhd.id]);
+      if (path === "/api/media") {
+        library.items[0].targets.push(uhdTarget);
+        return Response.json({ success: true, message: "Target added." });
+      }
+      throw new Error(`Unexpected request: ${path}`);
     });
     renderUI(<Arrsenal view="movies" mediaId={movie.id} />);
     await screen.findByRole("heading", { level: 1, name: movie.title });
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Add target" }));
     await screen.findByRole("dialog", { name: "Add a quality target" });
-    await selectTarget({ ...uhd, id: "demo-radarr-4k" }, "Ultra-HD", "/movies");
+    await selectTarget(uhd, "Ultra-HD", "/movies/4k");
     fireEvent.click(
       screen.getByRole("checkbox", { name: /Start searching after adding/ }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Add to 1 target" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.getByRole("status").textContent).toContain(
-      "No real instances were changed.",
+    expect(screen.getByRole("status").textContent).toContain("Target added.");
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<LibraryResponse>(["library"])?.items[0]
+          .targets,
+      ).toEqual([hdTarget, uhdTarget]),
     );
-    const cached = queryClient.getQueryData<LibraryResponse>(["library"]);
-    expect(cached?.items).toHaveLength(1);
-    expect(cached?.items[0].targets).toEqual([
-      existing,
-      expect.objectContaining({
-        instanceId: "demo-radarr-4k",
-        qualityProfileId: 2,
-        qualityProfile: "Ultra-HD",
-        quality: "Not downloaded",
-        status: "missing",
-        monitored: true,
-        sizeOnDisk: 0,
-      }),
-    ]);
-    expect(writes()).toHaveLength(0);
-    expect(fetchMock.mock.calls.map(([path]) => path).sort()).toEqual([
-      "/api/instances",
-      "/api/library",
-      "/api/queue",
+    expect(writes()).toHaveLength(1);
+    expect(JSON.parse(String(writes()[0][1]?.body)).targets).toEqual([
+      {
+        instanceId: uhd.id,
+        qualityProfileId: 19,
+        rootFolderPath: "/movies/4k",
+      },
     ]);
     expect(
       screen.getByRole("heading", { level: 1, name: movie.title }),
@@ -624,30 +619,6 @@ describe("MediaDetails searches", () => {
     expect(await within(dialog).findByText(/No releases found/)).toBeTruthy();
     expect(writes()).toHaveLength(0);
   });
-
-  it("does not search indexers or offer live releases in demo mode", async () => {
-    const props = renderDetails(true);
-    await screen.findByRole("heading", { level: 1, name: movie.title });
-    fireEvent.click(screen.getAllByRole("button", { name: "Auto search" })[0]);
-    expect(props.notify).toHaveBeenCalledWith(
-      expect.stringContaining("Demo: automatic search"),
-    );
-    fireEvent.click(
-      screen.getAllByRole("button", { name: "Manual search" })[0],
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Manual search" });
-    expect(within(dialog).getByRole("status").textContent).toContain(
-      "No sample releases are presented as live results.",
-    );
-    expect(
-      within(dialog)
-        .getByRole("button", { name: "Search again" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
-    expect(within(dialog).queryByRole("button", { name: "Grab" })).toBeNull();
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(props.onChanged).not.toHaveBeenCalled();
-  });
 });
 
 describe("Episode actions", () => {
@@ -695,7 +666,6 @@ describe("Episode actions", () => {
             { seasonNumber: 1, monitored: true },
           ],
           episodes: [episode],
-          demo: false,
           errors: [],
         });
       }
@@ -710,7 +680,6 @@ describe("Episode actions", () => {
     renderUI(
       <MediaDetails
         media={show}
-        demo={false}
         onAddTarget={vi.fn()}
         notify={notify}
         onChanged={onChanged}

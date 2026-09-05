@@ -46,13 +46,11 @@ const menuItemStyle = css({
 
 export function SeriesEpisodes({
   media,
-  demo,
   notify,
   onChanged,
   onManualSearch,
 }: {
   media: MediaItem;
-  demo: boolean;
   notify: (message: string, error?: boolean) => void;
   onChanged: () => void;
   onManualSearch: (target: MediaTarget, episode: Episode, code: string) => void;
@@ -77,7 +75,7 @@ export function SeriesEpisodes({
         }
         return response;
       },
-      refetchInterval: demo ? (false as const) : 30_000,
+      refetchInterval: 30_000,
       retry: false,
     })),
   });
@@ -115,14 +113,8 @@ export function SeriesEpisodes({
     (query) => query.isError || Boolean(query.data?.errors.length),
   );
 
-  async function search(target: MediaTarget, episode: Episode, code: string) {
+  async function search(target: MediaTarget, episode: Episode) {
     if (searchLock.current) return;
-    if (demo) {
-      notify(
-        `Demo: automatic search for ${media.title} · ${code} on ${target.instanceName}. Connect an instance to search for real releases.`,
-      );
-      return;
-    }
     searchLock.current = true;
     setPending(`${target.instanceId}:${episode.id}`);
     try {
@@ -529,11 +521,7 @@ export function SeriesEpisodes({
                                                 className={menuItemStyle}
                                                 aria-label={`Auto search ${code} on ${target.instanceName}`}
                                                 onClick={() =>
-                                                  void search(
-                                                    target,
-                                                    local,
-                                                    code,
-                                                  )
+                                                  void search(target, local)
                                                 }
                                               >
                                                 <MagnifyingGlassIcon

@@ -46,7 +46,6 @@ export function AddMedia({
   seed,
   instances,
   library,
-  demo,
   onAdded,
   notify,
   onConnect,
@@ -56,8 +55,7 @@ export function AddMedia({
   seed: MediaItem | null;
   instances: InstanceSummary[];
   library: MediaItem[];
-  demo: boolean;
-  onAdded: (item?: MediaItem) => void;
+  onAdded: () => void;
   notify: (message: string, error?: boolean) => void;
   onConnect: () => void;
 }) {
@@ -77,7 +75,6 @@ export function AddMedia({
           seed={seed}
           instances={instances}
           library={library}
-          demo={demo}
           onAdded={onAdded}
           notify={notify}
           onClose={onClose}
@@ -92,7 +89,6 @@ function AddMediaContent({
   seed,
   instances,
   library,
-  demo,
   onAdded,
   notify,
   onClose,
@@ -115,7 +111,7 @@ function AddMediaContent({
         `/api/lookup?term=${encodeURIComponent(deferredTerm)}&kind=${kind}`,
         { signal },
       ),
-    enabled: !selected && (demo || deferredTerm.trim().length > 1),
+    enabled: !selected && deferredTerm.trim().length > 1,
   });
   const matching = instances.filter(
     (instance) =>
@@ -148,36 +144,6 @@ function AddMediaContent({
       setError(
         "Choose a quality profile and root folder for every selected instance.",
       );
-      return;
-    }
-    if (demo) {
-      const added: MediaItem = {
-        ...selected,
-        added: new Date().toISOString(),
-        status: search ? "downloading" : "missing",
-        targets: [
-          ...existing,
-          ...targets.map(([instanceId, choice]) => ({
-            instanceId,
-            instanceName:
-              instances.find((instance) => instance.id === instanceId)?.name ??
-              "Sample instance",
-            remoteId: Date.now(),
-            qualityProfileId: choice.qualityProfileId,
-            qualityProfile:
-              choice.qualityProfileId === 2 ? "Ultra-HD" : "HD-1080p",
-            quality: "Not downloaded",
-            status: search ? ("downloading" as const) : ("missing" as const),
-            monitored: true,
-            sizeOnDisk: 0,
-          })),
-        ],
-      };
-      onAdded(added);
-      notify(
-        `Demo: ${selected.title} added to ${targets.length} ${targets.length === 1 ? "target" : "targets"}. No real instances were changed.`,
-      );
-      onClose();
       return;
     }
     saveLock.current = true;
@@ -270,19 +236,11 @@ function AddMediaContent({
               ]}
             />
           </div>
-          {demo && (
-            <p
-              className={css({ color: "subtle", fontSize: "11px", mb: "14px" })}
-            >
-              Explore a sample catalog. Connect an instance to search the full
-              catalog.
-            </p>
-          )}
-          {!demo && instances.length === 0 ? (
+          {instances.length === 0 ? (
             <Notice>
               Connect Radarr for movies or Sonarr for shows to start searching.
             </Notice>
-          ) : !demo && term.trim().length < 2 ? (
+          ) : term.trim().length < 2 ? (
             <div
               className={css({
                 py: "40px",
@@ -393,9 +351,7 @@ function AddMediaContent({
                       css({ py: "30px", textAlign: "center" }),
                     )}
                   >
-                    No matches found. Try a different title
-                    {demo ? " or connect an instance for the full catalog" : ""}
-                    .
+                    No matches found. Try a different title .
                   </p>
                 )}
               </div>
@@ -490,7 +446,6 @@ function AddMediaContent({
               <TargetOption
                 key={instance.id}
                 instance={instance}
-                demo={demo}
                 existing={existingIds.includes(instance.id)}
                 choice={choices[instance.id]}
                 onChange={(choice) =>
@@ -556,9 +511,7 @@ function AddMediaContent({
             })}
           >
             <span className={css({ color: "subtle", fontSize: "11px" })}>
-              {demo
-                ? "Demo mode · local preview only"
-                : `${targets.length} ${targets.length === 1 ? "target" : "targets"} selected`}
+              {`${targets.length} ${targets.length === 1 ? "target" : "targets"} selected`}
             </span>
             <Button
               variant="primary"
@@ -579,14 +532,12 @@ function AddMediaContent({
 
 function TargetOption({
   instance,
-  demo,
   existing,
   choice,
   onChange,
   disabled,
 }: {
   instance: InstanceSummary;
-  demo: boolean;
   existing: boolean;
   choice?: TargetChoice;
   onChange: (choice: TargetChoice) => void;
@@ -600,19 +551,9 @@ function TargetOption({
         `/api/instances/${encodeURIComponent(instance.id)}/options`,
         { signal },
       ),
-    enabled: enabled && !existing && !demo,
+    enabled: enabled && !existing,
   });
-  const data = demo
-    ? {
-        profiles: [
-          { id: 1, name: "HD-1080p" },
-          { id: 2, name: "Ultra-HD" },
-        ],
-        rootFolders: [
-          { id: 1, path: instance.kind === "radarr" ? "/movies" : "/tv" },
-        ],
-      }
-    : options.data;
+  const data = options.data;
   const profile = choice?.qualityProfileId || 0;
   const folder = choice?.rootFolderPath || "";
   return (
@@ -672,7 +613,7 @@ function TargetOption({
       </div>
       {enabled && !existing && (
         <div className={css({ mt: "15px" })}>
-          {options.isPending && !demo ? (
+          {options.isPending ? (
             <div
               className={css({
                 display: "flex",
@@ -684,7 +625,7 @@ function TargetOption({
               <Spinner size={14} />
               Loading profiles and folders...
             </div>
-          ) : options.isError && !demo ? (
+          ) : options.isError ? (
             <Notice error>
               {options.error.message}
               <button

@@ -53,7 +53,6 @@ export interface ServiceError {
 
 export interface LibraryResponse {
   items: MediaItem[];
-  demo: boolean;
   errors: ServiceError[];
 }
 
@@ -82,7 +81,6 @@ export interface QueueItem {
 
 export interface QueueResponse {
   items: QueueItem[];
-  demo: boolean;
   errors: ServiceError[];
 }
 
@@ -146,6 +144,5 @@ export interface EpisodesResponse {
   remoteId: number;
   seasons: { seasonNumber: number; monitored: boolean }[];
   episodes: Episode[];
-  demo: boolean;
   errors: ServiceError[];
 }

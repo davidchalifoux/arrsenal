@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
+import { isPosterSource } from "../image-sources";
 import type {
   InstanceOptions,
   MediaItem,
@@ -67,7 +68,10 @@ export function mediaImage(
     let path = str(candidate).split(/[?#]/, 1)[0];
     if (url) {
       const parsed = new URL(url);
-      if (parsed.origin !== instanceOrigin) return url;
+      if (parsed.origin !== instanceOrigin) {
+        if (isPosterSource(parsed)) return url;
+        continue;
+      }
       // Even remotePoster/remoteUrl may point at a local cover requiring an API key.
       path = parsed.pathname;
     }

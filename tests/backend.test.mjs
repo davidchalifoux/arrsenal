@@ -38,10 +38,8 @@ const episodesRoute = await import("../src/app/api/episodes/route.ts");
 const { arrRequest } = await import("../src/lib/server/arr.ts");
 const { instanceInput, readInstances, saveInstance, removeInstance } =
   await import("../src/lib/server/config.ts");
-const { combinedStatus, coverPath, mediaImage, mergeMedia, normalizeMedia } =
-  await import("../src/lib/server/media.ts");
-const { demoLibrary, demoDiscover, demoInstances, demoQueue } = await import(
-  "../src/lib/demo.ts"
+const { coverPath, mediaImage, mergeMedia, normalizeMedia } = await import(
+  "../src/lib/server/media.ts"
 );
 
 const origin = "http://localhost:3000";
@@ -437,93 +435,29 @@ test("episode searches and releases use local episode IDs and reject wrong-serie
   ).toHaveLength(actions);
 });
 
-test("demo episodes are consistent with each target and never contact an instance", async (t) => {
-  const env = await setup(t);
-  for (const target of demoLibrary[1].targets) {
-    const response = await episodesRoute.GET(
-      request(
-        `/api/episodes?instanceId=${target.instanceId}&remoteId=${target.remoteId}`,
-      ),
-    );
-    expect(response.status).toBe(200);
-    const result = await response.json();
-    expect(result.demo).toBe(true);
-    expect(result.episodes).toHaveLength(target.episodeCount);
-    expect(result.episodes.filter((episode) => episode.hasFile)).toHaveLength(
-      target.episodeFileCount,
-    );
+test("unconfigured reads return empty collections without network access or persistence", async (t) => {
+  const { directory, calls } = await setup(t);
+  for (const response of [
+    await libraryRoute.GET(),
+    await queueRoute.GET(),
+    await lookupRoute.GET(request("/api/lookup")),
+    await lookupRoute.GET(request("/api/lookup?term=dune&kind=movie")),
+  ]) {
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { items: [], errors: [] });
   }
-  expect(env.calls).toHaveLength(0);
-});
-
-test("demo fixtures and read endpoints are consistent and never persist", async (t) => {
-  const { directory } = await setup(t);
-  const library = await (await libraryRoute.GET()).json();
-  assert.equal(library.demo, true);
-  assert.equal(library.items.length, 18);
-  assert.deepEqual(
-    library.items.slice(0, 6).map((item) => item.title),
-    [
-      "Dune: Part Two",
-      "Shogun",
-      "Oppenheimer",
-      "The Bear",
-      "Poor Things",
-      "Fallout",
-    ],
-  );
-  assert.equal(new Set(demoLibrary.map((item) => item.id)).size, 18);
-  assert.equal(demoInstances.length, 4);
-  for (const instance of demoInstances) {
-    assert.match(instance.url, /\.invalid$/);
-    assert.equal(instance.hasApiKey, false);
-    assert.equal(instance.connected, false);
-  }
-  for (const item of demoLibrary) {
-    assert.equal(item.status, combinedStatus(item.targets));
-    assert.match(
-      item.poster,
-      /^https:\/\/image\.tmdb\.org\/t\/p\/w500\/.+\.jpg$/,
-    );
-    for (const target of item.targets) {
-      assert.ok(
-        demoInstances.some((instance) => instance.id === target.instanceId),
-      );
-      if (item.kind === "series")
-        assert.ok(target.episodeFileCount <= target.episodeCount);
-    }
-  }
-  assert.equal((await (await queueRoute.GET()).json()).items.length, 3);
-  assert.equal(demoQueue.length, 3);
   assert.deepEqual(await (await instancesRoute.GET()).json(), {
     instances: [],
   });
-  const discovery = await (
-    await lookupRoute.GET(request("/api/lookup"))
-  ).json();
-  assert.equal(discovery.items.length, demoDiscover.length);
-  assert.ok(discovery.items.every((item) => item.targets.length === 0));
-  const matching = await (
-    await lookupRoute.GET(request("/api/lookup?term=dune&kind=movie"))
-  ).json();
-  assert.equal(matching.items.length, 1);
-  assert.equal(matching.items[0].targets.length, 2);
+  assert.equal(calls.length, 0);
   assert.deepEqual(await readdir(directory), []);
 });
 
-test("all demo mutations reject rather than pretending to perform network actions", async (t) => {
+test("unknown instances return 404 without upstream actions", async (t) => {
   const { calls } = await setup(t);
-  const id = "demo-radarr-hd";
+  const id = "unknown-instance";
   const responses = await Promise.all([
-    mediaRoute.POST(
-      request("/api/media", "POST", {
-        media: demoLibrary[0],
-        targets: [
-          { instanceId: id, qualityProfileId: 1, rootFolderPath: "/media" },
-        ],
-        search: true,
-      }),
-    ),
+    episodesRoute.GET(request(`/api/episodes?instanceId=${id}&remoteId=22`)),
     searchRoute.POST(
       request("/api/search", "POST", {
         instanceId: id,
@@ -552,8 +486,8 @@ test("all demo mutations reject rather than pretending to perform network action
     }),
   ]);
   for (const response of responses) {
-    assert.equal(response.status, 409);
-    assert.match((await response.json()).error, /Connect a real/);
+    assert.equal(response.status, 404);
+    assert.match((await response.json()).error, /Instance not found/);
   }
   assert.equal(calls.length, 0);
 });
@@ -1052,11 +986,11 @@ test("Zod query/path schemas preserve decimal-only IDs, optional lookup defaults
     await (
       await lookupRoute.GET(request("/api/lookup?term=&kind=movie&kind=bad"))
     ).json(),
-    { items: [], demo: false, errors: [] },
+    { items: [], errors: [] },
   );
   assert.deepEqual(
     await (await lookupRoute.GET(request("/api/lookup"))).json(),
-    { items: [], demo: false, errors: [] },
+    { items: [], errors: [] },
   );
   const valid = await releasesRoute.GET(
     request(
@@ -1082,7 +1016,6 @@ test("Zod persisted config rejects invalid schemas and normalized duplicates wit
     ...[
       { id: "" },
       { id: "path/segment" },
-      { id: "demo-radarr-hd" },
       { id: 42 },
       { name: " " },
       { kind: secret },
@@ -1246,7 +1179,7 @@ test("separate Node processes cannot lose each other's config mutations", async 
   assert.deepEqual(await readdir(env.directory), ["config.json"]);
 });
 
-test("corrupt or symlinked config fails closed without demo fallback or overwrite", async (t) => {
+test("corrupt or symlinked config fails closed without fallback or overwrite", async (t) => {
   const env = await setup(t, { hd: {} });
   const path = join(env.directory, "config.json");
   await writeFile(path, "{broken", { mode: 0o600 });
@@ -1306,7 +1239,7 @@ test("upstream redirects, slow responses, malformed JSON, and reflected credenti
   assert.equal(JSON.parse(text).items[0].poster, "");
 });
 
-test("timeouts cover bodies and mutations, oversized responses fail, and malformed media is not demo", async (t) => {
+test("timeouts cover bodies and mutations, oversized responses fail, and malformed media reports errors", async (t) => {
   const env = await setup(t, {
     body: { mode: "slow-body" },
     oversized: { mode: "oversized" },
@@ -1331,7 +1264,6 @@ test("timeouts cover bodies and mutations, oversized responses fail, and malform
   );
   await env.connect("invalidMedia");
   const response = await (await libraryRoute.GET()).json();
-  assert.equal(response.demo, false);
   assert.equal(response.items.length, 0);
   assert.equal(response.errors.length, 1);
   assert.match(response.errors[0].message, /invalid media record/);
@@ -1365,7 +1297,6 @@ test("library merges by provider identity, preserves per-target quality/counts, 
   await Promise.all(Object.keys(env.nodes).map(env.connect));
   env.nodes.offline.mode = "error";
   const body = await (await libraryRoute.GET()).json();
-  assert.equal(body.demo, false);
   assert.equal(body.items.length, 4);
   const dune = body.items.find((item) => item.tmdbId === 693134);
   assert.equal(dune.targets.length, 2);
@@ -1396,7 +1327,6 @@ test("library merges by provider identity, preserves per-target quality/counts, 
   );
   for (const node of Object.values(env.nodes)) node.mode = "error";
   const failed = await (await libraryRoute.GET()).json();
-  assert.equal(failed.demo, false);
   assert.equal(failed.items.length, 0);
   assert.equal(failed.errors.length, 4);
 });
@@ -1451,14 +1381,13 @@ test("live lookup merges available results, reports failed targets, and never cl
   const empty = await (
     await lookupRoute.GET(request("/api/lookup?kind=movie"))
   ).json();
-  assert.deepEqual(empty, { items: [], demo: false, errors: [] });
+  assert.deepEqual(empty, { items: [], errors: [] });
   assert.equal(env.calls.length, 0);
   const response = await (
     await lookupRoute.GET(
       request("/api/lookup?kind=movie&term=Dune%20%26%20friends"),
     )
   ).json();
-  assert.equal(response.demo, false);
   assert.equal(response.items.length, 1);
   assert.equal(response.errors.length, 1);
   assert.ok(!env.calls.some((call) => call.node === "sonarr"));
@@ -1497,7 +1426,8 @@ test("options and media add resolve trusted metadata per target and report parti
   });
   const body = {
     media: {
-      ...demoLibrary[0],
+      ...movie,
+      kind: "movie",
       title: "CLIENT FORGERY",
       id: 99999,
       path: "/etc",
@@ -1738,7 +1668,6 @@ test("queue paginates every record, preserves progress and errors, and forwards 
   await env.connect("offline");
   env.nodes.offline.mode = "error";
   const response = await (await queueRoute.GET()).json();
-  assert.equal(response.demo, false);
   assert.equal(response.items.length, 6);
   assert.equal(response.errors.length, 1);
   assert.equal(response.items[0].sizeleft, 25);
@@ -1822,7 +1751,6 @@ test("queue changes, clamped pages, and duplicate records are not reported as a 
     const response = await queueRoute.GET();
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.demo).toBe(false);
     expect(body.items).toEqual([]);
     expect(body.errors).toEqual([
       expect.objectContaining({
@@ -1933,6 +1861,10 @@ test("absolute local remotePoster and remoteUrl covers use the authenticated ima
     { remotePoster: cover },
     { images: [{ coverType: "poster", remoteUrl: cover }] },
     { images: [{ coverType: "poster", url: cover }] },
+    {
+      remotePoster: "https://unsupported.example/poster.jpg",
+      images: [{ coverType: "poster", url: cover }],
+    },
   ]) {
     const src = mediaImage(media, instance);
     expect(src).toMatch(/^\/api\/image\?/);

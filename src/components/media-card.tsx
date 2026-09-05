@@ -6,7 +6,6 @@ import {
   CircleDashedIcon,
   FilmSlateIcon,
   StackIcon,
-  TelevisionSimpleIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import Image from "next/image";
@@ -17,7 +16,7 @@ import type { MediaItem, MediaTarget } from "@/lib/types";
 
 export function Poster({
   item,
-  sizes = "(max-width: 640px) 45vw, (max-width: 1024px) 25vw, 16vw",
+  sizes = "(min-width: 2022px) 273px, (min-width: 1280px) calc((100vw - 386px) / 6), (min-width: 1024px) calc((100vw - 346px) / 4), (min-width: 768px) calc((100vw - 124px) / 4), (min-width: 640px) calc((100vw - 68px) / 3), calc((100vw - 53px) / 2)",
   priority = false,
 }: {
   item: Pick<MediaItem, "poster" | "title">;
@@ -42,7 +41,6 @@ export function Poster({
           src={item.poster}
           alt={`${item.title} poster`}
           fill
-          unoptimized
           sizes={sizes}
           preload={priority}
           onError={() => setFailed(true)}
@@ -159,28 +157,6 @@ export function MediaCard({
               "linear-gradient(180deg, #0002 0%, transparent 40%, transparent 62%, #0d0d0db3 100%)",
           })}
         />
-        <span
-          className={css({
-            position: "absolute",
-            top: "10px",
-            right: "10px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: "25px",
-            height: "25px",
-            borderRadius: "5px",
-            background: "#141414a3",
-            color: "#f0f0f0e0",
-            backdropFilter: "blur(8px)",
-          })}
-        >
-          {item.kind === "movie" ? (
-            <FilmSlateIcon size={14} />
-          ) : (
-            <TelevisionSimpleIcon size={14} />
-          )}
-        </span>
         <div
           className={css({
             position: "absolute",

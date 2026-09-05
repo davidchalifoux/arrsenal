@@ -31,13 +31,11 @@ import { Button, Modal, mutedStyle, Notice, SelectField, Spinner } from "./ui";
 export function MediaDetails({
   media,
   onAddTarget,
-  demo,
   notify,
   onChanged,
 }: {
   media: MediaItem;
   onAddTarget: (item: MediaItem) => void;
-  demo: boolean;
   notify: (message: string, error?: boolean) => void;
   onChanged: () => void;
 }) {
@@ -51,12 +49,6 @@ export function MediaDetails({
   const [error, setError] = useState("");
   async function search(target: MediaTarget) {
     if (searchLock.current) return;
-    if (demo) {
-      notify(
-        `Demo: automatic search for ${media.title} on ${target.instanceName}. Connect an instance to search for real releases.`,
-      );
-      return;
-    }
     searchLock.current = true;
     setBusy(target.instanceId);
     setError("");
@@ -438,22 +430,10 @@ export function MediaDetails({
               <Notice error>{error}</Notice>
             </div>
           )}
-          {demo && (
-            <p
-              className={css({
-                color: "subtle",
-                fontSize: "11px",
-                mt: "17px",
-              })}
-            >
-              Sample library. Searches in demo mode do not contact any indexers.
-            </p>
-          )}
         </div>
         {media.kind === "series" && (
           <SeriesEpisodes
             media={media}
-            demo={demo}
             notify={notify}
             onChanged={onChanged}
             onManualSearch={(target, episode, code) => {
@@ -469,7 +449,6 @@ export function MediaDetails({
           media={media}
           target={releaseTarget}
           targets={media.targets}
-          demo={demo}
           onClose={() => setReleaseTarget(null)}
           onTarget={setReleaseTarget}
           notify={notify}
@@ -485,7 +464,6 @@ function ReleaseSearch({
   media,
   target,
   targets,
-  demo,
   onClose,
   onTarget,
   notify,
@@ -495,7 +473,6 @@ function ReleaseSearch({
   media: MediaItem;
   target: MediaTarget;
   targets: MediaTarget[];
-  demo: boolean;
   onClose: () => void;
   onTarget: (target: MediaTarget) => void;
   notify: (message: string, error?: boolean) => void;
@@ -518,11 +495,10 @@ function ReleaseSearch({
         `/api/releases?instanceId=${encodeURIComponent(target.instanceId)}&remoteId=${target.remoteId}&kind=${media.kind}${episodeScope ? `&episodeId=${episodeScope.id}` : ""}`,
         { signal },
       ),
-    enabled: !demo,
     retry: false,
   });
   async function grab(release: Release) {
-    if (demo || grabLock.current) return;
+    if (grabLock.current) return;
     grabLock.current = true;
     setGrabbing(release.guid);
     try {
@@ -585,7 +561,7 @@ function ReleaseSearch({
         />
         <Button
           onClick={() => releases.refetch()}
-          disabled={demo || releases.isFetching}
+          disabled={releases.isFetching}
         >
           {releases.isFetching ? (
             <Spinner />
@@ -595,12 +571,7 @@ function ReleaseSearch({
           Search again
         </Button>
       </div>
-      {demo ? (
-        <Notice>
-          Connect a Sonarr or Radarr instance to search its indexers and choose
-          a real release. No sample releases are presented as live results.
-        </Notice>
-      ) : releases.isPending ? (
+      {releases.isPending ? (
         <div
           className={css({
             display: "flex",
