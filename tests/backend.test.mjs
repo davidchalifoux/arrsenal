@@ -233,6 +233,8 @@ async function setup(t, definitions = {}) {
         ],
       );
     if (endpoint.startsWith("MediaCover/")) {
+      if (node.imageStatus)
+        return send({ error: "Cover unavailable" }, node.imageStatus);
       res.writeHead(200, {
         "Content-Type": node.imageType ?? "image/png",
         "Set-Cookie": `secret=${secret}`,
@@ -1850,6 +1852,105 @@ test("queue retry distinguishes delayed grabs, completed import scans, and activ
     ).status,
     404,
   );
+});
+
+test("cached covers take priority and missing covers fall back without forwarding credentials", async (t) => {
+  const env = await setup(t, { sonarr: { kind: "sonarr" } });
+  const instance = { ...(await env.connect("sonarr")), apiKey: secret };
+  const remote = "https://artworks.thetvdb.com/banners/posters/example.jpg";
+  const src = mediaImage(
+    {
+      remotePoster: remote,
+      images: [
+        {
+          coverType: "poster",
+          url: "/sonarr/MediaCover/22/poster.jpg",
+          remoteUrl: remote,
+        },
+      ],
+    },
+    instance,
+  );
+  const query = new URL(src, origin).searchParams;
+  expect(query.get("path")).toBe("/MediaCover/22/poster.jpg");
+  expect(query.get("fallback")).toBe(remote);
+  expect(mediaImage({ remotePoster: remote }, instance)).toBe(remote);
+
+  const actualFetch = globalThis.fetch;
+  const fallbackRequests = [];
+  let contentType = "image/png";
+  const local = await imageRoute.GET(request(src));
+  expect(local.status).toBe(200);
+  const bytes = await local.arrayBuffer();
+  const fetchMock = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation((input, init) => {
+      if (String(input) !== remote) return actualFetch(input, init);
+      fallbackRequests.push(init);
+      return Promise.resolve(
+        new Response(bytes, {
+          headers: {
+            "Content-Type": contentType,
+            "Set-Cookie": "tracking=value",
+          },
+        }),
+      );
+    });
+  t.onTestFinished(() => fetchMock.mockRestore());
+  expect((await imageRoute.GET(request(src))).status).toBe(200);
+  expect(fallbackRequests).toHaveLength(0);
+  env.nodes.sonarr.imageStatus = 404;
+  const fallback = await imageRoute.GET(request(src));
+  expect(fallback.status).toBe(200);
+  expect(fallback.headers.get("content-type")).toBe("image/png");
+  expect(fallback.headers.get("set-cookie")).toBeNull();
+  expect(fallbackRequests).toHaveLength(1);
+  expect(new Headers(fallbackRequests[0].headers).has("x-api-key")).toBe(false);
+  expect(new Headers(fallbackRequests[0].headers).has("authorization")).toBe(
+    false,
+  );
+  expect(fallbackRequests[0].redirect).toBe("error");
+  expect(fallbackRequests[0].signal).toBeInstanceOf(AbortSignal);
+  contentType = "image/svg+xml";
+  expect((await imageRoute.GET(request(src))).status).toBe(502);
+  query.delete("fallback");
+  expect((await imageRoute.GET(request(`/api/image?${query}`))).status).toBe(
+    404,
+  );
+});
+
+test("invalid artwork fallbacks and local paths cannot trigger a fetch", async (t) => {
+  const env = await setup(t, { sonarr: { kind: "sonarr" } });
+  const instance = await env.connect("sonarr");
+  const before = env.calls.length;
+  for (const fallback of [
+    "http://127.0.0.1/private.jpg",
+    "https://evil.example/image.jpg",
+    "https://user:password@image.tmdb.org/t/p/w500/image.jpg",
+    "https://image.tmdb.org/t/p/w500/image.jpg?apiKey=secret",
+    "https://image.tmdb.org/other/image.jpg",
+    "https://image.tmdb.org/t/p/w500/image.jpg#fragment",
+  ]) {
+    expect(
+      (
+        await imageRoute.GET(
+          request(
+            `/api/image?${new URLSearchParams({ instanceId: instance.id, path: "/MediaCover/22/poster.jpg", fallback })}`,
+          ),
+        )
+      ).status,
+    ).toBe(400);
+  }
+  expect(
+    (
+      await imageRoute.GET(
+        request(
+          `/api/image?${new URLSearchParams({ instanceId: instance.id, path: "/api/v3/system/status", fallback: "https://image.tmdb.org/t/p/w500/image.jpg" })}`,
+        ),
+      )
+    ).status,
+  ).toBe(400);
+  expect(env.calls).toHaveLength(before);
 });
 
 test("absolute local remotePoster and remoteUrl covers use the authenticated image proxy", async (t) => {

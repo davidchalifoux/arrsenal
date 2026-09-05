@@ -124,39 +124,7 @@ export async function arrRequest(
       }
       throw new ApiError(502, `Instance returned HTTP ${response.status}.`);
     }
-    if (options.image) {
-      const type =
-        response.headers
-          .get("content-type")
-          ?.split(";", 1)[0]
-          .trim()
-          .toLowerCase() ?? "";
-      if (
-        ![
-          "image/jpeg",
-          "image/png",
-          "image/webp",
-          "image/gif",
-          "image/avif",
-        ].includes(type)
-      ) {
-        await response.body?.cancel();
-        throw new ApiError(
-          502,
-          "Instance did not return a supported raster image.",
-        );
-      }
-      const bytes = await readLimited(response, 10 * 1024 * 1024);
-      return new Response(bytes, {
-        headers: {
-          "Content-Type": type,
-          "Cache-Control": "private, max-age=3600",
-          "X-Content-Type-Options": "nosniff",
-          "Cross-Origin-Resource-Policy": "same-origin",
-          "Content-Security-Policy": "default-src 'none'; sandbox",
-        },
-      });
-    }
+    if (options.image) return await imageResponse(response);
     const bytes = await readLimited(response, 32 * 1024 * 1024);
     if (bytes.byteLength === 0) return null;
     try {
@@ -184,6 +152,44 @@ export async function arrRequest(
       `Unable to reach the instance. Check its URL, TLS certificate, and network access.${uncertain}`,
     );
   }
+}
+
+export async function imageResponse(response: Response): Promise<Response> {
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new ApiError(502, "Artwork source is unavailable.");
+  }
+  const type =
+    response.headers
+      .get("content-type")
+      ?.split(";", 1)[0]
+      .trim()
+      .toLowerCase() ?? "";
+  if (
+    ![
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+      "image/avif",
+    ].includes(type)
+  ) {
+    await response.body?.cancel();
+    throw new ApiError(
+      502,
+      "Artwork source did not return a supported raster image.",
+    );
+  }
+  const bytes = await readLimited(response, 10 * 1024 * 1024);
+  return new Response(bytes, {
+    headers: {
+      "Content-Type": type,
+      "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
+      "Cross-Origin-Resource-Policy": "same-origin",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+    },
+  });
 }
 
 async function readLimited(

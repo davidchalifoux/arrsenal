@@ -73,7 +73,7 @@ option checks, and per-target action errors retain their existing behavior.
 | `GET /api/queue` | Reads every queue page with `includeMovie`/`includeSeries`, includes unknown media downloads, preserves signed queue IDs, progress fields and warnings, and reports instance errors. |
 | `DELETE /api/queue` | Requires `{instanceId, id, blocklist, removeFromClient}` with real booleans; forwards both deletion flags. Blocklisting can cause the instance to search for a replacement. |
 | `POST /api/queue` | Re-reads the queue, then selects the safe action described below. |
-| `GET /api/image` | Proxies only raster filenames under `/MediaCover/<id>/` or `/api/v3/MediaCover/<id>/`, with an optional configured application base prefix. No external fetch URLs, query parameters, traversal, encoded paths, SVG, or arbitrary API endpoints. |
+| `GET /api/image` | Proxies raster filenames under `/MediaCover/<id>/` or `/api/v3/MediaCover/<id>/`, with an optional configured application base prefix. An optional `fallback` accepts only an allowed TMDB/TVDB CDN URL and is fetched if the local cover fails. Local paths still reject traversal, query parameters, encoded paths, SVG, and arbitrary API endpoints. |
 
 ## Action Semantics
 
@@ -111,8 +111,8 @@ behavior is unchanged when `episodeId` is omitted.
   `DownloadedEpisodesScan` with the upstream-reported `outputPath`, download ID
   as `downloadClientId`, and `importMode: auto`. Active downloads, missing paths,
   and missing download IDs are rejected; manual intervention can still be needed.
-- Poster mapping prefers trusted TMDB/TVDB poster URLs, falling back to local
-  covers for unsupported remote sources. Covers at
+- Poster mapping prefers instance-cached covers and includes an allowed TMDB/TVDB
+  fallback URL when present. CDN-only lookup results keep their remote URL. Covers at
   the configured instance origin use the server proxy even when supplied as
   absolute `remotePoster`/`remoteUrl` values. Proxy responses forward no upstream cookies,
   auth headers, or redirect locations, and are private-cacheable for one hour.

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { z } from "zod";
+import { isPosterSource } from "../image-sources";
 
 const objectError = { error: "A JSON object is required." };
 
@@ -231,6 +232,12 @@ export const releasesQuerySchema = z
 export const imageQuerySchema = z.object({
   instanceId: instanceIdSchema,
   path: textSchema("path", 2048),
+  fallback: textSchema("fallback", 2048)
+    .pipe(z.url({ error: "Invalid artwork fallback URL." }))
+    .refine((value) => isPosterSource(new URL(value)), {
+      error: "Artwork fallback must use an allowed CDN source.",
+    })
+    .optional(),
 });
 
 export const localCoverPathSchema = z

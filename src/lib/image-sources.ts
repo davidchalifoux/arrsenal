@@ -9,6 +9,9 @@ export function isPosterSource(url: URL) {
     url.protocol === "https:" &&
     !url.port &&
     !url.search &&
+    !url.username &&
+    !url.password &&
+    !url.hash &&
     posterSources.some(
       (source) =>
         url.hostname === source.hostname &&

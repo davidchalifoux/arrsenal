@@ -63,26 +63,33 @@ export function mediaImage(
     ...images.map((image) => image.url),
   ];
   const instanceOrigin = new URL(instance.url).origin;
+  let local = "";
+  let remote = "";
   for (const candidate of candidates) {
     const url = remoteImage(candidate);
     let path = str(candidate).split(/[?#]/, 1)[0];
     if (url) {
       const parsed = new URL(url);
       if (parsed.origin !== instanceOrigin) {
-        if (isPosterSource(parsed)) return url;
+        if (!remote && isPosterSource(parsed)) remote = url;
         continue;
       }
       // Even remotePoster/remoteUrl may point at a local cover requiring an API key.
       path = parsed.pathname;
     }
     try {
-      const local = coverPath(instance, path);
-      return `/api/image?${new URLSearchParams({ instanceId: instance.id, path: `/${local}` })}`;
+      if (!local) local = coverPath(instance, path);
     } catch {
       // Unrecognized images are omitted, never converted into arbitrary proxy URLs.
     }
   }
-  return "";
+  if (!local) return remote;
+  const query = new URLSearchParams({
+    instanceId: instance.id,
+    path: `/${local}`,
+  });
+  if (remote) query.set("fallback", remote);
+  return `/api/image?${query}`;
 }
 
 export function qualityName(value: unknown): string {
