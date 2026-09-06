@@ -5,6 +5,7 @@ import type { MediaItem } from "@/lib/types";
 export type LibraryCategory = "library" | "movies" | "shows" | "missing";
 export type LibraryStatus = "all" | "available" | "incomplete" | "downloading";
 export type LibrarySort = "recent" | "title" | "year" | "rating";
+export type LibrarySortDirection = "asc" | "desc";
 export type LibraryLayout = "grid" | "list";
 export type LibraryCounts = Record<
   LibraryCategory | "available" | "downloading",
@@ -19,12 +20,14 @@ export function useLibraryView(
     instanceFilter,
     quality,
     sort,
+    sortDirection,
   }: {
     category: LibraryCategory;
     status: LibraryStatus;
     instanceFilter: string;
     quality: string;
     sort: LibrarySort;
+    sortDirection: LibrarySortDirection;
   },
 ) {
   const collections = useCollections();
@@ -88,13 +91,14 @@ export function useLibraryView(
   const positions = new Map(items.map((item, index) => [item.id, index]));
   const filtered = [...(matching ?? [])].sort(
     (a, b) =>
-      (sort === "title"
-        ? a.title.localeCompare(b.title)
-        : sort === "year"
-          ? b.year - a.year
-          : sort === "rating"
-            ? (b.rating ?? 0) - (a.rating ?? 0)
-            : b.added.localeCompare(a.added)) ||
+      (sortDirection === "asc" ? 1 : -1) *
+        (sort === "title"
+          ? a.title.localeCompare(b.title)
+          : sort === "year"
+            ? a.year - b.year
+            : sort === "rating"
+              ? (a.rating ?? 0) - (b.rating ?? 0)
+              : a.added.localeCompare(b.added)) ||
       (positions.get(a.id) ?? 0) - (positions.get(b.id) ?? 0),
   );
   const filterCount =

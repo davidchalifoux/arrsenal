@@ -20,6 +20,7 @@ import {
   type LibraryCategory,
   type LibraryLayout,
   type LibrarySort,
+  type LibrarySortDirection,
   type LibraryStatus,
   useLibraryView,
 } from "./use-library-view";
@@ -74,6 +75,8 @@ export function LibraryBrowser({ category }: { category: LibraryCategory }) {
   const [quality, setQuality] = useState("all");
   const [status, setStatus] = useState<LibraryStatus>("all");
   const [sort, setSort] = useState<LibrarySort>("recent");
+  const [sortDirection, setSortDirection] =
+    useState<LibrarySortDirection>("desc");
   const [layout, setLayout] = useState<LibraryLayout>("grid");
   const items = library.data?.items ?? [];
   const instances = instanceQuery.data?.instances ?? [];
@@ -83,6 +86,7 @@ export function LibraryBrowser({ category }: { category: LibraryCategory }) {
     instanceFilter,
     quality,
     sort,
+    sortDirection,
   });
 
   function resetFilters() {
@@ -187,11 +191,16 @@ export function LibraryBrowser({ category }: { category: LibraryCategory }) {
         quality={quality}
         status={status}
         sort={sort}
+        sortDirection={sortDirection}
         layout={layout}
         onInstanceChange={setInstanceFilter}
         onQualityChange={setQuality}
         onStatusChange={setStatus}
-        onSortChange={setSort}
+        onSortChange={(next) => {
+          setSort(next);
+          setSortDirection(next === "title" ? "asc" : "desc");
+        }}
+        onSortDirectionChange={setSortDirection}
         onLayoutChange={setLayout}
         onResetFilters={resetFilters}
       />

@@ -449,9 +449,9 @@ describe("Library integration", () => {
   });
 
   it.each([
-    "Recently added",
+    "Date added",
     "Release year",
-    "Highest rated",
+    "Rating",
   ])("preserves API response order for tied %s values, including after refresh", async (sort) => {
     const items: MediaItem[] = [
       {
@@ -483,6 +483,13 @@ describe("Library integration", () => {
     );
     await screen.findByRole("link", { name: `View ${items[0].title}` });
     await choose("Sort library", sort);
+    expect(
+      screen
+        .getAllByRole("link", { name: /^View / })
+        .map((link) => link.getAttribute("aria-label")),
+    ).toEqual(items.map((item) => `View ${item.title}`));
+
+    fireEvent.click(screen.getByRole("button", { name: "Sort ascending" }));
     expect(
       screen
         .getAllByRole("link", { name: /^View / })

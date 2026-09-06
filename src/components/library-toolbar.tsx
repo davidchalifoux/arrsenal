@@ -1,6 +1,7 @@
 import { Popover } from "@base-ui/react/popover";
 import {
-  ArrowsDownUpIcon,
+  ArrowDownIcon,
+  ArrowUpIcon,
   ListIcon,
   SlidersHorizontalIcon,
   SquaresFourIcon,
@@ -13,6 +14,7 @@ import type {
   LibraryCounts,
   LibraryLayout,
   LibrarySort,
+  LibrarySortDirection,
   LibraryStatus,
 } from "./use-library-view";
 
@@ -35,11 +37,13 @@ export function LibraryToolbar({
   quality,
   status,
   sort,
+  sortDirection,
   layout,
   onInstanceChange,
   onQualityChange,
   onStatusChange,
   onSortChange,
+  onSortDirectionChange,
   onLayoutChange,
   onResetFilters,
 }: {
@@ -54,11 +58,13 @@ export function LibraryToolbar({
   quality: string;
   status: LibraryStatus;
   sort: LibrarySort;
+  sortDirection: LibrarySortDirection;
   layout: LibraryLayout;
   onInstanceChange: (instance: string) => void;
   onQualityChange: (quality: string) => void;
   onStatusChange: (status: LibraryStatus) => void;
   onSortChange: (sort: LibrarySort) => void;
+  onSortDirectionChange: (direction: LibrarySortDirection) => void;
   onLayoutChange: (layout: LibraryLayout) => void;
   onResetFilters: () => void;
 }) {
@@ -142,7 +148,7 @@ export function LibraryToolbar({
         <Popover.Root>
           <Popover.Trigger
             className={buttonStyle({
-              size: "sm",
+              size: "md",
               variant: filterCount ? "primary" : "secondary",
             })}
           >
@@ -165,15 +171,6 @@ export function LibraryToolbar({
                   boxShadow: "0 12px 40px #0006",
                 })}
               >
-                <h3
-                  className={css({
-                    fontSize: "13px",
-                    fontWeight: "550",
-                    mb: "17px",
-                  })}
-                >
-                  Make it your view
-                </h3>
                 <div
                   className={css({
                     display: "flex",
@@ -269,14 +266,6 @@ export function LibraryToolbar({
             </Popover.Positioner>
           </Popover.Portal>
         </Popover.Root>
-        <span
-          className={css({
-            color: "subtle",
-            display: { base: "none", sm: "flex" },
-          })}
-        >
-          <ArrowsDownUpIcon size={13} />
-        </span>
         <SelectField
           compact
           value={sort}
@@ -292,19 +281,40 @@ export function LibraryToolbar({
           }}
           label="Sort library"
           options={[
-            { value: "recent", label: "Recently added" },
-            { value: "title", label: "Title A-Z" },
+            { value: "recent", label: "Date added" },
+            { value: "title", label: "Title" },
             { value: "year", label: "Release year" },
-            { value: "rating", label: "Highest rated" },
+            { value: "rating", label: "Rating" },
           ]}
         />
+        <Button
+          aria-label={
+            sortDirection === "asc" ? "Sort descending" : "Sort ascending"
+          }
+          title={
+            sortDirection === "asc"
+              ? "Ascending: click to sort descending"
+              : "Descending: click to sort ascending"
+          }
+          onClick={() =>
+            onSortDirectionChange(sortDirection === "asc" ? "desc" : "asc")
+          }
+          className={css({ width: "36px", px: "0" })}
+        >
+          {sortDirection === "asc" ? (
+            <ArrowUpIcon size={16} />
+          ) : (
+            <ArrowDownIcon size={16} />
+          )}
+        </Button>
         <div
           className={css({
             display: "flex",
             alignItems: "center",
             bg: "#191919",
             border: "1px solid token(colors.line)",
-            borderRadius: "6px",
+            borderRadius: "7px",
+            height: "36px",
             padding: "3px",
             ml: "4px",
             gap: "2px",
@@ -319,7 +329,7 @@ export function LibraryToolbar({
               display: "grid",
               placeItems: "center",
               width: "27px",
-              height: "24px",
+              height: "28px",
               bg: layout === "grid" ? "#353535" : "transparent",
               color: layout === "grid" ? "#d8d8d8" : "subtle",
               borderRadius: "3px",
@@ -339,7 +349,7 @@ export function LibraryToolbar({
               display: "grid",
               placeItems: "center",
               width: "27px",
-              height: "24px",
+              height: "28px",
               bg: layout === "list" ? "#353535" : "transparent",
               color: layout === "list" ? "#d8d8d8" : "subtle",
               borderRadius: "3px",

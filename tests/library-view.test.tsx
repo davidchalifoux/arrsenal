@@ -38,6 +38,7 @@ const defaults: Parameters<typeof useLibraryView>[1] = {
   instanceFilter: "all",
   quality: "all",
   sort: "recent",
+  sortDirection: "desc",
 };
 const clients: QueryClient[] = [];
 
@@ -189,9 +190,23 @@ describe("useLibraryView", () => {
       rating: 8,
     };
     const { result, rerender } = setup([movie, other]);
-    rerender({ ...defaults, sort });
+    rerender({
+      ...defaults,
+      sort,
+      sortDirection: sort === "title" ? "asc" : "desc",
+    });
     await waitFor(() =>
       expect(result.current.filtered.map((item) => item.id)).toEqual(ids),
+    );
+    rerender({
+      ...defaults,
+      sort,
+      sortDirection: sort === "title" ? "desc" : "asc",
+    });
+    await waitFor(() =>
+      expect(result.current.filtered.map((item) => item.id)).toEqual(
+        [...ids].reverse(),
+      ),
     );
   });
 });
