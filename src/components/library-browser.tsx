@@ -18,7 +18,7 @@ import { css } from "@styled-system/css";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { mediaHref, qualityLabel } from "@/lib/client";
 import { instancesQuery, libraryQuery } from "@/lib/queries";
 import { MediaCard, MediaList } from "./media-card";
@@ -44,6 +44,41 @@ const gridStyle = css({
   columnGap: { base: "15px", md: "20px" },
   rowGap: "29px",
 });
+
+const skeletonStyle = css({
+  display: "inline-block",
+  bg: "elevated",
+  borderRadius: "3px",
+  animation: "skeleton 2s ease-in-out infinite",
+  _motionReduce: { animation: "none" },
+});
+
+function LibraryLoadingStatus() {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timeout = setTimeout(() => setSlow(true), 5000);
+    return () => clearTimeout(timeout);
+  }, []);
+
+  return (
+    <output className={css({ color: "muted" })}>
+      {slow ? (
+        <>
+          Still waiting for your instances. Large libraries or slow connections
+          can take a little longer.{" "}
+          <Link
+            href="/settings"
+            className={css({ textDecoration: "underline" })}
+          >
+            Check connections
+          </Link>
+        </>
+      ) : (
+        "Loading your library..."
+      )}
+    </output>
+  );
+}
 
 export function LibraryBrowser({
   category,
@@ -133,13 +168,17 @@ export function LibraryBrowser({
                 fontSize: "10px",
               })}
             >
-              {library.isFetching
-                ? "Syncing library..."
-                : library.isError
-                  ? "Sync failed"
-                  : library.data?.errors.length
-                    ? "Some instances need attention"
-                    : "Library up to date"}
+              {library.isPending ? (
+                <LibraryLoadingStatus />
+              ) : library.isFetching ? (
+                "Syncing library..."
+              ) : library.isError ? (
+                "Sync failed"
+              ) : library.data?.errors.length ? (
+                "Some instances need attention"
+              ) : (
+                "Library up to date"
+              )}
             </span>
           </>
         }
@@ -154,8 +193,11 @@ export function LibraryBrowser({
             <ArrowClockwiseIcon
               size={16}
               className={
-                library.isFetching
-                  ? css({ animation: "spin 1s linear infinite" })
+                library.isFetching && !library.isPending
+                  ? css({
+                      animation: "spin 1s linear infinite",
+                      _motionReduce: { animation: "none" },
+                    })
                   : undefined
               }
             />
@@ -210,6 +252,7 @@ export function LibraryBrowser({
           <button
             type="button"
             key={stat.label}
+            disabled={!library.data}
             onClick={() => {
               setStatus(stat.filter);
             }}
@@ -248,9 +291,15 @@ export function LibraryBrowser({
               })}
             >
               {library.isPending ? (
-                <span className={css({ color: "subtle" })}>...</span>
-              ) : (
+                <span
+                  aria-hidden="true"
+                  className={skeletonStyle}
+                  style={{ width: 48, height: 27 }}
+                />
+              ) : library.data ? (
                 stat.count
+              ) : (
+                "-"
               )}
             </div>
             <p
@@ -260,7 +309,17 @@ export function LibraryBrowser({
                 lineHeight: "1.4",
               })}
             >
-              {stat.note}
+              {library.isPending && stat.filter === "all" ? (
+                <span
+                  aria-hidden="true"
+                  className={skeletonStyle}
+                  style={{ width: "70%", height: 9 }}
+                />
+              ) : stat.filter === "all" && !library.data ? (
+                "Counts unavailable"
+              ) : (
+                stat.note
+              )}
             </p>
           </button>
         ))}
@@ -332,9 +391,12 @@ export function LibraryBrowser({
             >
               {tab === "library" ? "All media" : categoryNames[tab]}
               <span
+                aria-hidden={library.isPending || undefined}
                 className={css({
                   fontSize: "9px",
                   fontFamily: "mono",
+                  minWidth: library.isPending ? "24px" : undefined,
+                  minHeight: library.isPending ? "16px" : undefined,
                   borderRadius: "4px",
                   px: "5px",
                   py: "1px",
@@ -342,7 +404,7 @@ export function LibraryBrowser({
                   bg: category === tab ? "#303030" : "#242424",
                 })}
               >
-                {library.data ? counts[tab] : "..."}
+                {library.data ? counts[tab] : library.isPending ? null : "-"}
               </span>
             </Link>
           ))}
@@ -555,7 +617,7 @@ export function LibraryBrowser({
           </div>
         </div>
       </div>
-      {(filterCount > 0 || category === "missing") && (
+      {library.data && (filterCount > 0 || category === "missing") && (
         <div
           className={css({
             display: "flex",
@@ -594,24 +656,41 @@ export function LibraryBrowser({
           </button>
         </Notice>
       ) : library.isPending ? (
-        <div className={gridStyle}>
+        <div
+          aria-hidden="true"
+          className={
+            layout === "grid"
+              ? gridStyle
+              : css({ display: "grid", gap: "12px" })
+          }
+        >
           {Array.from({ length: 12 }, (_, index) => (
-            <div key={`skeleton-${index.toString()}`}>
+            <div
+              key={`skeleton-${index.toString()}`}
+              className={
+                layout === "list"
+                  ? css({ display: "flex", alignItems: "center", gap: "16px" })
+                  : undefined
+              }
+            >
               <div
-                className={css({
+                className={skeletonStyle}
+                style={{
+                  display: "block",
                   aspectRatio: "2 / 3",
-                  bg: "#191919",
-                  borderRadius: "8px",
-                })}
+                  borderRadius: 8,
+                  width: layout === "list" ? 40 : "100%",
+                  flexShrink: 0,
+                }}
               />
               <div
-                className={css({
-                  height: "12px",
-                  width: "70%",
-                  mt: "13px",
-                  bg: "#242424",
-                  borderRadius: "3px",
-                })}
+                className={skeletonStyle}
+                style={{
+                  display: "block",
+                  height: 12,
+                  width: layout === "list" ? "40%" : "70%",
+                  marginTop: layout === "list" ? 0 : 13,
+                }}
               />
             </div>
           ))}
@@ -687,9 +766,9 @@ export function LibraryBrowser({
         })}
       >
         <span>
-          {filtered.length} titles
+          {library.data ? `${filtered.length} titles` : "Titles"}
           <span className={css({ mx: "7px", color: "#4d4d4d" })}>·</span>
-          {instances.length} instances
+          {instanceQuery.data ? `${instances.length} instances` : "Instances"}
           <span className={css({ mx: "7px", color: "#4d4d4d" })}>·</span>
           One library
         </span>

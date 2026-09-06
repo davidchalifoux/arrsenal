@@ -192,7 +192,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                       fontFamily: "mono",
                     })}
                   >
-                    {library.data ? counts[item.href] : "..."}
+                    {library.data ? counts[item.href] : null}
                   </span>
                 </Link>
               );
@@ -347,9 +347,10 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               width: "5px",
               height: "5px",
               borderRadius: "50%",
-              bg:
-                instances.length &&
-                instances.every((instance) => instance.connected)
+              bg: instanceQuery.isPending
+                ? "subtle"
+                : instances.length &&
+                    instances.every((instance) => instance.connected)
                   ? "positive"
                   : "warning",
             })}

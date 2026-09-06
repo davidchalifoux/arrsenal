@@ -35,6 +35,10 @@ export default defineConfig({
         },
       },
       keyframes: {
+        skeleton: {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.5" },
+        },
         spin: { to: { transform: "rotate(360deg)" } },
         enter: {
           from: { opacity: "0", transform: "translateY(6px)" },

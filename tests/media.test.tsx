@@ -437,6 +437,13 @@ describe("Library integration", () => {
     expect(html).not.toContain(movie.title);
     expect(fetchMock).not.toHaveBeenCalled();
     const { rerender } = renderUI(content);
+    expect(screen.getByRole("status").textContent).toBe(
+      "Loading your library...",
+    );
+    expect(screen.queryByText("Syncing library...")).toBeNull();
+    expect(screen.queryByText("0 movies · 0 shows")).toBeNull();
+    expect(screen.queryByText("0 titles")).toBeNull();
+    expect(screen.queryByText("0 instances")).toBeNull();
     expect(
       screen.queryByRole("link", { name: `View ${movie.title}` }),
     ).toBeNull();
@@ -449,6 +456,7 @@ describe("Library integration", () => {
       ),
     );
     await screen.findByRole("link", { name: `View ${movie.title}` });
+    expect(screen.queryByText("Loading your library...")).toBeNull();
     rerender(
       <QueryClientProvider client={queryClient}>
         <WorkspaceProvider>
@@ -494,6 +502,84 @@ describe("Library integration", () => {
     expect(
       screen.getByRole("link", { name: `View ${movie.title}` }),
     ).toBeTruthy();
+  });
+
+  it("explains a slow initial load and clears the loading state on failure", async () => {
+    const pending = Promise.withResolvers<Response>();
+    fetchMock.mockImplementation(async (path) => {
+      if (path === "/api/library") return pending.promise;
+      if (path === "/api/instances") return Response.json({ instances: [hd] });
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.useFakeTimers();
+    try {
+      renderUI(
+        <WorkspaceProvider>
+          <LibraryBrowser category="missing" />
+        </WorkspaceProvider>,
+      );
+      expect(screen.queryByText("0 matching titles")).toBeNull();
+      await act(async () => vi.advanceTimersByTimeAsync(4999));
+      expect(
+        screen.queryByRole("link", { name: "Check connections" }),
+      ).toBeNull();
+      await act(async () => vi.advanceTimersByTimeAsync(1));
+      expect(screen.getByRole("status").textContent).toContain(
+        "Still waiting for your instances.",
+      );
+      expect(
+        screen
+          .getByRole("link", { name: "Check connections" })
+          .getAttribute("href"),
+      ).toBe("/settings");
+      await act(async () => {
+        pending.resolve(
+          Response.json({ error: "Library unavailable." }, { status: 503 }),
+        );
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(screen.queryByText(/Still waiting for your instances/)).toBeNull();
+      expect(screen.getByRole("alert").textContent).toContain(
+        "Library unavailable.",
+      );
+      expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+      expect(screen.queryByText("0 movies · 0 shows")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps titles visible while refreshing without showing initial loading feedback", async () => {
+    queryClient.setQueryData(["library"], {
+      items: [{ ...movie, targets: [hdTarget] }],
+      errors: [],
+    });
+    const pending = Promise.withResolvers<Response>();
+    fetchMock.mockImplementation(async (path) => {
+      if (path === "/api/library") return pending.promise;
+      if (path === "/api/instances") return Response.json({ instances: [hd] });
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    renderUI(
+      <WorkspaceProvider>
+        <LibraryBrowser category="movies" />
+      </WorkspaceProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Refresh library" }));
+    await screen.findByText("Syncing library...");
+    expect(
+      screen.getByRole("link", { name: `View ${movie.title}` }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Loading your library...")).toBeNull();
+    await act(async () =>
+      pending.resolve(
+        Response.json({
+          items: [{ ...movie, targets: [hdTarget] }],
+          errors: [],
+        }),
+      ),
+    );
+    await screen.findByText("Library up to date");
   });
 
   it("adds a target from its detail page and refreshes the library from the API", async () => {
