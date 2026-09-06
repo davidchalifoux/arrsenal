@@ -111,11 +111,15 @@ export function MediaCard({
   onClick,
   href,
   index = eagerPosterCount,
+  priority = index < eagerPosterCount,
+  sizes,
 }: {
   item: MediaItem;
   onClick?: () => void;
   href?: string;
   index?: number;
+  priority?: boolean;
+  sizes?: string;
 }) {
   const className = cx(
     "group",
@@ -151,7 +155,7 @@ export function MediaCard({
           },
         })}
       >
-        <Poster item={item} priority={index < eagerPosterCount} />
+        <Poster item={item} priority={priority} sizes={sizes} />
       </div>
       <div
         className={css({

@@ -42,9 +42,9 @@ const gridStyle = css({
   gridTemplateColumns: {
     base: "repeat(2, minmax(0, 1fr))",
     sm: "repeat(3, minmax(0, 1fr))",
-    md: "repeat(4, minmax(0, 1fr))",
-    lg: "repeat(4, minmax(0, 1fr))",
-    xl: "repeat(6, minmax(0, 1fr))",
+    md: "repeat(5, minmax(0, 1fr))",
+    xl: "repeat(7, minmax(0, 1fr))",
+    "2xl": "repeat(8, minmax(0, 1fr))",
   },
   columnGap: { base: "15px", md: "20px" },
   rowGap: "29px",
@@ -670,6 +670,8 @@ export function LibraryBrowser({
                 key={item.id}
                 item={item}
                 index={index}
+                priority={index < 16}
+                sizes="(min-width: 2022px) 200px, (min-width: 1536px) calc((100vw - 426px) / 8), (min-width: 1280px) calc((100vw - 406px) / 7), (min-width: 1024px) calc((100vw - 366px) / 5), (min-width: 768px) calc((100vw - 144px) / 5), (min-width: 640px) calc((100vw - 68px) / 3), calc((100vw - 53px) / 2)"
                 href={mediaHref(item)}
               />
             ))}

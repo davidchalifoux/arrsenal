@@ -420,6 +420,34 @@ describe("AddMedia", () => {
 });
 
 describe("Library integration", () => {
+  it("eagerly loads two eight-column rows with sizes matching the denser library grid", async () => {
+    const items = Array.from({ length: 17 }, (_, index) => ({
+      ...movie,
+      id: `movie-${index}`,
+      title: `Movie ${index}`,
+      targets: [hdTarget],
+    }));
+    queryClient.setQueryData(["library"], { items, errors: [] });
+    queryClient.setQueryData(["instances"], { instances: [hd] });
+    renderUI(
+      <WorkspaceProvider>
+        <LibraryBrowser category="movies" />
+      </WorkspaceProvider>,
+    );
+    const posters = await screen.findAllByRole("img");
+    expect(posters).toHaveLength(17);
+    expect(posters.map((poster) => poster.getAttribute("loading"))).toEqual([
+      ...Array(16).fill("eager"),
+      "lazy",
+    ]);
+    expect(posters[0].getAttribute("sizes")).toContain(
+      "(min-width: 1536px) calc((100vw - 426px) / 8)",
+    );
+    expect(posters[0].getAttribute("sizes")).toContain(
+      "(min-width: 768px) calc((100vw - 144px) / 5)",
+    );
+  });
+
   it.each([
     "Recently added",
     "Release year",
@@ -1212,6 +1240,13 @@ describe("MediaList", () => {
 });
 
 describe("MediaCard", () => {
+  it("accepts sizing and eager loading for a denser grid", () => {
+    render(<MediaCard item={movie} index={15} priority sizes="200px" />);
+    const poster = screen.getByRole("img");
+    expect(poster.getAttribute("loading")).toBe("eager");
+    expect(poster.getAttribute("sizes")).toBe("200px");
+  });
+
   it.each([
     0,
     5,
