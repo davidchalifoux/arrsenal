@@ -100,6 +100,8 @@ export const instanceInputSchema = z.object(
   objectError,
 );
 
+export const instanceEditSchema = instanceInputSchema.partial({ apiKey: true });
+
 export const storedInstanceSchema = instanceInputSchema.extend({
   id: textSchema("id", 100).regex(/^[a-zA-Z0-9_-]+$/),
 });

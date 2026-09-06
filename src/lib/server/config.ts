@@ -149,6 +149,44 @@ export function saveInstance(
   });
 }
 
+export function updateInstance(
+  expected: InstanceConfig,
+  input: Omit<InstanceConfig, "id">,
+): Promise<InstanceConfig> {
+  return mutateConfig((instances) => {
+    const index = instances.findIndex(
+      (instance) => instance.id === expected.id,
+    );
+    if (index === -1) throw new ApiError(404, "Instance not found.");
+    const current = instances[index];
+    // Compare under the write lock, after the network verification completes.
+    if (
+      current.name !== expected.name ||
+      current.kind !== expected.kind ||
+      current.url !== expected.url ||
+      current.apiKey !== expected.apiKey
+    ) {
+      throw new ApiError(
+        409,
+        "Instance changed during verification. Reload and retry.",
+      );
+    }
+    if (
+      instances.some(
+        (instance) => instance.id !== expected.id && instance.url === input.url,
+      )
+    ) {
+      throw new ApiError(
+        409,
+        "An instance with this URL is already connected.",
+      );
+    }
+    const instance = { ...input, id: expected.id };
+    instances[index] = instance;
+    return instance;
+  });
+}
+
 export function removeInstance(id: string): Promise<void> {
   return mutateConfig((instances) => {
     const index = instances.findIndex((instance) => instance.id === id);

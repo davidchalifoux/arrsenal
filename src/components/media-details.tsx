@@ -705,6 +705,19 @@ export function MediaDetails({
                     </div>
                     <QualityBadge target={target} />
                   </div>
+                  <p
+                    className={css({
+                      color: "subtle",
+                      fontSize: "11px",
+                      mt: "10px",
+                      overflowWrap: "anywhere",
+                    })}
+                  >
+                    On disk:{" "}
+                    {target.quality === "Not downloaded"
+                      ? "No files yet"
+                      : target.quality}
+                  </p>
                   <div
                     className={css({
                       display: "flex",

@@ -24,6 +24,9 @@ vi.mock("server-only", () => ({}));
 const instancesRoute = await import("../src/app/api/instances/route.ts");
 const testRoute = await import("../src/app/api/instances/test/route.ts");
 const instanceRoute = await import("../src/app/api/instances/[id]/route.ts");
+const instanceTestRoute = await import(
+  "../src/app/api/instances/[id]/test/route.ts"
+);
 const optionsRoute = await import(
   "../src/app/api/instances/[id]/options/route.ts"
 );
@@ -36,8 +39,13 @@ const queueRoute = await import("../src/app/api/queue/route.ts");
 const imageRoute = await import("../src/app/api/image/route.ts");
 const episodesRoute = await import("../src/app/api/episodes/route.ts");
 const { arrRequest } = await import("../src/lib/server/arr.ts");
-const { instanceInput, readInstances, saveInstance, removeInstance } =
-  await import("../src/lib/server/config.ts");
+const {
+  instanceInput,
+  readInstances,
+  saveInstance,
+  removeInstance,
+  updateInstance,
+} = await import("../src/lib/server/config.ts");
 const { coverPath, mediaImage, mergeMedia, normalizeMedia } = await import(
   "../src/lib/server/media.ts"
 );
@@ -169,6 +177,7 @@ async function setup(t, definitions = {}) {
       res.end(`<html>${secret}</html>`);
       return;
     }
+    if (endpoint === "system/status" && node.verify) await node.verify();
     if (endpoint === "system/status")
       return send({
         appName: node.kind === "radarr" ? "Radarr" : "Sonarr",
@@ -1149,6 +1158,289 @@ test("connectivity tests do not save; atomic config writes serialize and never e
     saveInstance(instanceInput({ ...env.input("hd"), name: "Reconnected" })),
   ]);
   assert.equal((await readInstances()).length, 2);
+});
+
+test("instance edits retain or replace keys, normalize changes, and preserve identity", async (t) => {
+  const replacement = "replacement-private-key";
+  const env = await setup(t, { hd: {}, sonarr: { kind: "sonarr" } });
+  const saved = await env.connect("hd");
+  const path = `/api/instances/${saved.id}`;
+  const context = { params: Promise.resolve({ id: saved.id }) };
+  const patch = (body) =>
+    instanceRoute.PATCH(request(path, "PATCH", body), context);
+  const { apiKey: _key, ...original } = env.input("hd");
+  const renamed = await patch({ ...original, name: " Renamed ", id: "forged" });
+  expect(renamed.status).toBe(200);
+  expect(await renamed.json()).toEqual({
+    instance: { ...saved, name: "Renamed" },
+  });
+  expect(env.calls.at(-1).key).toBe(secret);
+  const { apiKey: _otherKey, ...changed } = env.input("sonarr");
+  const moved = await patch({
+    ...changed,
+    name: " Television ",
+    url: `${changed.url}/api/v3/`,
+  });
+  expect(moved.status).toBe(200);
+  expect(await moved.json()).toEqual({
+    instance: { ...saved, ...changed, name: "Television" },
+  });
+  expect(await readInstances()).toEqual([
+    { ...changed, name: "Television", id: saved.id, apiKey: secret },
+  ]);
+  env.nodes.sonarr.apiKey = replacement;
+  const replaced = await patch({ ...changed, apiKey: replacement });
+  expect(replaced.status).toBe(200);
+  expect(await replaced.json()).toEqual({ instance: { ...saved, ...changed } });
+  expect(env.calls.at(-1).key).toBe(replacement);
+  expect(await readInstances()).toEqual([
+    { ...changed, id: saved.id, apiKey: replacement },
+  ]);
+  expect((await patch(changed)).status).toBe(200);
+  expect(env.calls.at(-1).key).toBe(replacement);
+  expect((await stat(join(env.directory, "config.json"))).mode & 0o777).toBe(
+    0o600,
+  );
+  expect(await readdir(env.directory)).toEqual(["config.json"]);
+});
+
+test("saved-instance connection tests use retained or replacement keys without persisting drafts", async (t) => {
+  const replacement = "draft-private-key";
+  const env = await setup(t, { hd: {}, sonarr: { kind: "sonarr" } });
+  const saved = await env.connect("hd");
+  const before = await readFile(join(env.directory, "config.json"), "utf8");
+  const { apiKey: _key, ...draft } = env.input("sonarr");
+  for (const apiKey of [undefined, replacement]) {
+    env.nodes.sonarr.apiKey = apiKey ?? secret;
+    const response = await instanceTestRoute.POST(
+      request(`/api/instances/${saved.id}/test`, "POST", {
+        ...draft,
+        name: "Draft",
+        apiKey,
+      }),
+      { params: Promise.resolve({ id: saved.id }) },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      success: true,
+      version: "4.0.1",
+      message: "Connection successful. The instance has not been saved.",
+    });
+    expect(env.calls.at(-1)).toMatchObject({
+      node: "sonarr",
+      key: apiKey ?? secret,
+    });
+    expect(await readFile(join(env.directory, "config.json"), "utf8")).toBe(
+      before,
+    );
+  }
+});
+
+test("instance edits reject duplicate URLs and both edit endpoints fail safely without persistence", async (t) => {
+  const env = await setup(t, { hd: {}, other: {} });
+  const saved = await env.connect("hd");
+  await env.connect("other");
+  const configPath = join(env.directory, "config.json");
+  const before = await readFile(configPath, "utf8");
+  const context = { params: Promise.resolve({ id: saved.id }) };
+  const duplicate = await instanceRoute.PATCH(
+    request(`/api/instances/${saved.id}`, "PATCH", {
+      ...env.input("other"),
+      url: `${env.input("other").url}/api/v3/`,
+    }),
+    context,
+  );
+  expect(duplicate.status).toBe(409);
+  expect(await readFile(configPath, "utf8")).toBe(before);
+  for (const [method, handler] of [
+    ["PATCH", instanceRoute.PATCH],
+    ["POST", instanceTestRoute.POST],
+  ]) {
+    const path = `/api/instances/${saved.id}${method === "POST" ? "/test" : ""}`;
+    const calls = env.calls.length;
+    const missing = await handler(request(path, method, env.input("hd")), {
+      params: Promise.resolve({ id: "missing" }),
+    });
+    expect(missing.status).toBe(404);
+    expect(env.calls).toHaveLength(calls);
+    for (const [overrides, status] of [
+      [{ apiKey: "wrong-private-key" }, 502],
+      [{ kind: "sonarr" }, 422],
+    ]) {
+      const response = await handler(
+        request(path, method, { ...env.input("hd"), ...overrides }),
+        context,
+      );
+      expect(response.status).toBe(status);
+      const text = await response.text();
+      expect(text).not.toContain(secret);
+      expect(text).not.toContain("wrong-private-key");
+      expect(await readFile(configPath, "utf8")).toBe(before);
+    }
+    env.nodes.hd.mode = "error";
+    const failed = await handler(
+      request(path, method, { ...env.input("hd"), name: "Unsaved" }),
+      context,
+    );
+    expect(failed.status).toBe(502);
+    expect(await failed.text()).not.toContain(secret);
+    expect(await readFile(configPath, "utf8")).toBe(before);
+    delete env.nodes.hd.mode;
+  }
+  expect(await readdir(env.directory)).toEqual(["config.json"]);
+});
+
+test("edit endpoints enforce mutation guards, full fields, optional-key validation, and path validation before upstream access", async (t) => {
+  const env = await setup(t, { hd: {} });
+  const saved = await env.connect("hd");
+  const before = await readFile(join(env.directory, "config.json"), "utf8");
+  env.calls.length = 0;
+  for (const [method, handler] of [
+    ["PATCH", instanceRoute.PATCH],
+    ["POST", instanceTestRoute.POST],
+  ]) {
+    const path = `/api/instances/${saved.id}${method === "POST" ? "/test" : ""}`;
+    const context = { params: Promise.resolve({ id: saved.id }) };
+    for (const [headers, status] of [
+      [{ Origin: "https://evil.example" }, 403],
+      [{ "Sec-Fetch-Site": "cross-site" }, 403],
+      [{ "Content-Type": "text/plain" }, 415],
+    ]) {
+      expect(
+        (
+          await handler(
+            request(path, method, env.input("hd"), headers),
+            context,
+          )
+        ).status,
+      ).toBe(status);
+    }
+    for (const overrides of [
+      { name: undefined },
+      { kind: undefined },
+      { url: undefined },
+      { name: " " },
+      { kind: secret },
+      { url: `http://user:${secret}@localhost` },
+      { apiKey: "" },
+      { apiKey: null },
+      { apiKey: 42 },
+      { apiKey: `${secret}\n` },
+      { apiKey: "key with space" },
+    ]) {
+      const response = await handler(
+        request(path, method, { ...env.input("hd"), ...overrides }),
+        context,
+      );
+      expect(response.status).toBe(400);
+      expect(await response.text()).not.toContain(secret);
+    }
+    for (const id of [null, 42, "", "bad\n"]) {
+      expect(
+        (
+          await handler(request(path, method, env.input("hd")), {
+            params: Promise.resolve({ id }),
+          })
+        ).status,
+      ).toBe(400);
+    }
+    expect((await handler(request(path, method, []), context)).status).toBe(
+      400,
+    );
+    expect(
+      (
+        await handler(
+          request(path, method, { padding: "x".repeat(140000) }),
+          context,
+        )
+      ).status,
+    ).toBe(413);
+    expect(
+      (
+        await handler(
+          new Request(`${origin}${path}`, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: "{",
+          }),
+          context,
+        )
+      ).status,
+    ).toBe(400);
+  }
+  expect(env.calls).toHaveLength(0);
+  expect(await readFile(join(env.directory, "config.json"), "utf8")).toBe(
+    before,
+  );
+});
+
+test("edits compare every saved field under lock after verification and preserve concurrent changes", async (t) => {
+  const env = await setup(t, { hd: {}, other: {} });
+  const saved = await env.connect("hd");
+  const path = `/api/instances/${saved.id}`;
+  const context = { params: Promise.resolve({ id: saved.id }) };
+  for (const change of [
+    { name: "Concurrent rename" },
+    { kind: "sonarr" },
+    { url: `${env.base}/moved` },
+    { apiKey: "concurrent-private-key" },
+  ]) {
+    const current = (await readInstances())[0];
+    env.nodes.hd.verify = async () => {
+      await updateInstance(current, { ...current, ...change });
+    };
+    const response = await instanceRoute.PATCH(
+      request(path, "PATCH", env.input("hd")),
+      context,
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "Instance changed during verification. Reload and retry.",
+    });
+    expect(await readInstances()).toEqual([{ ...current, ...change }]);
+  }
+  env.nodes.hd.verify = async () => {
+    await env.connect("other");
+  };
+  expect(
+    (
+      await instanceRoute.PATCH(
+        request(path, "PATCH", env.input("hd")),
+        context,
+      )
+    ).status,
+  ).toBe(200);
+  expect(await readInstances()).toHaveLength(2);
+  env.nodes.hd.verify = async () => {
+    await removeInstance(saved.id);
+  };
+  expect(
+    (
+      await instanceRoute.PATCH(
+        request(path, "PATCH", env.input("hd")),
+        context,
+      )
+    ).status,
+  ).toBe(404);
+  expect((await readInstances()).map((item) => item.name)).toEqual(["other"]);
+  expect(await readdir(env.directory)).toEqual(["config.json"]);
+});
+
+test("duplicate URLs introduced during verification are rejected under the write lock", async (t) => {
+  const env = await setup(t, { hd: {}, other: {} });
+  const saved = await env.connect("hd");
+  env.nodes.other.verify = async () => {
+    await saveInstance(env.input("other"));
+  };
+  const response = await instanceRoute.PATCH(
+    request(`/api/instances/${saved.id}`, "PATCH", env.input("other")),
+    { params: Promise.resolve({ id: saved.id }) },
+  );
+  expect(response.status).toBe(409);
+  expect(await readInstances()).toEqual([
+    { ...env.input("hd"), id: saved.id },
+    expect.objectContaining(env.input("other")),
+  ]);
 });
 
 test("separate Node processes cannot lose each other's config mutations", async (t) => {

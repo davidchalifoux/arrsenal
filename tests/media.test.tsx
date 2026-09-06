@@ -14,7 +14,7 @@ import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AddMedia } from "@/components/add-media";
 import { LibraryBrowser } from "@/components/library-browser";
-import { MediaCard } from "@/components/media-card";
+import { MediaCard, MediaList } from "@/components/media-card";
 import { MediaDetails } from "@/components/media-details";
 import { MediaScreen } from "@/components/media-screen";
 import { WorkspaceProvider } from "@/components/workspace-provider";
@@ -419,12 +419,18 @@ describe("AddMedia", () => {
 });
 
 describe("Library integration", () => {
-  it("filters by full quality names and profile fallbacks on the selected instance", async () => {
+  it("filters by selected quality profiles rather than file quality on the selected instance", async () => {
     const bluray = {
       ...movie,
       id: "movie-bluray",
       title: "Bluray movie",
-      targets: [{ ...hdTarget, quality: "Bluray-1080p" }],
+      targets: [
+        {
+          ...hdTarget,
+          qualityProfile: "Custom profile",
+          quality: "WEBDL-1080p",
+        },
+      ],
     };
     fetchMock.mockImplementation(async (path) => {
       if (path === "/api/library")
@@ -443,21 +449,21 @@ describe("Library integration", () => {
     );
     await screen.findByRole("link", { name: `View ${movie.title}` });
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    await choose("Filter by quality", "WEBDL-1080p");
+    await choose("Filter by quality profile", "HD-1080p");
     expect(
       screen.getByRole("link", { name: `View ${movie.title}` }),
     ).toBeTruthy();
     expect(
       screen.queryByRole("link", { name: `View ${bluray.title}` }),
     ).toBeNull();
-    await choose("Filter by quality", "Bluray-1080p");
+    await choose("Filter by quality profile", "Custom profile");
     expect(
       screen.queryByRole("link", { name: `View ${movie.title}` }),
     ).toBeNull();
     expect(
       screen.getByRole("link", { name: `View ${bluray.title}` }),
     ).toBeTruthy();
-    await choose("Filter by quality", "Ultra-HD");
+    await choose("Filter by quality profile", "Ultra-HD");
     expect(
       screen.getByRole("link", { name: `View ${movie.title}` }),
     ).toBeTruthy();
@@ -468,7 +474,7 @@ describe("Library integration", () => {
     expect(
       screen.queryByRole("link", { name: `View ${movie.title}` }),
     ).toBeNull();
-    await choose("Filter by quality", "All qualities");
+    await choose("Filter by quality profile", "All profiles");
     expect(
       screen.getByRole("link", { name: `View ${movie.title}` }),
     ).toBeTruthy();
@@ -696,6 +702,19 @@ describe("Library integration", () => {
 });
 
 describe("MediaDetails searches", () => {
+  it("shows profile badges separately from on-disk quality", () => {
+    renderDetails();
+    for (const target of [hdTarget, uhdTarget]) {
+      expect(
+        screen.getByTitle(
+          `${target.instanceName}: ${target.qualityProfile} · ${target.status}`,
+        ).textContent,
+      ).toBe(target.qualityProfile);
+    }
+    expect(screen.getByText("On disk: WEBDL-1080p")).toBeTruthy();
+    expect(screen.getByText("On disk: No files yet")).toBeTruthy();
+  });
+
   it("auto-searches the selected instance and preserves server failures without reporting success", async () => {
     const props = renderDetails();
     await screen.findByRole("heading", { level: 1, name: movie.title });
@@ -1085,8 +1104,39 @@ describe("Episode actions", () => {
   });
 });
 
+describe("MediaList", () => {
+  it("shows the exact selected quality profile for every instance instead of file quality", () => {
+    const targets = [
+      hdTarget,
+      uhdTarget,
+      {
+        ...hdTarget,
+        instanceId: "archive",
+        instanceName: "Archive",
+        qualityProfile: "Archive profile",
+      },
+      {
+        ...hdTarget,
+        instanceId: "fourth",
+        instanceName: "Fourth instance",
+        qualityProfile: "Custom UHD profile",
+      },
+    ];
+    renderUI(<MediaList items={[{ ...movie, targets }]} />);
+    expect(screen.getByText("Quality profiles")).toBeTruthy();
+    for (const target of targets) {
+      expect(
+        screen.getByText(target.qualityProfile).getAttribute("title"),
+      ).toContain(`${target.instanceName}: ${target.qualityProfile}`);
+    }
+    expect(screen.queryByText("WEBDL-1080p")).toBeNull();
+    expect(screen.queryByText("Not downloaded")).toBeNull();
+    expect(screen.queryByText("4K")).toBeNull();
+  });
+});
+
 describe("MediaCard", () => {
-  it("keeps downloaded quality distinct from the target profile and remains usable after poster failure", () => {
+  it("shows the selected quality profile and remains usable after poster failure", () => {
     const onClick = vi.fn();
     renderUI(
       <MediaCard
@@ -1099,11 +1149,12 @@ describe("MediaCard", () => {
     );
     const card = screen.getByRole("button", { name: `View ${movie.title}` });
     expect(within(card).queryByTitle("1 quality targets")).toBeNull();
-    expect(within(card).getByText("WEBDL-1080p")).toBeTruthy();
+    expect(within(card).getByText("Ultra-HD")).toBeTruthy();
+    expect(within(card).queryByText("WEBDL-1080p")).toBeNull();
     expect(within(card).queryByText("4K")).toBeNull();
-    expect(
-      within(card).getByText("WEBDL-1080p").getAttribute("title"),
-    ).toContain("Ultra-HD");
+    expect(within(card).getByText("Ultra-HD").getAttribute("title")).toContain(
+      "Ultra-HD",
+    );
     fireEvent.error(
       within(card).getByRole("img", { name: `${movie.title} poster` }),
     );

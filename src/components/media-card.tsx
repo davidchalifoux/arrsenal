@@ -10,7 +10,7 @@ import { css, cx } from "@styled-system/css";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { mediaHref, qualityLabel } from "@/lib/client";
+import { mediaHref } from "@/lib/client";
 import type { MediaItem, MediaTarget } from "@/lib/types";
 
 export function Poster({
@@ -78,7 +78,7 @@ export function QualityBadge({ target }: { target: MediaTarget }) {
         alignItems: "center",
         gap: "4px",
         px: "6px",
-        height: "22px",
+        minHeight: "22px",
         borderRadius: "4px",
         bg: "#141414cf",
         backdropFilter: "blur(8px)",
@@ -87,7 +87,8 @@ export function QualityBadge({ target }: { target: MediaTarget }) {
         fontSize: "10px",
         fontWeight: "550",
         letterSpacing: ".1px",
-        whiteSpace: "nowrap",
+        whiteSpace: "normal",
+        overflowWrap: "anywhere",
       })}
     >
       {available ? (
@@ -97,7 +98,7 @@ export function QualityBadge({ target }: { target: MediaTarget }) {
       ) : (
         <CircleDashedIcon size={10} weight="bold" />
       )}
-      {qualityLabel(target.qualityProfile, target.quality)}
+      {target.qualityProfile}
     </span>
   );
 }
@@ -262,7 +263,7 @@ export function MediaList({ items }: { items: MediaItem[] }) {
       >
         <span>Title</span>
         <span>Year</span>
-        <span>Quality targets</span>
+        <span>Quality profiles</span>
         <span>Status</span>
       </div>
       {items.map((item) => (
@@ -340,7 +341,7 @@ export function MediaList({ items }: { items: MediaItem[] }) {
           <span
             className={css({ display: "flex", gap: "5px", flexWrap: "wrap" })}
           >
-            {item.targets.slice(0, 3).map((target) => (
+            {item.targets.map((target) => (
               <QualityBadge key={target.instanceId} target={target} />
             ))}
           </span>

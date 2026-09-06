@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  BroadcastIcon,
   CircleDashedIcon,
   CompassIcon,
   DownloadSimpleIcon,
@@ -10,6 +9,7 @@ import {
   ListIcon,
   PlusIcon,
   SquaresFourIcon,
+  TelevisionIcon,
   TelevisionSimpleIcon,
 } from "@phosphor-icons/react";
 import { css, cva } from "@styled-system/css";
@@ -18,7 +18,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useState } from "react";
-import { instancesQuery, libraryQuery, queueQuery } from "@/lib/queries";
+import { instancesQuery, queueQuery } from "@/lib/queries";
 import { PageUtilitiesContext, WorkspaceUtilities } from "./page-header";
 import { Button, Modal } from "./ui";
 import { useWorkspace } from "./workspace-provider";
@@ -63,23 +63,14 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { connect } = useWorkspace();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const library = useQuery(libraryQuery);
   const instanceQuery = useQuery(instancesQuery);
   const queue = useQuery(queueQuery);
   const instances = instanceQuery.data?.instances ?? [];
-  const items = library.data?.items ?? [];
   const isLibrary =
     pathname === "/" ||
     collections.some(
       (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
     );
-  const counts: Record<string, number> = {
-    "/movies": items.filter((item) => item.kind === "movie").length,
-    "/shows": items.filter((item) => item.kind === "series").length,
-    "/missing": items.filter(
-      (item) => item.status === "partial" || item.status === "missing",
-    ).length,
-  };
   function openConnections() {
     setMobileOpen(false);
     connect();
@@ -185,15 +176,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                 >
                   <item.icon size={18} />
                   <span className={css({ flex: 1 })}>{item.label}</span>
-                  <span
-                    className={css({
-                      fontSize: "10px",
-                      color: active ? "accent" : "subtle",
-                      fontFamily: "mono",
-                    })}
-                  >
-                    {library.data ? counts[item.href] : null}
-                  </span>
                 </Link>
               );
             })}
@@ -260,10 +242,14 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             >
               <span
                 className={css({
-                  color: instance.kind === "radarr" ? "#d4b866" : "#78afcf",
+                  color: instance.kind === "sonarr" ? "info" : "warning",
                 })}
               >
-                <BroadcastIcon size={16} />
+                {instance.kind === "sonarr" ? (
+                  <TelevisionIcon size={16} />
+                ) : (
+                  <FilmSlateIcon size={16} />
+                )}
               </span>
               <span className={css({ flex: 1 })}>{instance.name}</span>
               <span

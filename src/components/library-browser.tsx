@@ -19,7 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { mediaHref, qualityLabel } from "@/lib/client";
+import { mediaHref } from "@/lib/client";
 import { instancesQuery, libraryQuery } from "@/lib/queries";
 import { MediaCard, MediaList } from "./media-card";
 import { PageHeader } from "./page-header";
@@ -99,9 +99,7 @@ export function LibraryBrowser({
   const qualities = [
     ...new Set(
       items.flatMap((item) =>
-        item.targets.map((target) =>
-          qualityLabel(target.qualityProfile, target.quality),
-        ),
+        item.targets.map((target) => target.qualityProfile),
       ),
     ),
   ].sort((a, b) => a.localeCompare(b));
@@ -134,8 +132,7 @@ export function LibraryBrowser({
       return item.targets.some(
         (target) =>
           (instanceFilter === "all" || target.instanceId === instanceFilter) &&
-          (quality === "all" ||
-            qualityLabel(target.qualityProfile, target.quality) === quality),
+          (quality === "all" || target.qualityProfile === quality),
       );
     })
     .sort((a, b) =>
@@ -499,14 +496,14 @@ export function LibraryBrowser({
                           mb: "7px",
                         })}
                       >
-                        Quality target
+                        Quality profile
                       </p>
                       <SelectField
                         value={quality}
                         onChange={setQuality}
-                        label="Filter by quality"
+                        label="Filter by quality profile"
                         options={[
-                          { value: "all", label: "All qualities" },
+                          { value: "all", label: "All profiles" },
                           ...qualities.map((name) => ({
                             value: name,
                             label: name,

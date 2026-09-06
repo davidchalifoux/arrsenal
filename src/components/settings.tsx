@@ -7,9 +7,9 @@ import {
   EyeIcon,
   EyeSlashIcon,
   FilmSlateIcon,
+  PencilSimpleIcon,
   PlugIcon,
   PlusIcon,
-  ShieldCheckIcon,
   SquaresFourIcon,
   TelevisionIcon,
   TrashIcon,
@@ -66,6 +66,10 @@ const instanceSchema = z.object({
     ),
 });
 
+const editInstanceSchema = instanceSchema.extend({
+  apiKey: z.union([z.string().trim().length(0), instanceSchema.shape.apiKey]),
+});
+
 type InstanceForm = z.infer<typeof instanceSchema>;
 const emptyForm: InstanceForm = {
   kind: "sonarr",
@@ -92,6 +96,7 @@ export function Settings({
 }) {
   const id = useId();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<InstanceSummary | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [showKey, setShowKey] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<
@@ -116,6 +121,7 @@ export function Settings({
       request.current?.controller.abort();
       request.current = null;
       setForm(emptyForm);
+      setEditing(null);
       setShowKey(false);
       setFieldErrors({});
       setError(undefined);
@@ -165,7 +171,9 @@ export function Settings({
 
   async function connect(action: "test" | "save") {
     if (request.current) return;
-    const parsed = instanceSchema.safeParse(form);
+    const parsed = (
+      editing?.hasApiKey ? editInstanceSchema : instanceSchema
+    ).safeParse(form);
     if (!parsed.success) {
       const errors: Partial<Record<keyof InstanceForm, string>> = {};
       for (const issue of parsed.error.issues) {
@@ -185,15 +193,20 @@ export function Settings({
     setFieldErrors({});
     setTested(undefined);
     const init = {
-      method: "POST",
-      body: JSON.stringify(parsed.data),
+      method: editing && action === "save" ? "PATCH" : "POST",
+      body: JSON.stringify({
+        ...parsed.data,
+        apiKey: editing && !parsed.data.apiKey ? undefined : parsed.data.apiKey,
+      }),
       signal: current.controller.signal,
     };
 
     try {
       if (action === "test") {
         const result = await api<ActionResponse & { version?: string }>(
-          "/api/instances/test",
+          editing
+            ? `/api/instances/${encodeURIComponent(editing.id)}/test`
+            : "/api/instances/test",
           init,
         );
         if (request.current !== current) return;
@@ -201,7 +214,9 @@ export function Settings({
         setTested({ version: result.version });
       } else {
         const result = await api<{ instance: InstanceSummary }>(
-          "/api/instances",
+          editing
+            ? `/api/instances/${encodeURIComponent(editing.id)}`
+            : "/api/instances",
           init,
         );
         if (request.current !== current) return;
@@ -212,7 +227,7 @@ export function Settings({
         request.current = null;
         changeOpen(false);
         onChanged();
-        notify(`${result.instance.name} connected.`);
+        notify(`${result.instance.name} ${editing ? "updated" : "connected"}.`);
       }
     } catch (cause) {
       if (request.current !== current) return;
@@ -376,7 +391,7 @@ export function Settings({
                     >
                       {instance.error ||
                         (!instance.hasApiKey
-                          ? "The API key is missing. Reconnect this instance with its API key."
+                          ? "The API key is missing. Edit this instance to add its API key."
                           : "Could not reach this instance. Check its URL and network, then refresh status.")}
                     </span>
                   </Notice>
@@ -406,7 +421,30 @@ export function Settings({
                       {instance.version || "Not reported"}
                     </span>
                   </p>
-                  <div className={css({ display: "flex", gap: "5px" })}>
+                  <div
+                    className={css({
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "5px",
+                    })}
+                  >
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Edit ${instance.name}`}
+                      onClick={() => {
+                        setEditing(instance);
+                        setForm({
+                          kind: instance.kind,
+                          name: instance.name,
+                          url: instance.url,
+                          apiKey: "",
+                        });
+                        changeOpen(true);
+                      }}
+                    >
+                      <PencilSimpleIcon size={14} /> Edit
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -562,60 +600,15 @@ export function Settings({
         </div>
       )}
 
-      <aside
-        className={cx(
-          panelStyle,
-          css({
-            display: "flex",
-            alignItems: "flex-start",
-            gap: "13px",
-            p: "20px",
-            mt: "20px",
-            bg: "transparent",
-          }),
-        )}
-      >
-        <ShieldCheckIcon
-          size={21}
-          className={css({ color: "muted", flexShrink: 0, mt: "2px" })}
-        />
-        <div className={css({ minWidth: 0 })}>
-          <h2
-            className={css({ fontSize: "13px", fontWeight: "550", mb: "5px" })}
-          >
-            Local by design
-          </h2>
-          <p
-            className={cx(
-              mutedStyle,
-              css({ fontSize: "12px", overflowWrap: "anywhere" }),
-            )}
-          >
-            Connections are stored in{" "}
-            <code>~/.config/arrsenal/config.json</code>, or in{" "}
-            <code>ARRSENAL_CONFIG_DIR</code> when set. Saved API keys stay on
-            the server and are never included in library or connection
-            responses.
-          </p>
-          <p
-            className={css({
-              color: "muted",
-              fontSize: "12px",
-              lineHeight: "1.7",
-              mt: "6px",
-            })}
-          >
-            For your own device or a trusted network only. Add authentication or
-            a VPN before exposing Arrsenal remotely.
-          </p>
-        </div>
-      </aside>
-
       <Modal
         open={open}
         onOpenChange={changeOpen}
-        title="Connect an instance"
-        description="Link Sonarr or Radarr using its address and API key. Connecting also verifies your settings."
+        title={editing ? "Edit instance" : "Connect an instance"}
+        description={
+          editing
+            ? "Update your connection details. Saving also verifies your settings."
+            : "Link Sonarr or Radarr using its address and API key. Connecting also verifies your settings."
+        }
       >
         {open && (
           <form
@@ -735,7 +728,11 @@ export function Settings({
                     onChange={(event) =>
                       changeField("apiKey", event.target.value)
                     }
-                    placeholder="Paste your API key"
+                    placeholder={
+                      editing?.hasApiKey
+                        ? "Leave blank to keep the saved key"
+                        : "Paste your API key"
+                    }
                     autoComplete="new-password"
                     autoCapitalize="none"
                     spellCheck={false}
@@ -781,6 +778,8 @@ export function Settings({
                     lineHeight: "1.6",
                   })}
                 >
+                  {editing?.hasApiKey &&
+                    "Leave blank to keep the saved API key, or enter a new one to replace it. "}
                   Find it in {form.kind === "sonarr" ? "Sonarr" : "Radarr"}{" "}
                   under Settings / General / Security.
                 </p>
@@ -851,10 +850,18 @@ export function Settings({
                 <Button type="submit" variant="primary" disabled={!!busy}>
                   {busy === "save" ? (
                     <Spinner size={15} />
+                  ) : editing ? (
+                    <PencilSimpleIcon size={15} />
                   ) : (
                     <PlusIcon size={15} />
                   )}
-                  {busy === "save" ? "Connecting..." : "Connect instance"}
+                  {editing
+                    ? busy === "save"
+                      ? "Saving..."
+                      : "Save changes"
+                    : busy === "save"
+                      ? "Connecting..."
+                      : "Connect instance"}
                 </Button>
               </div>
             </div>

@@ -1,13 +1,46 @@
-import { removeInstance } from "../../../../lib/server/config";
+import { testConnection } from "../../../../lib/server/arr";
+import {
+  getInstance,
+  removeInstance,
+  updateInstance,
+} from "../../../../lib/server/config";
 import {
   api,
   jsonBody,
   mutationGuard,
   parseInput,
 } from "../../../../lib/server/http";
-import { instanceParamsSchema } from "../../../../lib/server/schemas";
+import {
+  instanceEditSchema,
+  instanceParamsSchema,
+} from "../../../../lib/server/schemas";
 
 export const runtime = "nodejs";
+
+export function PATCH(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  return api(async () => {
+    const body = parseInput(instanceEditSchema, await jsonBody(request));
+    const { id } = parseInput(instanceParamsSchema, await context.params);
+    const current = await getInstance(id);
+    const input = { ...body, apiKey: body.apiKey ?? current.apiKey };
+    const version = await testConnection(input);
+    const saved = await updateInstance(current, input);
+    return {
+      instance: {
+        id: saved.id,
+        name: saved.name,
+        kind: saved.kind,
+        url: saved.url,
+        hasApiKey: true,
+        connected: true,
+        version,
+      },
+    };
+  });
+}
 
 export function DELETE(
   request: Request,

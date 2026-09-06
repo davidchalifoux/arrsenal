@@ -40,10 +40,118 @@ beforeEach(() => vi.mocked(api).mockReset());
 afterEach(cleanup);
 
 describe("Settings", () => {
+  it("prefills edits, tests with the saved key, and updates the same instance", async () => {
+    const onChanged = vi.fn();
+    const notify = vi.fn();
+    vi.mocked(api).mockResolvedValueOnce({ success: true, version: "4.0.1" });
+    render(
+      <Settings instances={[instance]} onChanged={onChanged} notify={notify} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit Sonarr HD" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit instance" });
+    expect(
+      (screen.getByLabelText("Instance name") as HTMLInputElement).value,
+    ).toBe(instance.name);
+    expect(
+      (screen.getByLabelText("Instance URL") as HTMLInputElement).value,
+    ).toBe(instance.url);
+    expect((screen.getByLabelText("API key") as HTMLInputElement).value).toBe(
+      "",
+    );
+    expect(
+      screen.getByText(/Leave blank to keep the saved API key/),
+    ).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Instance name"), {
+      target: { value: "Renamed Sonarr" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await screen.findByText(/Connection verified.*Not saved yet/);
+    expect(api).toHaveBeenLastCalledWith(
+      "/api/instances/sonarr-hd/test",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(JSON.parse(String(vi.mocked(api).mock.calls[0][1]?.body))).toEqual({
+      kind: "sonarr",
+      name: "Renamed Sonarr",
+      url: instance.url,
+    });
+    expect(onChanged).not.toHaveBeenCalled();
+
+    const pending = Promise.withResolvers<{ instance: InstanceSummary }>();
+    vi.mocked(api).mockReturnValueOnce(pending.promise);
+    const form = dialog.querySelector("form");
+    if (!form) throw new Error("Edit form missing");
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(api).toHaveBeenCalledTimes(2);
+    expect(api).toHaveBeenLastCalledWith(
+      "/api/instances/sonarr-hd",
+      expect.objectContaining({ method: "PATCH" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    await act(async () =>
+      pending.resolve({ instance: { ...instance, name: "Renamed Sonarr" } }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith("Renamed Sonarr updated.");
+    fireEvent.click(screen.getByRole("button", { name: "Add instance" }));
+    await screen.findByRole("dialog", { name: "Connect an instance" });
+    expect(
+      (screen.getByLabelText("Instance name") as HTMLInputElement).value,
+    ).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Connect instance" }));
+    expect(screen.getByText("Enter the instance's API key.")).toBeTruthy();
+  });
+
+  it("retains failed edits for retry and discards replacement credentials on close", async () => {
+    vi.mocked(api).mockRejectedValueOnce(new Error("Connection failed."));
+    const onChanged = vi.fn();
+    render(
+      <Settings
+        instances={[instance]}
+        onChanged={onChanged}
+        notify={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit Sonarr HD" }));
+    await screen.findByRole("dialog");
+    fireEvent.change(screen.getByLabelText("Instance URL"), {
+      target: { value: "http://localhost:9999" },
+    });
+    fireEvent.change(screen.getByLabelText("API key"), {
+      target: { value: "replacement-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Connection failed.",
+    );
+    expect(JSON.parse(String(vi.mocked(api).mock.calls[0][1]?.body))).toEqual({
+      kind: "sonarr",
+      name: instance.name,
+      url: "http://localhost:9999",
+      apiKey: "replacement-key",
+    });
+    expect((screen.getByLabelText("API key") as HTMLInputElement).value).toBe(
+      "replacement-key",
+    );
+    expect(onChanged).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Edit Sonarr HD" }));
+    await screen.findByRole("dialog");
+    expect(
+      (screen.getByLabelText("Instance URL") as HTMLInputElement).value,
+    ).toBe(instance.url);
+    expect((screen.getByLabelText("API key") as HTMLInputElement).value).toBe(
+      "",
+    );
+  });
+
   it("shows an honest empty state and validates required fields before a request", async () => {
     render(<Settings instances={[]} onChanged={vi.fn()} notify={vi.fn()} />);
     expect(screen.getByText("Bring your library together")).toBeTruthy();
-    expect(screen.getByText("Local by design")).toBeTruthy();
     expect(screen.queryByText("Connected")).toBeNull();
     fireEvent.click(
       screen.getByRole("button", { name: "Connect first instance" }),
@@ -62,16 +170,24 @@ describe("Settings", () => {
     "http://localhost:8989?apikey=secret",
     "http://localhost:8989#settings",
     "http://localhost:8989\\sonarr",
-  ])("rejects the invalid instance URL %s without throwing or contacting the server", async (url) => {
-    render(
-      <Settings instances={[]} onChanged={vi.fn()} notify={vi.fn()} autoOpen />,
-    );
-    await screen.findByRole("dialog");
-    fillForm(url);
-    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    expect(screen.getByRole("alert")).toBeTruthy();
-    expect(api).not.toHaveBeenCalled();
-  });
+  ])(
+    "rejects the invalid instance URL %s without throwing or contacting the server",
+    async (url) => {
+      render(
+        <Settings
+          instances={[]}
+          onChanged={vi.fn()}
+          notify={vi.fn()}
+          autoOpen
+        />,
+      );
+      await screen.findByRole("dialog");
+      fillForm(url);
+      fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+      expect(screen.getByRole("alert")).toBeTruthy();
+      expect(api).not.toHaveBeenCalled();
+    },
+  );
 
   it("tests without saving and clears the verified result when any field changes", async () => {
     vi.mocked(api).mockResolvedValue({
