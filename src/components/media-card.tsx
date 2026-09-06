@@ -13,6 +13,9 @@ import { useState } from "react";
 import { mediaHref } from "@/lib/client";
 import type { MediaItem, MediaTarget } from "@/lib/types";
 
+// Cover two rows at the widest six-column grid without eagerly loading the library.
+const eagerPosterCount = 12;
+
 export function Poster({
   item,
   sizes = "(min-width: 2022px) 273px, (min-width: 1280px) calc((100vw - 386px) / 6), (min-width: 1024px) calc((100vw - 346px) / 4), (min-width: 768px) calc((100vw - 124px) / 4), (min-width: 640px) calc((100vw - 68px) / 3), calc((100vw - 53px) / 2)",
@@ -41,7 +44,7 @@ export function Poster({
           alt={`${item.title} poster`}
           fill
           sizes={sizes}
-          preload={priority}
+          loading={priority ? "eager" : "lazy"}
           onError={() => setFailed(true)}
           className={css({
             objectFit: "cover",
@@ -107,7 +110,7 @@ export function MediaCard({
   item,
   onClick,
   href,
-  index = 10,
+  index = eagerPosterCount,
 }: {
   item: MediaItem;
   onClick?: () => void;
@@ -148,7 +151,7 @@ export function MediaCard({
           },
         })}
       >
-        <Poster item={item} priority={index < 6} />
+        <Poster item={item} priority={index < eagerPosterCount} />
       </div>
       <div
         className={css({
@@ -266,7 +269,7 @@ export function MediaList({ items }: { items: MediaItem[] }) {
         <span>Quality profiles</span>
         <span>Status</span>
       </div>
-      {items.map((item) => (
+      {items.map((item, index) => (
         <Link
           href={mediaHref(item)}
           key={item.id}
@@ -304,7 +307,11 @@ export function MediaList({ items }: { items: MediaItem[] }) {
                 flexShrink: 0,
               })}
             >
-              <Poster item={item} sizes="34px" />
+              <Poster
+                item={item}
+                sizes="34px"
+                priority={index < eagerPosterCount}
+              />
             </span>
             <span
               className={css({

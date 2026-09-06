@@ -33,7 +33,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock("next/image", () => ({
-  default: ({ src, alt, onError, sizes, className }: ImageProps) => (
+  default: ({ src, alt, onError, sizes, className, loading }: ImageProps) => (
     // Keep image errors testable without passing Next-only props to the DOM.
     // biome-ignore lint/performance/noImgElement: The Next Image test double is intentionally a native image.
     <img
@@ -42,6 +42,7 @@ vi.mock("next/image", () => ({
       onError={onError}
       sizes={sizes}
       className={className}
+      loading={loading}
     />
   ),
 }));
@@ -1165,6 +1166,21 @@ describe("Episode actions", () => {
 });
 
 describe("MediaList", () => {
+  it("eagerly loads the first twelve posters and leaves the rest lazy", () => {
+    render(
+      <MediaList
+        items={Array.from({ length: 14 }, (_, index) => ({
+          ...movie,
+          id: `movie-${index}`,
+          title: `Movie ${index}`,
+        }))}
+      />,
+    );
+    expect(
+      screen.getAllByRole("img").map((image) => image.getAttribute("loading")),
+    ).toEqual([...Array(12).fill("eager"), "lazy", "lazy"]);
+  });
+
   it("shows the exact selected quality profile for every instance instead of file quality", () => {
     const targets = [
       hdTarget,
@@ -1196,6 +1212,20 @@ describe("MediaList", () => {
 });
 
 describe("MediaCard", () => {
+  it.each([
+    0,
+    5,
+    6,
+    11,
+    12,
+    undefined,
+  ])("sets poster loading for card index %s", (index) => {
+    render(<MediaCard item={movie} index={index} />);
+    expect(screen.getByRole("img").getAttribute("loading")).toBe(
+      index !== undefined && index < 12 ? "eager" : "lazy",
+    );
+  });
+
   it("shows the selected quality profile and remains usable after poster failure", () => {
     const onClick = vi.fn();
     renderUI(
