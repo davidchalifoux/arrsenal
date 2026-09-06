@@ -58,8 +58,5 @@ export function sizeLabel(bytes: number) {
 export function qualityLabel(profile: string, quality = "") {
   const value =
     quality && !/not downloaded|unknown/i.test(quality) ? quality : profile;
-  if (/2160|4k|ultra|uhd/i.test(value)) return "4K";
-  if (/1080|full.?hd/i.test(value)) return "1080p";
-  if (/720/i.test(value)) return "720p";
   return value || "Unknown";
 }

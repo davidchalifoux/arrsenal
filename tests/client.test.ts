@@ -117,12 +117,13 @@ describe("sizeLabel", () => {
 
 describe("qualityLabel", () => {
   it.each([
-    ["Ultra-HD", "WEBDL-1080p", "1080p"],
-    ["HD-1080p", "Bluray-2160p", "4K"],
-    ["HD-1080p", "HDTV-720p", "720p"],
-    ["Ultra-HD", "Not downloaded", "4K"],
-    ["HD-1080p", "Unknown", "1080p"],
-    ["Full HD", "", "1080p"],
+    ["Ultra-HD", "WEBDL-1080p", "WEBDL-1080p"],
+    ["HD-1080p", "Bluray-2160p", "Bluray-2160p"],
+    ["HD-1080p", "HDTV-720p", "HDTV-720p"],
+    ["Ultra-HD", "Not downloaded", "Ultra-HD"],
+    ["HD-1080p", "Unknown", "HD-1080p"],
+    ["Full HD", "", "Full HD"],
+    ["Ultra-HD", "Bluray-1080p, WEBDL-1080p", "Bluray-1080p, WEBDL-1080p"],
     ["Any", "", "Any"],
     ["", "", "Unknown"],
   ])("labels profile %s with downloaded quality %s as %s", (profile, quality, expected) => {

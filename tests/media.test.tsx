@@ -419,6 +419,64 @@ describe("AddMedia", () => {
 });
 
 describe("Library integration", () => {
+  it("filters by full quality names and profile fallbacks on the selected instance", async () => {
+    const bluray = {
+      ...movie,
+      id: "movie-bluray",
+      title: "Bluray movie",
+      targets: [{ ...hdTarget, quality: "Bluray-1080p" }],
+    };
+    fetchMock.mockImplementation(async (path) => {
+      if (path === "/api/library")
+        return Response.json({
+          items: [{ ...movie, targets: [hdTarget, uhdTarget] }, bluray],
+          errors: [],
+        });
+      if (path === "/api/instances")
+        return Response.json({ instances: [hd, uhd] });
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    renderUI(
+      <WorkspaceProvider>
+        <LibraryBrowser category="movies" />
+      </WorkspaceProvider>,
+    );
+    await screen.findByRole("link", { name: `View ${movie.title}` });
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await choose("Filter by quality", "WEBDL-1080p");
+    expect(
+      screen.getByRole("link", { name: `View ${movie.title}` }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("link", { name: `View ${bluray.title}` }),
+    ).toBeNull();
+    await choose("Filter by quality", "Bluray-1080p");
+    expect(
+      screen.queryByRole("link", { name: `View ${movie.title}` }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("link", { name: `View ${bluray.title}` }),
+    ).toBeTruthy();
+    await choose("Filter by quality", "Ultra-HD");
+    expect(
+      screen.getByRole("link", { name: `View ${movie.title}` }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("link", { name: `View ${bluray.title}` }),
+    ).toBeNull();
+    await choose("Filter by instance", hd.name);
+    expect(
+      screen.queryByRole("link", { name: `View ${movie.title}` }),
+    ).toBeNull();
+    await choose("Filter by quality", "All qualities");
+    expect(
+      screen.getByRole("link", { name: `View ${movie.title}` }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: `View ${bluray.title}` }),
+    ).toBeTruthy();
+  });
+
   it("fetches on the client once and reuses the library cache across categories", async () => {
     const pending = Promise.withResolvers<Response>();
     fetchMock.mockImplementation(async (path) => {
@@ -1041,11 +1099,11 @@ describe("MediaCard", () => {
     );
     const card = screen.getByRole("button", { name: `View ${movie.title}` });
     expect(within(card).queryByTitle("1 quality targets")).toBeNull();
-    expect(within(card).getByText("1080p")).toBeTruthy();
+    expect(within(card).getByText("WEBDL-1080p")).toBeTruthy();
     expect(within(card).queryByText("4K")).toBeNull();
-    expect(within(card).getByText("1080p").getAttribute("title")).toContain(
-      "Ultra-HD",
-    );
+    expect(
+      within(card).getByText("WEBDL-1080p").getAttribute("title"),
+    ).toContain("Ultra-HD");
     fireEvent.error(
       within(card).getByRole("img", { name: `${movie.title} poster` }),
     );

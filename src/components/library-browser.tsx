@@ -96,6 +96,15 @@ export function LibraryBrowser({
   const [layout, setLayout] = useState("grid");
   const items = library.data?.items ?? [];
   const instances = instanceQuery.data?.instances ?? [];
+  const qualities = [
+    ...new Set(
+      items.flatMap((item) =>
+        item.targets.map((target) =>
+          qualityLabel(target.qualityProfile, target.quality),
+        ),
+      ),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
   const incomplete = items.filter(
     (item) => item.status === "partial" || item.status === "missing",
   );
@@ -498,9 +507,10 @@ export function LibraryBrowser({
                         label="Filter by quality"
                         options={[
                           { value: "all", label: "All qualities" },
-                          { value: "4K", label: "4K / Ultra HD" },
-                          { value: "1080p", label: "1080p / Full HD" },
-                          { value: "720p", label: "720p / HD" },
+                          ...qualities.map((name) => ({
+                            value: name,
+                            label: name,
+                          })),
                         ]}
                       />
                     </div>
