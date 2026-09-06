@@ -8,19 +8,20 @@ import {
   MagnifyingGlassIcon,
   PlusIcon,
   TelevisionSimpleIcon,
+  XIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import { useQuery } from "@tanstack/react-query";
-import { useDeferredValue, useRef, useState } from "react";
+import { type RefObject, useRef, useState } from "react";
 import { api } from "@/lib/client";
 import type {
   ActionResponse,
   AddMediaRequest,
   InstanceOptions,
   InstanceSummary,
-  LibraryResponse,
   MediaItem,
 } from "@/lib/types";
+import { useCatalogSearch } from "@/lib/use-catalog-search";
 import { Poster } from "./media-card";
 import {
   Button,
@@ -49,6 +50,7 @@ export function AddMedia({
   onAdded,
   notify,
   onConnect,
+  initialTerm = "",
 }: {
   open: boolean;
   onClose: () => void;
@@ -58,9 +60,12 @@ export function AddMedia({
   onAdded: () => void;
   notify: (message: string, error?: boolean) => void;
   onConnect: () => void;
+  initialTerm?: string;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <Modal
+      initialFocus={seed ? undefined : inputRef}
       open={open}
       onOpenChange={(next) => {
         if (!next) onClose();
@@ -79,6 +84,8 @@ export function AddMedia({
           notify={notify}
           onClose={onClose}
           onConnect={onConnect}
+          initialTerm={initialTerm}
+          inputRef={inputRef}
         />
       )}
     </Modal>
@@ -93,9 +100,12 @@ function AddMediaContent({
   notify,
   onClose,
   onConnect,
-}: Omit<Parameters<typeof AddMedia>[0], "open">) {
-  const [term, setTerm] = useState("");
-  const deferredTerm = useDeferredValue(term);
+  initialTerm = "",
+  inputRef,
+}: Omit<Parameters<typeof AddMedia>[0], "open"> & {
+  inputRef: RefObject<HTMLInputElement | null>;
+}) {
+  const [term, setTerm] = useState(initialTerm);
   const [kind, setKind] = useState("movie");
   const [selected, setSelected] = useState<MediaItem | null>(seed);
   const [choices, setChoices] = useState<Record<string, TargetChoice>>({});
@@ -104,15 +114,10 @@ function AddMediaContent({
   const [saving, setSaving] = useState(false);
   const saveLock = useRef(false);
   const [error, setError] = useState("");
-  const lookup = useQuery({
-    queryKey: ["lookup", deferredTerm, kind],
-    queryFn: ({ signal }) =>
-      api<LibraryResponse>(
-        `/api/lookup?term=${encodeURIComponent(deferredTerm)}&kind=${kind}`,
-        { signal },
-      ),
-    enabled: !selected && deferredTerm.trim().length > 1,
-  });
+  const hasInstance = instances.some(
+    (instance) => instance.kind === (kind === "movie" ? "radarr" : "sonarr"),
+  );
+  const lookup = useCatalogSearch(term, kind, !selected && hasInstance);
   const matching = instances.filter(
     (instance) =>
       instance.kind === (selected?.kind === "series" ? "sonarr" : "radarr"),
@@ -213,6 +218,7 @@ function AddMediaContent({
                 })}
               />
               <input
+                ref={inputRef}
                 autoComplete="off"
                 aria-label="Search movies and shows"
                 placeholder={
@@ -222,8 +228,29 @@ function AddMediaContent({
                 }
                 value={term}
                 onChange={(event) => setTerm(event.target.value)}
-                className={cx(inputStyle, css({ pl: "39px" }))}
+                className={cx(inputStyle, css({ pl: "39px", pr: "42px" }))}
               />
+              {term && (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => {
+                    setTerm("");
+                    inputRef.current?.focus();
+                  }}
+                  className={css({
+                    position: "absolute",
+                    right: "4px",
+                    top: "4px",
+                    p: "8px",
+                    color: "muted",
+                    borderRadius: "4px",
+                    _hover: { color: "ink", bg: "elevated" },
+                  })}
+                >
+                  <XIcon size={16} />
+                </button>
+              )}
             </div>
             <SelectField
               value={kind}
@@ -236,9 +263,18 @@ function AddMediaContent({
               ]}
             />
           </div>
-          {instances.length === 0 ? (
+          {!hasInstance ? (
             <Notice>
-              Connect Radarr for movies or Sonarr for shows to start searching.
+              Connect{" "}
+              {kind === "movie" ? "Radarr for movies" : "Sonarr for shows"} to
+              start searching.{" "}
+              <button
+                type="button"
+                onClick={onConnect}
+                className={css({ textDecoration: "underline" })}
+              >
+                Connect {kind === "movie" ? "Radarr" : "Sonarr"}
+              </button>
             </Notice>
           ) : term.trim().length < 2 ? (
             <div
@@ -253,9 +289,9 @@ function AddMediaContent({
                 size={30}
                 className={css({ mx: "auto", mb: "12px", color: "subtle" })}
               />
-              Search by title to find something worth adding.
+              Enter at least 2 characters of a title to search the catalog.
             </div>
-          ) : lookup.isPending ? (
+          ) : lookup.isDebouncing || lookup.isPending ? (
             <div
               className={css({
                 py: "40px",
@@ -269,7 +305,7 @@ function AddMediaContent({
               Searching the catalog...
             </div>
           ) : lookup.isError ? (
-            <Notice error>{lookup.error.message}</Notice>
+            <Notice error>{lookup.error?.message}</Notice>
           ) : (
             <>
               {lookup.data?.errors.map((serviceError) => (
@@ -351,7 +387,7 @@ function AddMediaContent({
                       css({ py: "30px", textAlign: "center" }),
                     )}
                   >
-                    No matches found. Try a different title .
+                    No matches found. Try a different title.
                   </p>
                 )}
               </div>

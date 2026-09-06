@@ -1,11 +1,11 @@
 "use client";
 
-import { MagnifyingGlassIcon } from "@phosphor-icons/react";
+import { MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import { useQuery } from "@tanstack/react-query";
-import { useDeferredValue, useState } from "react";
-import { api } from "@/lib/client";
-import type { LibraryResponse } from "@/lib/types";
+import { useRef, useState } from "react";
+import { instancesQuery } from "@/lib/queries";
+import { useCatalogSearch } from "@/lib/use-catalog-search";
 import { MediaCard } from "./media-card";
 import { PageHeader } from "./page-header";
 import { inputStyle, Notice, SelectField, Spinner } from "./ui";
@@ -25,19 +25,16 @@ const gridStyle = css({
 });
 
 export function DiscoverBrowser() {
-  const { add } = useWorkspace();
+  const { add, connect } = useWorkspace();
   const [term, setTerm] = useState("");
-  const deferred = useDeferredValue(term);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState("movie");
-  const results = useQuery({
-    queryKey: ["lookup", deferred, kind],
-    queryFn: ({ signal }) =>
-      api<LibraryResponse>(
-        `/api/lookup?term=${encodeURIComponent(deferred)}&kind=${kind}`,
-        { signal },
-      ),
-    enabled: deferred.trim().length > 1,
-  });
+  const instances = useQuery(instancesQuery);
+  const hasInstance =
+    instances.data?.instances.some(
+      (instance) => instance.kind === (kind === "movie" ? "radarr" : "sonarr"),
+    ) ?? false;
+  const results = useCatalogSearch(term, kind, hasInstance);
   return (
     <>
       <PageHeader
@@ -63,15 +60,37 @@ export function DiscoverBrowser() {
             })}
           />
           <input
+            ref={inputRef}
             value={term}
             onChange={(event) => setTerm(event.target.value)}
             aria-label="Discover movies and shows"
             placeholder="What are you looking for?"
             className={cx(
               inputStyle,
-              css({ height: "48px", pl: "46px", bg: "surface" }),
+              css({ height: "48px", pl: "46px", pr: "42px", bg: "surface" }),
             )}
           />
+          {term && (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => {
+                setTerm("");
+                inputRef.current?.focus();
+              }}
+              className={css({
+                position: "absolute",
+                right: "6px",
+                top: "8px",
+                p: "8px",
+                color: "muted",
+                borderRadius: "4px",
+                _hover: { color: "ink", bg: "elevated" },
+              })}
+            >
+              <XIcon size={16} />
+            </button>
+          )}
         </div>
         <SelectField
           compact
@@ -97,9 +116,23 @@ export function DiscoverBrowser() {
           {term ? "Search results" : "A world of stories awaits"}
         </h2>
       </div>
-      {results.isError ? (
-        <Notice error>{results.error.message}</Notice>
-      ) : deferred.trim().length < 2 ? (
+      {instances.isPending ? (
+        <p>Loading connected instances...</p>
+      ) : instances.isError ? (
+        <Notice error>{instances.error.message}</Notice>
+      ) : !hasInstance ? (
+        <Notice>
+          Connect {kind === "movie" ? "Radarr for movies" : "Sonarr for shows"}{" "}
+          to start searching.{" "}
+          <button
+            type="button"
+            onClick={connect}
+            className={css({ textDecoration: "underline" })}
+          >
+            Connect {kind === "movie" ? "Radarr" : "Sonarr"}
+          </button>
+        </Notice>
+      ) : term.trim().length < 2 ? (
         <div
           className={css({
             py: "80px",
@@ -115,10 +148,10 @@ export function DiscoverBrowser() {
           />
           <p>Start with a title.</p>
           <p className={css({ fontSize: "12px", mt: "8px", color: "subtle" })}>
-            We&apos;ll search the catalog through your connected instances.
+            Enter at least 2 characters to search your connected catalogs.
           </p>
         </div>
-      ) : results.isPending ? (
+      ) : results.isDebouncing || results.isPending ? (
         <div
           className={css({
             display: "flex",
@@ -132,6 +165,8 @@ export function DiscoverBrowser() {
           <Spinner />
           Finding your next favorite...
         </div>
+      ) : results.isError ? (
+        <Notice error>{results.error?.message}</Notice>
       ) : (
         <>
           {results.data?.errors.map((error) => (
@@ -145,7 +180,7 @@ export function DiscoverBrowser() {
             {results.data?.items.map((item, index) => (
               <MediaCard
                 key={item.id}
-                item={{ ...item, targets: [] }}
+                item={item}
                 index={index}
                 onClick={() => add(item)}
               />

@@ -273,6 +273,7 @@ export function Modal({
   description,
   children,
   wide = false,
+  initialFocus,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -280,6 +281,7 @@ export function Modal({
   description?: string;
   children: ReactNode;
   wide?: boolean;
+  initialFocus?: ComponentProps<typeof Dialog.Popup>["initialFocus"];
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -309,6 +311,7 @@ export function Modal({
           })}
         >
           <Dialog.Popup
+            initialFocus={initialFocus}
             className={css({
               width: "100%",
               maxWidth: wide ? "800px" : "540px",

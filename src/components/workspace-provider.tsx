@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { matchSorter } from "match-sorter";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -19,6 +20,7 @@ import {
   useDeferredValue,
   useEffect,
   useEffectEvent,
+  useRef,
   useState,
 } from "react";
 import { mediaHref } from "@/lib/client";
@@ -51,21 +53,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const instances = useQuery(instancesQuery);
   const [addOpen, setAddOpen] = useState(false);
   const [seed, setSeed] = useState<MediaItem | null>(null);
+  const [initialTerm, setInitialTerm] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
   const [term, setTerm] = useState("");
+  const [visibleCount, setVisibleCount] = useState(20);
   const deferredTerm = useDeferredValue(term);
   const [toast, setToast] = useState<{
     message: string;
     error: boolean;
   } | null>(null);
   const items = library.data?.items ?? [];
-  const matches = items
-    .filter((item) =>
-      item.title.toLowerCase().includes(deferredTerm.toLowerCase()),
-    )
-    .slice(0, 20);
+  const query = deferredTerm.trim();
+  const matches = matchSorter(items, query, { keys: ["title"] });
+
+  function openSearch() {
+    setAddOpen(false);
+    setTerm("");
+    setVisibleCount(20);
+    setSearchOpen(true);
+  }
 
   function add(media: MediaItem | null = null) {
+    setInitialTerm("");
     setSeed(media);
     setAddOpen(true);
   }
@@ -82,7 +93,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
-      setSearchOpen((open) => !open);
+      if (searchOpen) setSearchOpen(false);
+      else openSearch();
     }
   });
   useEffect(() => {
@@ -101,7 +113,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       value={{
         add,
         connect,
-        searchLibrary: () => setSearchOpen(true),
+        searchLibrary: openSearch,
         notify,
         refresh,
       }}
@@ -111,6 +123,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         seed={seed}
+        initialTerm={initialTerm}
         instances={instances.data?.instances ?? []}
         library={items}
         onAdded={() => {
@@ -121,6 +134,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         onConnect={connect}
       />
       <Modal
+        initialFocus={searchInput}
         open={searchOpen}
         onOpenChange={setSearchOpen}
         title="Search your library"
@@ -138,20 +152,92 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             })}
           />
           <input
+            ref={searchInput}
+            autoComplete="off"
             aria-label="Search library titles"
+            aria-describedby="library-search-summary"
             placeholder="Movies, shows, something you love..."
             value={term}
-            onChange={(event) => setTerm(event.target.value)}
-            className={cx(inputStyle, css({ pl: "40px" }))}
+            onChange={(event) => {
+              setTerm(event.target.value);
+              setVisibleCount(20);
+            }}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                resultsRef.current?.querySelector("a")?.focus();
+              }
+              if (
+                event.key === "Enter" &&
+                matches[0] &&
+                term === deferredTerm
+              ) {
+                setSearchOpen(false);
+                router.push(mediaHref(matches[0]));
+              }
+            }}
+            className={cx(inputStyle, css({ pl: "40px", pr: "40px" }))}
           />
+          {term && (
+            <button
+              type="button"
+              aria-label="Clear library search"
+              onClick={() => {
+                setTerm("");
+                setVisibleCount(20);
+                searchInput.current?.focus();
+              }}
+              className={css({
+                position: "absolute",
+                right: "8px",
+                top: "7px",
+                p: "6px",
+                color: "muted",
+                borderRadius: "4px",
+                _hover: { bg: "elevated" },
+              })}
+            >
+              <XIcon size={18} />
+            </button>
+          )}
         </div>
         {library.isError && <Notice error>{library.error.message}</Notice>}
-        <div className={css({ maxHeight: "400px", overflowY: "auto" })}>
-          {matches.map((item) => (
+        {!!library.data?.errors.length && (
+          <Notice error>
+            Some instances could not be reached. Results may be incomplete.
+          </Notice>
+        )}
+        <output
+          id="library-search-summary"
+          className={css({
+            display: "block",
+            color: "subtle",
+            fontSize: "12px",
+            mb: "10px",
+          })}
+        >
+          {library.isPending
+            ? "Loading your library..."
+            : `${matches.length} ${matches.length === 1 ? "title" : "titles"}${query ? " found" : " in your library"}`}
+        </output>
+        <div
+          ref={resultsRef}
+          className={css({ maxHeight: "min(400px, 45dvh)", overflowY: "auto" })}
+        >
+          {matches.slice(0, visibleCount).map((item, index) => (
             <Link
               key={item.id}
               href={mediaHref(item)}
               onClick={() => setSearchOpen(false)}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowDown" && event.key !== "ArrowUp")
+                  return;
+                event.preventDefault();
+                const next = index + (event.key === "ArrowDown" ? 1 : -1);
+                if (next < 0) searchInput.current?.focus();
+                else resultsRef.current?.querySelectorAll("a")[next]?.focus();
+              }}
               className={css({
                 display: "flex",
                 alignItems: "center",
@@ -161,6 +247,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 padding: "10px",
                 borderRadius: "7px",
                 _hover: { bg: "elevated" },
+                _focusVisible: {
+                  bg: "elevated",
+                  outline: "2px solid token(colors.accent)",
+                  outlineOffset: "-2px",
+                },
               })}
             >
               <span
@@ -200,7 +291,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             </Link>
           ))}
         </div>
-        {!matches.length && !library.isError && (
+        {matches.length > visibleCount && (
+          <Button
+            variant="ghost"
+            onClick={() => setVisibleCount((count) => count + 20)}
+            className={css({ mt: "10px", width: "100%" })}
+          >
+            Show more ({matches.length - visibleCount} remaining)
+          </Button>
+        )}
+        {!matches.length && !library.isError && !library.isPending && (
           <div
             className={css({
               textAlign: "center",
@@ -210,23 +310,40 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             })}
           >
             <p>
-              {library.isPending
-                ? "Loading your library..."
-                : `No titles match "${term}".`}
+              {query
+                ? `No library titles match "${deferredTerm.trim()}".`
+                : "Your library is empty. Find a movie or show to get started."}
             </p>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setSearchOpen(false);
-                add();
-              }}
-              className={css({ mt: "15px" })}
-            >
-              <PlusIcon size={15} />
-              Find something to add
-            </Button>
           </div>
         )}
+        <div
+          className={css({
+            mt: "18px",
+            pt: "16px",
+            borderTop: "1px solid token(colors.line)",
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
+          })}
+        >
+          <span className={css({ color: "subtle", fontSize: "11px" })}>
+            Arrow keys to browse · Enter to open · Esc to close
+          </span>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setSearchOpen(false);
+              setSeed(null);
+              setInitialTerm(term.trim());
+              setAddOpen(true);
+            }}
+          >
+            <PlusIcon size={15} />
+            Search catalog
+          </Button>
+        </div>
       </Modal>
       {toast && (
         <div

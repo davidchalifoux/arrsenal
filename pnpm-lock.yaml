@@ -29,6 +29,9 @@ importers:
       '@tanstack/react-table':
         specifier: ^9.2.4
         version: 9.2.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      match-sorter:
+        specifier: ^8.3.0
+        version: 8.3.0
       next:
         specifier: 16.3.4
         version: 16.3.4(@types/node@20.19.43)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -1793,6 +1796,9 @@ packages:
   magic-string@1.2.3:
     resolution: {integrity: sha512-Bpb0W2TbLKOZ7vJnOUnVRGq3WL2p+ISV29M6hYPL1AFCpyKZpdr5ytiXoTSSxRVhg8YW7f65+6gbG8WG6PCa/g==}
 
+  match-sorter@8.3.0:
+    resolution: {integrity: sha512-8Py1GbZi5zsclYSFcPAH4H5xfTbeD0bOREA7qP/t8bW4MbOSlPl8sbqHOedEV7O+Bxyvxm6xs/v6BXJGe+JDNA==}
+
   mdn-data@2.27.1:
     resolution: {integrity: sha512-9Yubnt3e8A0OKwxYSXyhLymGW4sCufcLG6VdiDdUGVkPhpqLxlvP5vl1983gQjJl3tqbrM731mjaZaP68AgosQ==}
 
@@ -1976,6 +1982,9 @@ packages:
   readdirp@4.1.2:
     resolution: {integrity: sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==}
     engines: {node: '>= 14.18.0'}
+
+  remove-accents@0.5.0:
+    resolution: {integrity: sha512-8g3/Otx1eJaVD12e31UbJj1YzdtVvzH85HV7t+9MJYk/u3XmkOUJ5Ys9wQrf9PCPK8+xn4ymzqYCiZl6QWKn+A==}
 
   require-from-string@2.0.2:
     resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
@@ -3738,6 +3747,11 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
 
+  match-sorter@8.3.0:
+    dependencies:
+      '@babel/runtime': 7.29.7
+      remove-accents: 0.5.0
+
   mdn-data@2.27.1: {}
 
   merge2@1.4.1: {}
@@ -3894,6 +3908,8 @@ snapshots:
   react@19.2.8: {}
 
   readdirp@4.1.2: {}
+
+  remove-accents@0.5.0: {}
 
   require-from-string@2.0.2: {}
 
