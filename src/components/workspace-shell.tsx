@@ -91,6 +91,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         >
           <Image
             src="/logo.svg"
+            loading="eager"
             width={34}
             height={34}
             alt=""

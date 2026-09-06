@@ -35,9 +35,23 @@ export default defineConfig({
         },
       },
       keyframes: {
-        skeleton: {
-          "0%, 100%": { opacity: "1" },
-          "50%": { opacity: "0.5" },
+        logoLoading: {
+          "0%, 15%": {
+            transform: "translateY(0) rotateY(0deg) scale(1)",
+            opacity: "1",
+          },
+          "40%": {
+            transform: "translateY(-10px) rotateY(0deg) scale(1.04)",
+            opacity: "1",
+          },
+          "65%": {
+            transform: "translateY(0) rotateY(180deg) scale(0.94)",
+            opacity: "0.65",
+          },
+          "85%, 100%": {
+            transform: "translateY(0) rotateY(360deg) scale(1)",
+            opacity: "1",
+          },
         },
         spin: { to: { transform: "rotate(360deg)" } },
         enter: {

@@ -50,14 +50,6 @@ const gridStyle = css({
   rowGap: "29px",
 });
 
-const skeletonStyle = css({
-  display: "inline-block",
-  bg: "elevated",
-  borderRadius: "3px",
-  animation: "skeleton 2s ease-in-out infinite",
-  _motionReduce: { animation: "none" },
-});
-
 function LibraryLoadingStatus() {
   const [slow, setSlow] = useState(false);
   useEffect(() => {
@@ -320,17 +312,7 @@ export function LibraryBrowser({
                 mb: "7px",
               })}
             >
-              {library.isPending ? (
-                <span
-                  aria-hidden="true"
-                  className={skeletonStyle}
-                  style={{ width: 48, height: 27 }}
-                />
-              ) : library.data ? (
-                stat.count
-              ) : (
-                "-"
-              )}
+              {library.data ? stat.count : "-"}
             </div>
             <p
               className={css({
@@ -339,17 +321,11 @@ export function LibraryBrowser({
                 lineHeight: "1.4",
               })}
             >
-              {library.isPending && stat.filter === "all" ? (
-                <span
-                  aria-hidden="true"
-                  className={skeletonStyle}
-                  style={{ width: "70%", height: 9 }}
-                />
-              ) : stat.filter === "all" && !library.data ? (
-                "Counts unavailable"
-              ) : (
-                stat.note
-              )}
+              {library.isPending && stat.filter === "all"
+                ? "Loading counts..."
+                : stat.filter === "all" && !library.data
+                  ? "Counts unavailable"
+                  : stat.note}
             </p>
           </button>
         ))}
@@ -686,47 +662,7 @@ export function LibraryBrowser({
             Try again
           </button>
         </Notice>
-      ) : library.isPending ? (
-        <div
-          aria-hidden="true"
-          className={
-            layout === "grid"
-              ? gridStyle
-              : css({ display: "grid", gap: "12px" })
-          }
-        >
-          {Array.from({ length: 12 }, (_, index) => (
-            <div
-              key={`skeleton-${index.toString()}`}
-              className={
-                layout === "list"
-                  ? css({ display: "flex", alignItems: "center", gap: "16px" })
-                  : undefined
-              }
-            >
-              <div
-                className={skeletonStyle}
-                style={{
-                  display: "block",
-                  aspectRatio: "2 / 3",
-                  borderRadius: 8,
-                  width: layout === "list" ? 40 : "100%",
-                  flexShrink: 0,
-                }}
-              />
-              <div
-                className={skeletonStyle}
-                style={{
-                  display: "block",
-                  height: 12,
-                  width: layout === "list" ? "40%" : "70%",
-                  marginTop: layout === "list" ? 0 : 13,
-                }}
-              />
-            </div>
-          ))}
-        </div>
-      ) : filtered.length ? (
+      ) : library.isPending ? null : filtered.length ? (
         layout === "grid" ? (
           <div className={gridStyle}>
             {filtered.map((item, index) => (
