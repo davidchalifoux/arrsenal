@@ -10,7 +10,6 @@ import {
   ListIcon,
   PlusIcon,
   SquaresFourIcon,
-  SunIcon,
   TelevisionSimpleIcon,
 } from "@phosphor-icons/react";
 import { css, cva } from "@styled-system/css";
@@ -264,11 +263,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                   color: instance.kind === "radarr" ? "#d4b866" : "#78afcf",
                 })}
               >
-                {instance.kind === "radarr" ? (
-                  <SunIcon size={16} weight="fill" />
-                ) : (
-                  <BroadcastIcon size={16} />
-                )}
+                <BroadcastIcon size={16} />
               </span>
               <span className={css({ flex: 1 })}>{instance.name}</span>
               <span
