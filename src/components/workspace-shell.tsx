@@ -154,7 +154,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               mb: "10px",
             })}
           >
-            Your collection
+            Library
           </p>
           <div
             className={css({

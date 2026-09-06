@@ -102,9 +102,9 @@ export function LibraryBrowser({ category }: { category: LibraryCategory }) {
           category === "library"
             ? "Your library"
             : category === "missing"
-              ? "Fill in the gaps"
+              ? "Missing"
               : category === "movies"
-                ? "Movie library"
+                ? "Movies"
                 : "Shows"
         }
         description={
