@@ -11,13 +11,13 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type RefObject, useRef, useState } from "react";
 import { api } from "@/lib/client";
+import { instanceOptionsQuery } from "@/lib/instance-options-query";
 import type {
   ActionResponse,
   AddMediaRequest,
-  InstanceOptions,
   InstanceSummary,
   MediaItem,
 } from "@/lib/types";
@@ -580,22 +580,26 @@ function TargetOption({
   disabled: boolean;
 }) {
   const enabled = choice?.enabled ?? false;
+  const queryClient = useQueryClient();
   const options = useQuery({
-    queryKey: ["instance-options", instance.id],
-    staleTime: 5 * 60_000,
-    queryFn: ({ signal }) =>
-      api<InstanceOptions>(
-        `/api/instances/${encodeURIComponent(instance.id)}/options`,
-        { signal },
-      ),
+    ...instanceOptionsQuery(instance.id),
     enabled: enabled && !existing,
   });
+  function prefetchOptions() {
+    if (!existing && !disabled && !enabled) {
+      void queryClient.prefetchQuery(instanceOptionsQuery(instance.id));
+    }
+  }
   const data = options.data;
   const profile = choice?.qualityProfileId || 0;
   const folder = choice?.rootFolderPath || "";
   return (
-    <div
+    <fieldset
+      aria-label={instance.name}
+      onMouseEnter={prefetchOptions}
+      onFocus={prefetchOptions}
       className={css({
+        minWidth: 0,
         border: "1px solid",
         borderColor: enabled ? "#6e6e6e" : "line",
         borderRadius: "8px",
@@ -741,6 +745,6 @@ function TargetOption({
           )}
         </div>
       )}
-    </div>
+    </fieldset>
   );
 }

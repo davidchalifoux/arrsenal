@@ -170,24 +170,16 @@ describe("Settings", () => {
     "http://localhost:8989?apikey=secret",
     "http://localhost:8989#settings",
     "http://localhost:8989\\sonarr",
-  ])(
-    "rejects the invalid instance URL %s without throwing or contacting the server",
-    async (url) => {
-      render(
-        <Settings
-          instances={[]}
-          onChanged={vi.fn()}
-          notify={vi.fn()}
-          autoOpen
-        />,
-      );
-      await screen.findByRole("dialog");
-      fillForm(url);
-      fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-      expect(screen.getByRole("alert")).toBeTruthy();
-      expect(api).not.toHaveBeenCalled();
-    },
-  );
+  ])("rejects the invalid instance URL %s without throwing or contacting the server", async (url) => {
+    render(
+      <Settings instances={[]} onChanged={vi.fn()} notify={vi.fn()} autoOpen />,
+    );
+    await screen.findByRole("dialog");
+    fillForm(url);
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(api).not.toHaveBeenCalled();
+  });
 
   it("tests without saving and clears the verified result when any field changes", async () => {
     vi.mocked(api).mockResolvedValue({

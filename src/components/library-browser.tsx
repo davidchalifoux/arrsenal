@@ -15,12 +15,17 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { css } from "@styled-system/css";
-import { useQuery } from "@tanstack/react-query";
+import { useLiveQuery } from "@tanstack/react-db";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { mediaHref } from "@/lib/client";
-import { instancesQuery, libraryQuery } from "@/lib/queries";
+import {
+  useClientReady,
+  useCollections,
+  useInstances,
+  useLibrary,
+} from "@/lib/collections";
 import { MediaCard, MediaList } from "./media-card";
 import { PageHeader } from "./page-header";
 import { Button, buttonStyle, Notice, SelectField } from "./ui";
@@ -87,8 +92,10 @@ export function LibraryBrowser({
 }) {
   const router = useRouter();
   const { add, refresh } = useWorkspace();
-  const library = useQuery(libraryQuery);
-  const instanceQuery = useQuery(instancesQuery);
+  const library = useLibrary();
+  const collections = useCollections();
+  const clientReady = useClientReady();
+  const instanceQuery = useInstances();
   const [instanceFilter, setInstanceFilter] = useState("all");
   const [quality, setQuality] = useState("all");
   const [status, setStatus] = useState("all");
@@ -112,38 +119,55 @@ export function LibraryBrowser({
     shows: items.filter((item) => item.kind === "series").length,
     missing: incomplete.length,
   };
-  const filtered = items
-    .filter((item) => {
-      if (category === "movies" && item.kind !== "movie") return false;
-      if (category === "shows" && item.kind !== "series") return false;
-      if (
-        category === "missing" &&
-        item.status !== "partial" &&
-        item.status !== "missing"
-      )
-        return false;
-      if (
-        status !== "all" &&
-        (status === "incomplete"
-          ? !["partial", "missing"].includes(item.status)
-          : item.status !== status)
-      )
-        return false;
-      return item.targets.some(
-        (target) =>
-          (instanceFilter === "all" || target.instanceId === instanceFilter) &&
-          (quality === "all" || target.qualityProfile === quality),
-      );
-    })
-    .sort((a, b) =>
-      sort === "title"
+  const { data: matching } = useLiveQuery({
+    queryKey: [
+      collections.library.id,
+      "filtered",
+      clientReady,
+      category,
+      status,
+      instanceFilter,
+      quality,
+    ],
+    query: (q) =>
+      clientReady
+        ? q.from({ item: collections.library }).fn.where(({ item }) => {
+            if (category === "movies" && item.kind !== "movie") return false;
+            if (category === "shows" && item.kind !== "series") return false;
+            if (
+              category === "missing" &&
+              item.status !== "partial" &&
+              item.status !== "missing"
+            )
+              return false;
+            if (
+              status !== "all" &&
+              (status === "incomplete"
+                ? !["partial", "missing"].includes(item.status)
+                : item.status !== status)
+            )
+              return false;
+            return item.targets.some(
+              (target) =>
+                (instanceFilter === "all" ||
+                  target.instanceId === instanceFilter) &&
+                (quality === "all" || target.qualityProfile === quality),
+            );
+          })
+        : undefined,
+  });
+  const positions = new Map(items.map((item, index) => [item.id, index]));
+  const filtered = [...(matching ?? [])].sort(
+    (a, b) =>
+      (sort === "title"
         ? a.title.localeCompare(b.title)
         : sort === "year"
           ? b.year - a.year
           : sort === "rating"
             ? (b.rating ?? 0) - (a.rating ?? 0)
-            : b.added.localeCompare(a.added),
-    );
+            : b.added.localeCompare(a.added)) ||
+      (positions.get(a.id) ?? 0) - (positions.get(b.id) ?? 0),
+  );
   const filterCount =
     Number(instanceFilter !== "all") +
     Number(quality !== "all") +

@@ -21,5 +21,5 @@ export const queueQuery = queryOptions({
   queryKey: ["queue"],
   queryFn: ({ signal }) => api<QueueResponse>("/api/queue", { signal }),
   staleTime: 10_000,
-  refetchInterval: 15_000,
+  refetchInterval: 60_000,
 });

@@ -9,7 +9,6 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { matchSorter } from "match-sorter";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -24,7 +23,7 @@ import {
   useState,
 } from "react";
 import { mediaHref } from "@/lib/client";
-import { instancesQuery, libraryQuery } from "@/lib/queries";
+import { useInstances, useLibrary, useSyncData } from "@/lib/collections";
 import type { MediaItem } from "@/lib/types";
 import { AddMedia } from "./add-media";
 import { Poster } from "./media-card";
@@ -47,10 +46,10 @@ export function useWorkspace() {
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const client = useQueryClient();
+  const sync = useSyncData();
   const router = useRouter();
-  const library = useQuery(libraryQuery);
-  const instances = useQuery(instancesQuery);
+  const library = useLibrary();
+  const instances = useInstances();
   const [addOpen, setAddOpen] = useState(false);
   const [seed, setSeed] = useState<MediaItem | null>(null);
   const [initialTerm, setInitialTerm] = useState("");
@@ -88,7 +87,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setToast({ message, error });
   }
   function refresh() {
-    void client.invalidateQueries({ queryKey: ["library"] });
+    void sync("library");
   }
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -127,8 +126,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         instances={instances.data?.instances ?? []}
         library={items}
         onAdded={() => {
-          refresh();
-          void client.invalidateQueries({ queryKey: ["queue"] });
+          void sync("media");
         }}
         notify={notify}
         onConnect={connect}

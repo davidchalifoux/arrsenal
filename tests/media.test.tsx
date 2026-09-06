@@ -419,6 +419,59 @@ describe("AddMedia", () => {
 });
 
 describe("Library integration", () => {
+  it.each([
+    "Recently added",
+    "Release year",
+    "Highest rated",
+  ])("preserves API response order for tied %s values, including after refresh", async (sort) => {
+    const items: MediaItem[] = [
+      {
+        ...movie,
+        id: "movie-z",
+        title: "First movie",
+        rating: 8,
+        targets: [hdTarget],
+      },
+      {
+        ...movie,
+        id: "movie-a",
+        title: "Second movie",
+        rating: 8,
+        targets: [hdTarget],
+      },
+    ];
+    let responseItems = items;
+    fetchMock.mockImplementation(async (path) => {
+      if (path === "/api/library")
+        return Response.json({ items: responseItems, errors: [] });
+      if (path === "/api/instances") return Response.json({ instances: [hd] });
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    renderUI(
+      <WorkspaceProvider>
+        <LibraryBrowser category="movies" />
+      </WorkspaceProvider>,
+    );
+    await screen.findByRole("link", { name: `View ${items[0].title}` });
+    await choose("Sort library", sort);
+    expect(
+      screen
+        .getAllByRole("link", { name: /^View / })
+        .map((link) => link.getAttribute("aria-label")),
+    ).toEqual(items.map((item) => `View ${item.title}`));
+
+    responseItems = [...items].reverse();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh library" }));
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole("link", { name: /^View / })
+          .map((link) => link.getAttribute("aria-label")),
+      ).toEqual(responseItems.map((item) => `View ${item.title}`)),
+    );
+    expect(writes()).toHaveLength(0);
+  });
+
   it("filters by selected quality profiles rather than file quality on the selected instance", async () => {
     const bluray = {
       ...movie,
@@ -647,8 +700,13 @@ describe("Library integration", () => {
   });
 
   it("adds a target from its detail page and refreshes the library from the API", async () => {
+    const seededMedia: MediaItem = {
+      ...movie,
+      status: "available",
+      targets: [hdTarget],
+    };
     const library: LibraryResponse = {
-      items: [{ ...movie, status: "available", targets: [hdTarget] }],
+      items: [seededMedia],
       errors: [],
     };
     fetchMock.mockImplementation(async (path) => {
@@ -660,7 +718,7 @@ describe("Library integration", () => {
       if (path === `/api/instances/${uhd.id}/options`)
         return Response.json(options[uhd.id]);
       if (path === "/api/media") {
-        library.items[0].targets.push(uhdTarget);
+        library.items = [{ ...seededMedia, targets: [hdTarget, uhdTarget] }];
         return Response.json({ success: true, message: "Target added." });
       }
       throw new Error(`Unexpected request: ${path}`);
@@ -688,6 +746,8 @@ describe("Library integration", () => {
       ).toEqual([hdTarget, uhdTarget]),
     );
     expect(writes()).toHaveLength(1);
+    expect(writes()[0][0]).toBe("/api/media");
+    expect(JSON.parse(String(writes()[0][1]?.body)).media).toEqual(seededMedia);
     expect(JSON.parse(String(writes()[0][1]?.body)).targets).toEqual([
       {
         instanceId: uhd.id,

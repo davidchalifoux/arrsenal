@@ -464,6 +464,105 @@ test("unconfigured reads return empty collections without network access or pers
   assert.deepEqual(await readdir(directory), []);
 });
 
+for (const [name, handler] of [
+  ["library", libraryRoute.GET],
+  ["queue", queueRoute.GET],
+]) {
+  test(`${name} distinguishes successful empty reads, total primary failures, partial success, and recovery`, async (t) => {
+    const env = await setup(t, { hd: {}, sonarr: { kind: "sonarr" } });
+    await env.connect("hd");
+    const read = async (status) => {
+      const response = await handler();
+      expect(response.status).toBe(status);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      const text = await response.text();
+      expect(text).not.toContain(secret);
+      expect(text).not.toContain(env.base);
+      return JSON.parse(text);
+    };
+    expect(await read(200)).toEqual({ items: [], errors: [] });
+    // Primary failures must not be masked by healthy auxiliary endpoints.
+    env.nodes.hd.fail = [name === "library" ? "movie" : "queue"];
+    const failure = {
+      error: `Unable to load the ${name} from any configured instance. Check instance connections and retry.`,
+    };
+    expect(await read(502)).toEqual(failure);
+    const sonarr = await env.connect("sonarr");
+    const partialEmpty = await read(200);
+    expect(Object.keys(partialEmpty).sort()).toEqual(["errors", "items"]);
+    expect(partialEmpty.items).toEqual([]);
+    expect(partialEmpty.errors).toEqual([
+      expect.objectContaining({
+        instanceName: "hd",
+        message: "Instance returned HTTP 503.",
+      }),
+    ]);
+    env.nodes.sonarr.fail = [name === "library" ? "series" : "queue"];
+    expect(await read(502)).toEqual(failure);
+    delete env.nodes.sonarr.fail;
+    env.nodes.sonarr.media = [series];
+    env.nodes.sonarr.queue = [{ id: 7, seriesId: 22, status: "downloading" }];
+    const recovered = await read(200);
+    expect(recovered.items).toHaveLength(1);
+    expect(recovered.errors).toHaveLength(1);
+    if (name === "library")
+      expect(recovered.items[0].targets[0].instanceId).toBe(sonarr.id);
+    else expect(recovered.items[0].instanceId).toBe(sonarr.id);
+    delete env.nodes.hd.fail;
+    expect((await read(200)).errors).toEqual([]);
+    env.nodes.sonarr.media = [];
+    env.nodes.sonarr.queue = [];
+    expect(await read(200)).toEqual({ items: [], errors: [] });
+  });
+}
+
+test("library primary success remains successful with only auxiliary warnings", async (t) => {
+  const env = await setup(t, { sonarr: { kind: "sonarr" } });
+  await env.connect("sonarr");
+  env.nodes.sonarr.fail = ["qualityprofile", "queue", "episodefile"];
+  for (const media of [[], [series]]) {
+    env.nodes.sonarr.media = media;
+    const response = await libraryRoute.GET();
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(Object.keys(body).sort()).toEqual(["errors", "items"]);
+    expect(body.items).toHaveLength(media.length);
+    expect(body.errors.map((error) => error.message)).toEqual([
+      expect.stringMatching(/^Quality profiles unavailable:/),
+      expect.stringMatching(/^Download status unavailable:/),
+      ...(media.length
+        ? [expect.stringMatching(/^Some episode qualities are unknown:/)]
+        : []),
+    ]);
+    if (media.length)
+      expect(body.items[0].targets[0]).toMatchObject({
+        episodeCount: 10,
+        episodeFileCount: 6,
+        quality: "Unknown",
+      });
+  }
+});
+
+test("lookup retains per-instance errors when all primary reads fail", async (t) => {
+  const env = await setup(t, { hd: {} });
+  const instance = await env.connect("hd");
+  env.nodes.hd.fail = ["movie/lookup"];
+  const response = await lookupRoute.GET(
+    request("/api/lookup?term=dune&kind=movie"),
+  );
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({
+    items: [],
+    errors: [
+      {
+        instanceId: instance.id,
+        instanceName: "hd",
+        message: "Instance returned HTTP 503.",
+      },
+    ],
+  });
+});
+
 test("unknown instances return 404 without upstream actions", async (t) => {
   const { calls } = await setup(t);
   const id = "unknown-instance";
@@ -1557,10 +1656,12 @@ test("timeouts cover bodies and mutations, oversized responses fail, and malform
     (error) => error.status === 502 && /size limit/.test(error.message),
   );
   await env.connect("invalidMedia");
-  const response = await (await libraryRoute.GET()).json();
-  assert.equal(response.items.length, 0);
-  assert.equal(response.errors.length, 1);
-  assert.match(response.errors[0].message, /invalid media record/);
+  const response = await libraryRoute.GET();
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), {
+    error:
+      "Unable to load the library from any configured instance. Check instance connections and retry.",
+  });
 });
 
 test("library merges by provider identity, preserves per-target quality/counts, and isolates outages", async (t) => {
@@ -1620,9 +1721,12 @@ test("library merges by provider identity, preserves per-target quality/counts, 
     3,
   );
   for (const node of Object.values(env.nodes)) node.mode = "error";
-  const failed = await (await libraryRoute.GET()).json();
-  assert.equal(failed.items.length, 0);
-  assert.equal(failed.errors.length, 4);
+  const failed = await libraryRoute.GET();
+  assert.equal(failed.status, 502);
+  assert.deepEqual(await failed.json(), {
+    error:
+      "Unable to load the library from any configured instance. Check instance connections and retry.",
+  });
 });
 
 test("normalization scopes fallback identities and does not conflate movie and series IDs", () => {
@@ -2028,7 +2132,7 @@ test("queue paginates every record, preserves progress and errors, and forwards 
 
 test("queue changes, clamped pages, and duplicate records are not reported as a complete queue", async (t) => {
   const env = await setup(t, { hd: {} });
-  const instance = await env.connect("hd");
+  await env.connect("hd");
   const page = (number, totalRecords, ids, pageSize = 2) => ({
     page: number,
     totalRecords,
@@ -2036,6 +2140,8 @@ test("queue changes, clamped pages, and duplicate records are not reported as a 
     records: ids.map((id) => ({ id, title: `Download ${id}` })),
   });
   for (const pages of [
+    [{ records: [], totalRecords: "0", page: 1, pageSize: 2 }],
+    [page(1, 1, ["invalid-id"])],
     [page(1, 5, [1, 2]), page(2, 4, [4, 5])],
     [page(1, 4, [1, 2]), page(1, 4, [3, 4])],
     [page(1, 3, [1, 2]), page(2, 3, [2, 3])],
@@ -2043,16 +2149,26 @@ test("queue changes, clamped pages, and duplicate records are not reported as a 
   ]) {
     env.nodes.hd.queuePages = pages;
     const response = await queueRoute.GET();
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(502);
     const body = await response.json();
-    expect(body.items).toEqual([]);
-    expect(body.errors).toEqual([
-      expect.objectContaining({
-        instanceId: instance.id,
-        message: expect.stringMatching(/pagination|refresh/i),
-      }),
-    ]);
+    expect(body).toEqual({
+      error:
+        "Unable to load the queue from any configured instance. Check instance connections and retry.",
+    });
   }
+  delete env.nodes.hd.queuePages;
+  env.nodes.hd.queue = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  env.nodes.hd.pageSize = 2;
+  env.nodes.hd.queuePageFailure = 2;
+  const failed = await queueRoute.GET();
+  expect(failed.status).toBe(502);
+  expect(Object.keys(await failed.json())).toEqual(["error"]);
+  delete env.nodes.hd.queuePageFailure;
+  const recovered = await queueRoute.GET();
+  expect(recovered.status).toBe(200);
+  const body = await recovered.json();
+  expect(body.items).toHaveLength(3);
+  expect(body.errors).toEqual([]);
 });
 
 test("queue retry distinguishes delayed grabs, completed import scans, and active downloads", async (t) => {

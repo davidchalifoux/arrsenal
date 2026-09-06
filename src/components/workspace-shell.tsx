@@ -13,12 +13,11 @@ import {
   TelevisionSimpleIcon,
 } from "@phosphor-icons/react";
 import { css, cva } from "@styled-system/css";
-import { useQuery } from "@tanstack/react-query";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useState } from "react";
-import { instancesQuery, queueQuery } from "@/lib/queries";
+import { useInstances, useQueue } from "@/lib/collections";
 import { PageUtilitiesContext, WorkspaceUtilities } from "./page-header";
 import { Button, Modal } from "./ui";
 import { useWorkspace } from "./workspace-provider";
@@ -63,8 +62,8 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { connect } = useWorkspace();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const instanceQuery = useQuery(instancesQuery);
-  const queue = useQuery(queueQuery);
+  const instanceQuery = useInstances();
+  const queue = useQueue();
   const instances = instanceQuery.data?.instances ?? [];
   const isLibrary =
     pathname === "/" ||

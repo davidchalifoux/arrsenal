@@ -1,17 +1,16 @@
 "use client";
 
 import { css } from "@styled-system/css";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { instancesQuery } from "@/lib/queries";
+import { useInstances, useSyncData } from "@/lib/collections";
 import { PageHeader } from "./page-header";
 import { Settings } from "./settings";
 import { Notice, Spinner } from "./ui";
 import { useWorkspace } from "./workspace-provider";
 
 export function SettingsScreen({ autoOpen = false }: { autoOpen?: boolean }) {
-  const instances = useQuery(instancesQuery);
-  const client = useQueryClient();
+  const instances = useInstances();
+  const sync = useSyncData();
   const { notify } = useWorkspace();
   const router = useRouter();
   if (instances.isPending)
@@ -41,7 +40,7 @@ export function SettingsScreen({ autoOpen = false }: { autoOpen?: boolean }) {
       <Settings
         instances={instances.data?.instances ?? []}
         onChanged={() => {
-          void client.invalidateQueries();
+          void sync("all");
         }}
         notify={notify}
         autoOpen={autoOpen}

@@ -59,7 +59,7 @@ function requireKind(instance: InstanceConfig, kind: MediaKind): void {
 async function instanceMedia(
   instance: InstanceConfig,
   term?: string,
-): Promise<LibraryResponse> {
+): Promise<LibraryResponse & { primarySucceeded: boolean }> {
   const errors: ServiceError[] = [];
   const signal = AbortSignal.timeout(20000);
   const endpoint = instance.kind === "radarr" ? "movie" : "series";
@@ -86,6 +86,7 @@ async function instanceMedia(
   ]);
   if (mediaResult.status === "rejected")
     return {
+      primarySucceeded: false,
       items: [],
       errors: [serviceError(instance, mediaResult.reason)],
     };
@@ -171,6 +172,7 @@ async function instanceMedia(
       );
   }
   return {
+    primarySucceeded: true,
     items: media.map((item) =>
       normalizeMedia(
         item,
@@ -189,6 +191,11 @@ export async function library(): Promise<LibraryResponse> {
   const results = await Promise.all(
     instances.map((instance) => instanceMedia(instance)),
   );
+  if (results.length && !results.some((result) => result.primarySucceeded))
+    throw new ApiError(
+      502,
+      "Unable to load the library from any configured instance. Check instance connections and retry.",
+    );
   return {
     items: mergeMedia(results.flatMap((result) => result.items)),
     errors: results.flatMap((result) => result.errors),
@@ -231,16 +238,26 @@ export async function queue(): Promise<QueueResponse> {
     instances.map(async (instance) => {
       try {
         return {
+          primarySucceeded: true,
           items: (await queueRecords(instance)).map((item) =>
             normalizeQueue(item, instance),
           ),
           errors: [] as ServiceError[],
         };
       } catch (error) {
-        return { items: [], errors: [serviceError(instance, error)] };
+        return {
+          primarySucceeded: false,
+          items: [],
+          errors: [serviceError(instance, error)],
+        };
       }
     }),
   );
+  if (results.length && !results.some((result) => result.primarySucceeded))
+    throw new ApiError(
+      502,
+      "Unable to load the queue from any configured instance. Check instance connections and retry.",
+    );
   return {
     items: results.flatMap((result) => result.items),
     errors: results.flatMap((result) => result.errors),

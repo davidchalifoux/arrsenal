@@ -1,8 +1,15 @@
 "use client";
 
 import { css } from "@styled-system/css";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { eq, useLiveQuery } from "@tanstack/react-db";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import {
+  collectionRow,
+  useClientReady,
+  useCollections,
+  useSyncData,
+} from "@/lib/collections";
 import { libraryQuery } from "@/lib/queries";
 import type { MediaKind } from "@/lib/types";
 import { MediaDetails } from "./media-details";
@@ -17,13 +24,27 @@ export function MediaScreen({
   mediaId: string;
   kind: MediaKind;
 }) {
-  const library = useQuery(libraryQuery);
-  const client = useQueryClient();
+  const collections = useCollections();
+  const clientReady = useClientReady();
+  const library = useQuery({ ...libraryQuery, enabled: false });
+  const sync = useSyncData();
   const { add, notify, refresh } = useWorkspace();
-  const media = library.data?.items.find(
-    (item) => item.id === mediaId && item.kind === kind,
-  );
-  if (library.isPending || (!media && library.isFetching))
+  const title = useLiveQuery({
+    query: (q) =>
+      clientReady
+        ? q
+            .from({ item: collections.library })
+            .where(({ item }) => eq(item.id, mediaId))
+            .where(({ item }) => eq(item.kind, kind))
+            .findOne()
+        : undefined,
+  });
+  const media = title.data && collectionRow(title.data);
+  if (
+    library.isPending ||
+    (!library.isError && title.isLoading) ||
+    (!media && library.isFetching)
+  )
     return <PageHeader title="Loading title..." actions={<Spinner />} />;
   if (!media)
     return (
@@ -72,12 +93,7 @@ export function MediaScreen({
         onAddTarget={add}
         notify={notify}
         onChanged={() => {
-          refresh();
-          void client.invalidateQueries({ queryKey: ["queue"] });
-          for (const target of media.targets)
-            void client.invalidateQueries({
-              queryKey: ["episodes", target.instanceId, target.remoteId],
-            });
+          void sync("media", media.targets);
         }}
       />
     </>

@@ -1,28 +1,30 @@
 "use client";
 
 import { css } from "@styled-system/css";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { queueQuery } from "@/lib/queries";
+import { useQueue, useSyncData } from "@/lib/collections";
 import { DownloadQueue } from "./queue";
 import { Notice } from "./ui";
 import { useWorkspace } from "./workspace-provider";
 
 export function QueueScreen() {
-  const client = useQueryClient();
-  const queue = useQuery(queueQuery);
+  const sync = useSyncData();
+  const queue = useQueue(true);
   const { notify } = useWorkspace();
   return (
     <>
       {queue.isError && (
         <div className={css({ mb: "16px" })}>
-          <Notice error>{queue.error.message}</Notice>
+          <Notice error>
+            {queue.error.message}
+            {queue.data && " Showing the last loaded queue."}
+          </Notice>
         </div>
       )}
       <DownloadQueue
         data={queue.data}
         loading={queue.isPending || queue.isFetching}
         onRefresh={() => {
-          void client.invalidateQueries({ queryKey: ["queue"] });
+          void sync("queue");
         }}
         notify={notify}
       />

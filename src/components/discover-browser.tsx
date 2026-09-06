@@ -2,9 +2,8 @@
 
 import { MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
-import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { instancesQuery } from "@/lib/queries";
+import { useInstances } from "@/lib/collections";
 import { useCatalogSearch } from "@/lib/use-catalog-search";
 import { MediaCard } from "./media-card";
 import { PageHeader } from "./page-header";
@@ -29,7 +28,7 @@ export function DiscoverBrowser() {
   const [term, setTerm] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState("movie");
-  const instances = useQuery(instancesQuery);
+  const instances = useInstances();
   const hasInstance =
     instances.data?.instances.some(
       (instance) => instance.kind === (kind === "movie" ? "radarr" : "sonarr"),

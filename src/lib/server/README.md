@@ -103,8 +103,13 @@ behavior is unchanged when `episodeId` is omitted.
   for `207`, and should retry only failed targets.
 - Input/security/config errors return `{error: string}`. Once an instance action
   is running, failures return an `ActionResponse` with `success: false`, a message,
-  and per-instance errors. Read aggregation returns `200` plus an `errors` array
-  even when every configured instance is unavailable.
+  and per-instance errors. Library and queue reads return `502` with a safe
+  `{error: string}` when every configured instance's primary read fails (media
+  for library, complete queue pagination for queue). No configuration or a
+  successful empty read still returns `200`. Partial successes retain `200`
+  and per-instance errors; profile, download-status, and episode-quality
+  enrichment failures remain warnings. Lookup retains `200` plus an `errors`
+  array even when every matching instance fails.
 - Queue POST grabs a delayed/pending release with `POST queue/grab/{id}` only
   when no download ID exists. This bypasses the delay and starts a download.
   For completed downloads awaiting import it sends `DownloadedMoviesScan` or

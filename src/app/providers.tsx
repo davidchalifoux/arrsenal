@@ -2,6 +2,9 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
+import { configurePollingFocus } from "@/lib/polling";
+
+configurePollingFocus();
 
 export function Providers({ children }: { children: ReactNode }) {
   const [client] = useState(
