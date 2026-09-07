@@ -14,11 +14,11 @@ import { useInstances, useLibrary, useQueue } from "@/lib/collections";
 
 const StartupContext = createContext<(() => void) | null>(null);
 
-export function useDismissWorkspaceLoading() {
+export function useDismissLibraryLoading() {
   return useContext(StartupContext);
 }
 
-export function WorkspaceLoading({ children }: { children: ReactNode }) {
+export function LibraryLoading({ children }: { children: ReactNode }) {
   const library = useLibrary();
   const instances = useInstances();
   const queue = useQueue();
@@ -94,7 +94,7 @@ export function WorkspaceLoading({ children }: { children: ReactNode }) {
           >
             {slow
               ? "Still connecting to your instances. Large libraries can take a little longer."
-              : "Loading your workspace..."}
+              : "Loading your library..."}
           </output>
           {slow && (
             <Link

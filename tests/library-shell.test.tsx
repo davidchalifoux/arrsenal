@@ -7,7 +7,8 @@ import {
 } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { WorkspaceShell } from "@/components/workspace-shell";
+import { LibraryShell } from "@/components/library-shell";
+import { PageHeader } from "@/components/page-header";
 
 const mocks = vi.hoisted(() => ({
   pathname: "/",
@@ -29,8 +30,8 @@ vi.mock("next/link", () => ({
   ),
 }));
 vi.mock("@/lib/collections", () => ({ useQueue: () => mocks.queue }));
-vi.mock("@/components/workspace-provider", () => ({
-  useWorkspace: () => mocks,
+vi.mock("@/components/library-provider", () => ({
+  useLibraryActions: () => mocks,
 }));
 
 const navigationNames = ["Main navigation", "Mobile navigation"];
@@ -51,9 +52,9 @@ afterEach(cleanup);
 
 function renderShell() {
   return render(
-    <WorkspaceShell>
+    <LibraryShell>
       <h1>Library content</h1>
-    </WorkspaceShell>,
+    </LibraryShell>,
   );
 }
 
@@ -105,6 +106,31 @@ it("preserves the home link, skip link, and main content landmark", () => {
   ).toBeDefined();
 });
 
+it("keeps the page title in PageHeader without repeating it in the banner", () => {
+  mocks.pathname = "/movies";
+  render(
+    <LibraryShell>
+      <PageHeader title="Movies" />
+    </LibraryShell>,
+  );
+
+  const banner = within(screen.getByRole("banner"));
+  expect(banner.getAllByText("Movies")).toEqual([
+    banner.getByRole("link", { name: "Movies" }),
+  ]);
+  expect(banner.queryByRole("heading")).toBeNull();
+  expect(screen.getAllByRole("heading", { name: "Movies" })).toHaveLength(1);
+  expect(
+    within(screen.getByRole("main")).getByRole("heading", {
+      level: 1,
+      name: "Movies",
+    }),
+  ).toBeDefined();
+  const logo = banner.getByRole("link", { name: "Arrsenal home" });
+  expect(logo.getAttribute("href")).toBe("/");
+  expect(logo.querySelector("img")?.getAttribute("src")).toBe("/logo.svg");
+});
+
 it.each([
   ["/", "Home"],
   ["/movies", "Movies"],
@@ -153,7 +179,7 @@ it("updates active links and queue badges in both navigation regions on rerender
   for (const count of [0, 1, 2, 99, 100, 123, 0]) {
     mocks.pathname = count ? "/queue" : "/";
     mocks.queue.data.items = Array.from({ length: count }, () => ({}));
-    view.rerender(<WorkspaceShell>Downloads content</WorkspaceShell>);
+    view.rerender(<LibraryShell>Downloads content</LibraryShell>);
     for (const name of navigationNames) {
       const nav = within(screen.getByRole("navigation", { name }));
       const downloads = nav.getByRole("link", {
@@ -193,7 +219,7 @@ it("keeps global Search and Add in the header and updates the Add seed with the 
   ]) {
     vi.clearAllMocks();
     mocks.pathname = pathname;
-    view.rerender(<WorkspaceShell>Library content</WorkspaceShell>);
+    view.rerender(<LibraryShell>Library content</LibraryShell>);
     const header = within(screen.getByRole("banner"));
     expect(screen.getAllByRole("button")).toHaveLength(2);
     fireEvent.click(header.getByRole("button", { name: "Add media" }));

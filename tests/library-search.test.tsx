@@ -10,9 +10,9 @@ import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AddMedia } from "@/components/add-media";
 import {
-  useWorkspace,
-  WorkspaceProvider,
-} from "@/components/workspace-provider";
+  LibraryProvider,
+  useLibraryActions,
+} from "@/components/library-provider";
 import { mediaHref } from "@/lib/client";
 import type { MediaItem } from "@/lib/types";
 
@@ -60,7 +60,7 @@ const titles = Array.from({ length: 45 }, (_, index) =>
 );
 
 function SearchTrigger() {
-  const { searchLibrary } = useWorkspace();
+  const { searchLibrary } = useLibraryActions();
   return (
     <button type="button" onClick={searchLibrary}>
       Open library search
@@ -72,9 +72,9 @@ function renderSearch(items: MediaItem[] = titles) {
   client.setQueryData(["library"], { items, errors: [] });
   render(
     <QueryClientProvider client={client}>
-      <WorkspaceProvider>
+      <LibraryProvider>
         <SearchTrigger />
-      </WorkspaceProvider>
+      </LibraryProvider>
     </QueryClientProvider>,
   );
 }

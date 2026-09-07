@@ -29,7 +29,7 @@ import { AddMedia } from "./add-media";
 import { Poster } from "./media-card";
 import { Button, inputStyle, Modal, Notice } from "./ui";
 
-interface WorkspaceActions {
+interface LibraryActions {
   add: (media?: MediaItem | null, kind?: "movie" | "series") => void;
   connect: () => void;
   searchLibrary: () => void;
@@ -37,15 +37,15 @@ interface WorkspaceActions {
   refresh: () => void;
 }
 
-const WorkspaceContext = createContext<WorkspaceActions | null>(null);
+const LibraryContext = createContext<LibraryActions | null>(null);
 
-export function useWorkspace() {
-  const value = useContext(WorkspaceContext);
-  if (!value) throw new Error("Workspace actions require WorkspaceProvider.");
+export function useLibraryActions() {
+  const value = useContext(LibraryContext);
+  if (!value) throw new Error("Library actions require LibraryProvider.");
   return value;
 }
 
-export function WorkspaceProvider({ children }: { children: ReactNode }) {
+export function LibraryProvider({ children }: { children: ReactNode }) {
   const sync = useSyncData();
   const router = useRouter();
   const library = useLibrary();
@@ -114,7 +114,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [toast]);
 
   return (
-    <WorkspaceContext
+    <LibraryContext
       value={{
         add,
         connect,
@@ -401,6 +401,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           </button>
         </div>
       )}
-    </WorkspaceContext>
+    </LibraryContext>
   );
 }

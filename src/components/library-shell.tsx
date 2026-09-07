@@ -14,7 +14,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useQueue } from "@/lib/collections";
-import { WorkspaceUtilities } from "./page-header";
+import { LibraryUtilities } from "./page-header";
 
 const navigation = [
   { href: "/", label: "Home", icon: HouseIcon },
@@ -24,7 +24,7 @@ const navigation = [
   { href: "/calendar", label: "Calendar", icon: CalendarBlankIcon },
 ];
 
-export function WorkspaceShell({ children }: { children: ReactNode }) {
+export function LibraryShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const queue = useQueue();
   const count = queue.data?.items.length ?? 0;
@@ -147,7 +147,10 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             href="/"
             aria-label="Arrsenal home"
             className={css({
-              display: { base: "none", lg: "flex" },
+              display: "flex",
+              alignItems: "center",
+              minHeight: "44px",
+              minWidth: "44px",
               flexShrink: 0,
             })}
           >
@@ -160,16 +163,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               aria-hidden="true"
             />
           </Link>
-          <span
-            className={css({
-              display: { base: "block", lg: "none" },
-              fontSize: "17px",
-              fontWeight: "600",
-              flex: 1,
-            })}
-          >
-            {settingsActive ? "Settings" : (current?.label ?? "Arrsenal")}
-          </span>
           <nav
             aria-label="Main navigation"
             className={css({
@@ -211,7 +204,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               ml: "auto",
             })}
           >
-            <WorkspaceUtilities
+            <LibraryUtilities
               addKind={current?.href === "/shows" ? "series" : "movie"}
             />
             <Link

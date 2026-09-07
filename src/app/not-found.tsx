@@ -1,1 +1,1 @@
-export { default } from "./(workspace)/not-found";
+export { default } from "./(library)/not-found";

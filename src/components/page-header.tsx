@@ -7,15 +7,15 @@ import {
 } from "@phosphor-icons/react";
 import { css } from "@styled-system/css";
 import type { ReactNode } from "react";
+import { useLibraryActions } from "./library-provider";
 import { Button } from "./ui";
-import { useWorkspace } from "./workspace-provider";
 
-export function WorkspaceUtilities({
+export function LibraryUtilities({
   addKind = "movie",
 }: {
   addKind?: "movie" | "series";
 }) {
-  const { add, searchLibrary } = useWorkspace();
+  const { add, searchLibrary } = useLibraryActions();
   return (
     <>
       <button

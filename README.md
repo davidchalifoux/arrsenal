@@ -14,7 +14,7 @@ Arrsenal is a self-hosted Next.js client for Sonarr and Radarr's v3 APIs. It com
 - Automatic search and manual release search, including rejection reasons and confirmed release grabs.
 - Combined download queues with progress, removal/blocklisting, pending-release grabs, and import retries.
 - UI-managed connections, server-side API keys, and Zod-validated local configuration. No database.
-- Real instance data only; an unconfigured workspace starts with an empty library.
+- Real instance data only; your library stays empty until you connect an instance.
 - Optimized, responsive posters served through Next.js Image, preferring Sonarr/Radarr's cached covers. Missing local artwork falls back server-side to an allowed TMDB/TheTVDB source; discovery results without local covers use CDN artwork directly.
 
 ## Development
@@ -32,7 +32,7 @@ The interface uses Base UI, PandaCSS, Phosphor icons, Geist, and TanStack Query.
 
 ## App Structure
 
-Explicit App Router pages live under `src/app/(workspace)/`: the library index,
+Explicit App Router pages live under `src/app/(library)/`: the library index,
 movies, shows, missing media, discovery, queue, settings, and separate
 `movies/[id]` and `shows/[id]` detail routes. The shared layout keeps navigation
 and global dialogs mounted between pages; it does not select or render screens.

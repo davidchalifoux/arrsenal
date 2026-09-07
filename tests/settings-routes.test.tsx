@@ -8,9 +8,9 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ConnectionsPage, {
   metadata as connectionsMetadata,
-} from "@/app/(workspace)/settings/connections/page";
-import SettingsLayout from "@/app/(workspace)/settings/layout";
-import SettingsPage, { metadata } from "@/app/(workspace)/settings/page";
+} from "@/app/(library)/settings/connections/page";
+import SettingsLayout from "@/app/(library)/settings/layout";
+import SettingsPage, { metadata } from "@/app/(library)/settings/page";
 import ErrorPage from "@/app/error";
 
 const state = vi.hoisted(() => ({
@@ -32,8 +32,8 @@ vi.mock("@/lib/collections", () => ({
   useInstances: () => ({ isPending: state.pending, data: { instances: [] } }),
   useSyncData: () => state.sync,
 }));
-vi.mock("@/components/workspace-provider", () => ({
-  useWorkspace: () => ({ notify: state.notify }),
+vi.mock("@/components/library-provider", () => ({
+  useLibraryActions: () => ({ notify: state.notify }),
 }));
 
 beforeEach(() => {

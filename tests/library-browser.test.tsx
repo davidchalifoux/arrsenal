@@ -19,8 +19,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mocks.replace, push: vi.fn() }),
 }));
-vi.mock("@/components/workspace-provider", () => ({
-  useWorkspace: () => ({ add: mocks.add, refresh: vi.fn() }),
+vi.mock("@/components/library-provider", () => ({
+  useLibraryActions: () => ({ add: mocks.add, refresh: vi.fn() }),
 }));
 vi.mock("@/lib/collections", () => ({
   useLibrary: () => ({

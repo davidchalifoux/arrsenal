@@ -14,10 +14,10 @@ import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AddMedia } from "@/components/add-media";
 import { LibraryBrowser } from "@/components/library-browser";
+import { LibraryProvider } from "@/components/library-provider";
 import { MediaCard, MediaList } from "@/components/media-card";
 import { MediaDetails } from "@/components/media-details";
 import { MediaScreen } from "@/components/media-screen";
-import { WorkspaceProvider } from "@/components/workspace-provider";
 import type {
   AddMediaRequest,
   Episode,
@@ -444,9 +444,9 @@ describe("Library integration", () => {
     });
     queryClient.setQueryData(["instances"], { instances: [hd, uhd] });
     renderUI(
-      <WorkspaceProvider>
+      <LibraryProvider>
         <LibraryBrowser category={category} />
-      </WorkspaceProvider>,
+      </LibraryProvider>,
     );
     await screen.findAllByRole("link", { name: /^View / });
     expect(
@@ -502,9 +502,9 @@ describe("Library integration", () => {
     });
     queryClient.setQueryData(["instances"], { instances: [hd] });
     renderUI(
-      <WorkspaceProvider>
+      <LibraryProvider>
         <LibraryBrowser category="movies" initialStatus="available" />
-      </WorkspaceProvider>,
+      </LibraryProvider>,
     );
     expect(screen.getByRole("heading", { name: "Movies" })).toBeTruthy();
     expect(screen.queryByText(/\d+ titles/)).toBeNull();
@@ -521,9 +521,9 @@ describe("Library integration", () => {
     queryClient.setQueryData(["library"], { items, errors: [] });
     queryClient.setQueryData(["instances"], { instances: [hd] });
     renderUI(
-      <WorkspaceProvider>
+      <LibraryProvider>
         <LibraryBrowser category="movies" />
-      </WorkspaceProvider>,
+      </LibraryProvider>,
     );
     const posters = await screen.findAllByRole("img");
     expect(posters).toHaveLength(17);
@@ -568,9 +568,9 @@ describe("Library integration", () => {
       throw new Error(`Unexpected request: ${path}`);
     });
     renderUI(
-      <WorkspaceProvider>
+      <LibraryProvider>
         <LibraryBrowser category="movies" />
-      </WorkspaceProvider>,
+      </LibraryProvider>,
     );
     await screen.findByRole("link", { name: `View ${items[0].title}` });
     await choose("Sort library", sort);
@@ -623,9 +623,9 @@ describe("Library integration", () => {
       throw new Error(`Unexpected request: ${path}`);
     });
     renderUI(
-      <WorkspaceProvider>
+      <LibraryProvider>
         <LibraryBrowser category="movies" />
-      </WorkspaceProvider>,
+      </LibraryProvider>,
     );
     await screen.findByRole("link", { name: `View ${movie.title}` });
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
@@ -671,9 +671,9 @@ describe("Library integration", () => {
       throw new Error(`Unexpected request: ${path}`);
     });
     const content = (
-      <WorkspaceProvider>
+      <LibraryProvider>
         <LibraryBrowser category="movies" />
-      </WorkspaceProvider>
+      </LibraryProvider>
     );
     const html = renderToString(
       <QueryClientProvider client={queryClient}>{content}</QueryClientProvider>,
@@ -706,9 +706,9 @@ describe("Library integration", () => {
     ).toBeTruthy();
     rerender(
       <QueryClientProvider client={queryClient}>
-        <WorkspaceProvider>
+        <LibraryProvider>
           <LibraryBrowser category="shows" />
-        </WorkspaceProvider>
+        </LibraryProvider>
       </QueryClientProvider>,
     );
     expect(
@@ -736,9 +736,9 @@ describe("Library integration", () => {
       throw new Error(`Unexpected request: ${path}`);
     });
     renderUI(
-      <WorkspaceProvider>
+      <LibraryProvider>
         <LibraryBrowser category="movies" />
-      </WorkspaceProvider>,
+      </LibraryProvider>,
     );
     await screen.findByRole("link", { name: `View ${movie.title}` });
     fetchMock.mockRejectedValueOnce(new Error("Network unavailable."));
@@ -764,9 +764,9 @@ describe("Library integration", () => {
     vi.useFakeTimers();
     try {
       renderUI(
-        <WorkspaceProvider>
+        <LibraryProvider>
           <LibraryBrowser category="missing" />
-        </WorkspaceProvider>,
+        </LibraryProvider>,
       );
       expect(screen.queryByText(/\d+ titles/)).toBeNull();
       await act(async () => vi.advanceTimersByTimeAsync(4999));
@@ -812,9 +812,9 @@ describe("Library integration", () => {
       throw new Error(`Unexpected request: ${path}`);
     });
     renderUI(
-      <WorkspaceProvider>
+      <LibraryProvider>
         <LibraryBrowser category="movies" />
-      </WorkspaceProvider>,
+      </LibraryProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Refresh library" }));
     await screen.findByText("Syncing library...");
@@ -858,9 +858,9 @@ describe("Library integration", () => {
       throw new Error(`Unexpected request: ${path}`);
     });
     renderUI(
-      <WorkspaceProvider>
+      <LibraryProvider>
         <MediaScreen kind="movie" mediaId={movie.id} />
-      </WorkspaceProvider>,
+      </LibraryProvider>,
     );
     await screen.findByRole("heading", { level: 1, name: movie.title });
     expect(screen.queryByRole("dialog")).toBeNull();

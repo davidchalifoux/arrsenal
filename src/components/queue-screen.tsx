@@ -2,14 +2,14 @@
 
 import { css } from "@styled-system/css";
 import { useQueue, useSyncData } from "@/lib/collections";
+import { useLibraryActions } from "./library-provider";
 import { DownloadQueue } from "./queue";
 import { Notice } from "./ui";
-import { useWorkspace } from "./workspace-provider";
 
 export function QueueScreen() {
   const sync = useSyncData();
   const queue = useQueue(true);
-  const { notify } = useWorkspace();
+  const { notify } = useLibraryActions();
   return (
     <>
       {queue.isError && (

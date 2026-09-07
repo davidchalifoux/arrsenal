@@ -12,10 +12,10 @@ import {
 } from "@/lib/collections";
 import { libraryQuery } from "@/lib/queries";
 import type { MediaKind } from "@/lib/types";
+import { useLibraryActions } from "./library-provider";
 import { MediaDetails } from "./media-details";
 import { PageHeader } from "./page-header";
 import { Button, buttonStyle, Notice, Spinner } from "./ui";
-import { useWorkspace } from "./workspace-provider";
 
 export function MediaScreen({
   mediaId,
@@ -28,7 +28,7 @@ export function MediaScreen({
   const clientReady = useClientReady();
   const library = useQuery({ ...libraryQuery, enabled: false });
   const sync = useSyncData();
-  const { add, notify, refresh } = useWorkspace();
+  const { add, notify, refresh } = useLibraryActions();
   const title = useLiveQuery({
     query: (q) =>
       clientReady

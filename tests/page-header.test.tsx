@@ -1,10 +1,13 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PageHeader, WorkspaceUtilities } from "@/components/page-header";
+import { LibraryUtilities, PageHeader } from "@/components/page-header";
 
-const workspace = vi.hoisted(() => ({ add: vi.fn(), searchLibrary: vi.fn() }));
-vi.mock("@/components/workspace-provider", () => ({
-  useWorkspace: () => workspace,
+const libraryActions = vi.hoisted(() => ({
+  add: vi.fn(),
+  searchLibrary: vi.fn(),
+}));
+vi.mock("@/components/library-provider", () => ({
+  useLibraryActions: () => libraryActions,
 }));
 
 afterEach(() => {
@@ -13,7 +16,7 @@ afterEach(() => {
 });
 
 describe("PageHeader", () => {
-  it("keeps standalone page headings and actions independent of workspace utilities", () => {
+  it("keeps standalone page headings and actions independent of library utilities", () => {
     const refresh = vi.fn();
     render(
       <PageHeader
@@ -34,8 +37,8 @@ describe("PageHeader", () => {
     expect(screen.getAllByRole("button")).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     expect(refresh).toHaveBeenCalledOnce();
-    expect(workspace.add).not.toHaveBeenCalled();
-    expect(workspace.searchLibrary).not.toHaveBeenCalled();
+    expect(libraryActions.add).not.toHaveBeenCalled();
+    expect(libraryActions.searchLibrary).not.toHaveBeenCalled();
   });
 
   it("renders a heading without subtitles or optional actions", () => {
@@ -51,7 +54,7 @@ describe("PageHeader", () => {
     const refresh = vi.fn();
     render(
       <>
-        <WorkspaceUtilities />
+        <LibraryUtilities />
         <PageHeader
           title="Your library"
           actions={
@@ -68,28 +71,28 @@ describe("PageHeader", () => {
     expect(buttons[1].textContent).toBe("Add media");
     expect(buttons[2].textContent).toBe("Refresh");
     for (const button of buttons) fireEvent.click(button);
-    expect(workspace.searchLibrary).toHaveBeenCalledOnce();
+    expect(libraryActions.searchLibrary).toHaveBeenCalledOnce();
     expect(refresh).toHaveBeenCalledOnce();
-    expect(workspace.add).toHaveBeenCalledExactlyOnceWith(null, "movie");
+    expect(libraryActions.add).toHaveBeenCalledExactlyOnceWith(null, "movie");
   });
 });
 
-describe("WorkspaceUtilities", () => {
+describe("LibraryUtilities", () => {
   it.each([
     undefined,
     "movie",
     "series",
   ] as const)("opens search and seeds Add with addKind=%s", (addKind) => {
-    render(<WorkspaceUtilities addKind={addKind} />);
+    render(<LibraryUtilities addKind={addKind} />);
     expect(screen.getAllByRole("button")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Search library" }));
-    expect(workspace.searchLibrary).toHaveBeenCalledOnce();
-    expect(workspace.add).not.toHaveBeenCalled();
+    expect(libraryActions.searchLibrary).toHaveBeenCalledOnce();
+    expect(libraryActions.add).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Add media" }));
-    expect(workspace.add).toHaveBeenCalledExactlyOnceWith(
+    expect(libraryActions.add).toHaveBeenCalledExactlyOnceWith(
       null,
       addKind ?? "movie",
     );
-    expect(workspace.searchLibrary).toHaveBeenCalledOnce();
+    expect(libraryActions.searchLibrary).toHaveBeenCalledOnce();
   });
 });

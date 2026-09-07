@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import MoviePage from "@/app/(workspace)/movies/[id]/page";
-import ShowPage from "@/app/(workspace)/shows/[id]/page";
+import MoviePage from "@/app/(library)/movies/[id]/page";
+import ShowPage from "@/app/(library)/shows/[id]/page";
 
 vi.mock("@/components/media-screen", () => ({ MediaScreen: () => null }));
 vi.mock("next/navigation", () => ({

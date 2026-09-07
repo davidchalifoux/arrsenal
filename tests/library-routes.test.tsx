@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import DiscoverPage from "@/app/(workspace)/discover/page";
-import MissingPage from "@/app/(workspace)/missing/page";
-import LibraryPage from "@/app/(workspace)/page";
+import DiscoverPage from "@/app/(library)/discover/page";
+import MissingPage from "@/app/(library)/missing/page";
+import LibraryPage from "@/app/(library)/page";
 
 vi.mock("@/components/library-browser", () => ({ LibraryBrowser: () => null }));
 vi.mock("next/navigation", () => ({

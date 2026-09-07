@@ -13,6 +13,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { z } from "zod";
 import { mediaHref } from "@/lib/client";
 import { useInstances, useLibrary } from "@/lib/collections";
+import { useLibraryActions } from "./library-provider";
 import { LibraryToolbar } from "./library-toolbar";
 import { MediaCard, MediaList } from "./media-card";
 import { PageHeader } from "./page-header";
@@ -25,7 +26,6 @@ import {
   type LibraryStatus,
   useLibraryView,
 } from "./use-library-view";
-import { useWorkspace } from "./workspace-provider";
 
 const gridStyle = css({
   display: "grid",
@@ -101,7 +101,7 @@ function LibrarySection({
   openAdd?: boolean;
 }) {
   const router = useRouter();
-  const { add, refresh } = useWorkspace();
+  const { add, refresh } = useLibraryActions();
   const library = useLibrary();
   const instanceQuery = useInstances();
   const [instanceFilter, setInstanceFilter] = useState("all");

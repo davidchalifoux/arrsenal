@@ -12,8 +12,8 @@ import type { ImageProps } from "next/image";
 import { type PropsWithChildren, useEffect } from "react";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import WorkspaceError from "@/app/(workspace)/error";
-import { WorkspaceLoading } from "@/components/workspace-loading";
+import LibraryError from "@/app/(library)/error";
+import { LibraryLoading } from "@/components/library-loading";
 import { api } from "@/lib/client";
 import { getCollections } from "@/lib/collections";
 import type { InstanceSummary, MediaItem, QueueItem } from "@/lib/types";
@@ -101,7 +101,7 @@ function setup(empty = false) {
   });
   const Wrapper = ({ children }: PropsWithChildren) => (
     <QueryClientProvider client={client}>
-      <WorkspaceLoading>{children}</WorkspaceLoading>
+      <LibraryLoading>{children}</LibraryLoading>
     </QueryClientProvider>
   );
   const resolve = async (name: (typeof names)[number]) => {
@@ -143,7 +143,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-describe("WorkspaceLoading", () => {
+describe("LibraryLoading", () => {
   it("mounts hidden, inert children while all three requests start in parallel and exposes the logo and status", async () => {
     const { client, Wrapper, resolve } = setup();
     const mounted = vi.fn();
@@ -153,15 +153,15 @@ describe("WorkspaceLoading", () => {
         mounted();
         return unmounted;
       }, []);
-      return <button type="button">Workspace action</button>;
+      return <button type="button">Library action</button>;
     }
     const { container } = render(<Child />, { wrapper: Wrapper });
-    const child = screen.getByText("Workspace action");
+    const child = screen.getByText("Library action");
     expect(mounted).toHaveBeenCalledTimes(1);
     expectBlocked(child, true);
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.getByRole("status").textContent).toBe(
-      "Loading your workspace...",
+      "Loading your library...",
     );
     expect(screen.getByText("ARRSENAL")).toBeTruthy();
     const logo = container.querySelector('img[src="/logo.svg"]');
@@ -211,10 +211,10 @@ describe("WorkspaceLoading", () => {
 
   it("dismisses after three empty successful responses", async () => {
     const { Wrapper, resolve } = setup(true);
-    render(<div>Empty workspace</div>, { wrapper: Wrapper });
+    render(<div>Empty library</div>, { wrapper: Wrapper });
     for (const name of names) await resolve(name);
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
-    expectBlocked(screen.getByText("Empty workspace"), false);
+    expectBlocked(screen.getByText("Empty library"), false);
   });
 
   it.each(
@@ -277,7 +277,7 @@ describe("WorkspaceLoading", () => {
       screen.queryByRole("link", { name: "Check connections" }),
     ).toBeNull();
     expect(screen.getByRole("status").textContent).toBe(
-      "Loading your workspace...",
+      "Loading your library...",
     );
     await act(() => vi.advanceTimersByTimeAsync(1));
     expect(screen.getByRole("status").textContent).toContain(
@@ -308,7 +308,7 @@ describe("WorkspaceLoading", () => {
     const container = document.createElement("div");
     container.innerHTML = renderToString(content);
     expect(container.querySelector("output")?.textContent).toBe(
-      "Loading your workspace...",
+      "Loading your library...",
     );
     expect(container.querySelector("[hidden][inert]")?.textContent).toBe(
       "Hydrated route",
@@ -331,12 +331,12 @@ describe("WorkspaceLoading", () => {
     expect(onRecoverableError).not.toHaveBeenCalled();
   });
 
-  it("lets the real workspace route error dismiss through context with queries still pending", async () => {
+  it("lets the real library route error dismiss through context with queries still pending", async () => {
     const { client, Wrapper } = setup();
     const reset = vi.fn();
     const view = render(<div>Pending route</div>, { wrapper: Wrapper });
     expect(screen.getByRole("status")).toBeTruthy();
-    view.rerender(<WorkspaceError reset={reset} />);
+    view.rerender(<LibraryError reset={reset} />);
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
     const heading = screen.getByRole("heading", {
       name: "Unable to load this page",

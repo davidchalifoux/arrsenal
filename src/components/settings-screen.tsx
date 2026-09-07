@@ -3,15 +3,15 @@
 import { css } from "@styled-system/css";
 import { useRouter } from "next/navigation";
 import { useInstances, useSyncData } from "@/lib/collections";
+import { useLibraryActions } from "./library-provider";
 import { PageHeader } from "./page-header";
 import { Settings } from "./settings";
 import { Notice, Spinner } from "./ui";
-import { useWorkspace } from "./workspace-provider";
 
 export function SettingsScreen({ autoOpen = false }: { autoOpen?: boolean }) {
   const instances = useInstances();
   const sync = useSyncData();
-  const { notify } = useWorkspace();
+  const { notify } = useLibraryActions();
   const router = useRouter();
   if (instances.isPending)
     return (
