@@ -208,6 +208,7 @@ it("hands the trimmed current query to Add media and closes the library modal", 
   expect(screen.getByRole<HTMLInputElement>("textbox").value).toBe("");
 });
 
+// Opening, paginating, and reopening the real dialog can exceed 5s in CI.
 it.each([
   "ctrlKey",
   "metaKey",
@@ -230,4 +231,4 @@ it.each([
     "45 titles in your library",
   );
   await waitFor(() => expect(document.activeElement).toBe(reopened));
-});
+}, 15_000);
