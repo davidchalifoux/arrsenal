@@ -73,6 +73,7 @@ export function Personalization() {
         >
           <Button
             type="submit"
+            size="sm"
             variant="primary"
             disabled={timeZone === null || saving || draft === override}
           >

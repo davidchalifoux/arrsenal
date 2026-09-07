@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftIcon } from "@phosphor-icons/react";
+import { PlugIcon, SlidersHorizontalIcon } from "@phosphor-icons/react";
 import { css } from "@styled-system/css";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -9,42 +9,57 @@ import { settingsSections } from "./sections";
 export function SettingsNavigation() {
   const pathname = usePathname();
   return (
-    <>
-      <nav
-        aria-label="Settings sections"
+    <nav
+      aria-label="Settings sections"
+      className={css({
+        minWidth: 0,
+        pr: { lg: "16px" },
+        pb: { base: "16px", lg: "8px" },
+      })}
+    >
+      <p
         className={css({
-          display: { base: "none", lg: "grid" },
-          alignContent: "start",
-          gap: "4px",
-          borderRight: "1px solid token(colors.line)",
-          pr: "20px",
+          color: "subtle",
+          fontSize: "11px",
+          fontWeight: "600",
+          letterSpacing: ".06em",
+          textTransform: "uppercase",
+          mb: "12px",
+          px: "10px",
+          pt: "8px",
         })}
       >
-        <p
-          className={css({
-            fontSize: "12px",
-            fontWeight: "600",
-            mb: "12px",
-            px: "12px",
-          })}
-        >
-          Settings
-        </p>
-        {[{ href: "/settings", title: "Overview" }, ...settingsSections].map(
-          (section) => (
+        Settings
+      </p>
+      <div
+        className={css({
+          display: "flex",
+          flexDirection: { base: "row", lg: "column" },
+          gap: "4px",
+        })}
+      >
+        {settingsSections.map((section) => {
+          const Icon =
+            section.href === "/settings/connections"
+              ? PlugIcon
+              : SlidersHorizontalIcon;
+          const active = pathname === section.href;
+          return (
             <Link
               key={section.href}
               href={section.href}
-              aria-current={pathname === section.href ? "page" : undefined}
+              aria-current={active ? "page" : undefined}
               className={css({
                 display: "flex",
                 alignItems: "center",
-                minHeight: "44px",
-                px: "12px",
+                gap: "8px",
+                minHeight: { base: "40px", lg: "32px" },
+                px: "10px",
                 borderRadius: "7px",
                 color: "muted",
-                fontSize: "13px",
-                _hover: { bg: "elevated", color: "ink" },
+                fontSize: "12px",
+                transition: "background 150ms, color 150ms",
+                _hover: { bg: "surface", color: "ink" },
                 _currentPage: {
                   bg: "elevated",
                   color: "ink",
@@ -56,32 +71,16 @@ export function SettingsNavigation() {
                 },
               })}
             >
+              <Icon
+                size={16}
+                weight={active ? "fill" : "regular"}
+                aria-hidden="true"
+              />
               {section.title}
             </Link>
-          ),
-        )}
-      </nav>
-      {pathname !== "/settings" && (
-        <Link
-          href="/settings"
-          className={css({
-            display: { base: "inline-flex", lg: "none" },
-            alignItems: "center",
-            gap: "8px",
-            minHeight: "44px",
-            width: "fit-content",
-            color: "muted",
-            fontSize: "13px",
-            _hover: { color: "ink" },
-            _focusVisible: {
-              outline: "2px solid token(colors.accent)",
-              outlineOffset: "2px",
-            },
-          })}
-        >
-          <ArrowLeftIcon size={16} aria-hidden="true" /> Back to Settings
-        </Link>
-      )}
-    </>
+          );
+        })}
+      </div>
+    </nav>
   );
 }

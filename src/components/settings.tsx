@@ -279,7 +279,11 @@ export function Settings({
         id={`${id}-heading`}
         title="Connections"
         actions={
-          <Button variant="secondary" onClick={() => changeOpen(true)}>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => changeOpen(true)}
+          >
             <PlusIcon size={15} /> Add instance
           </Button>
         }
@@ -593,7 +597,7 @@ export function Settings({
               One library in Arrsenal
             </div>
           </figure>
-          <Button variant="primary" onClick={() => changeOpen(true)}>
+          <Button size="sm" variant="primary" onClick={() => changeOpen(true)}>
             <PlusIcon size={15} /> Connect first instance
           </Button>
         </div>
@@ -836,6 +840,7 @@ export function Settings({
               >
                 <Button
                   type="button"
+                  size="sm"
                   disabled={!!busy}
                   onClick={() => void connect("test")}
                 >
@@ -846,7 +851,12 @@ export function Settings({
                   )}
                   {busy === "test" ? "Testing..." : "Test connection"}
                 </Button>
-                <Button type="submit" variant="primary" disabled={!!busy}>
+                <Button
+                  size="sm"
+                  type="submit"
+                  variant="primary"
+                  disabled={!!busy}
+                >
                   {busy === "save" ? (
                     <Spinner size={15} />
                   ) : editing ? (
@@ -900,11 +910,16 @@ export function Settings({
               gap: "10px",
             })}
           >
-            <Button disabled={removeBusy} onClick={() => setRemoving(null)}>
+            <Button
+              size="sm"
+              disabled={removeBusy}
+              onClick={() => setRemoving(null)}
+            >
               Cancel
             </Button>
             <Button
               variant="danger"
+              size="sm"
               disabled={removeBusy}
               onClick={() => void disconnect()}
             >

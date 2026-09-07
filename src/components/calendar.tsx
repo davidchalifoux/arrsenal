@@ -208,17 +208,6 @@ export function Calendar({ now }: { now: string }) {
           </Button>
         </div>
       </div>
-      <p className={css({ color: "muted", fontSize: "11px", mb: "20px" })}>
-        Episode times in{" "}
-        {preference?.replaceAll("_", " ") ?? "your selected timezone"}.{" "}
-        <Link
-          href="/settings/personalization"
-          className={css({ textDecoration: "underline" })}
-        >
-          Change timezone
-        </Link>{" "}
-        Movie releases are dates, not showtimes; dates may change.
-      </p>
       {preferenceError && (
         <p role="alert" className={css({ color: "negative", mb: "16px" })}>
           {preferenceError}
