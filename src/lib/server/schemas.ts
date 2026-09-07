@@ -106,8 +106,32 @@ export const storedInstanceSchema = instanceInputSchema.extend({
   id: textSchema("id", 100).regex(/^[a-zA-Z0-9_-]+$/),
 });
 
+export const preferencesSchema = z.strictObject({
+  timeZone: z
+    .string()
+    .max(100)
+    .nullable()
+    .transform((value, context) => {
+      if (value === null || value === "") return null;
+      try {
+        if (/^[+-]/.test(value)) throw new Error("Numeric offset");
+        return new Intl.DateTimeFormat(undefined, {
+          timeZone: value,
+        }).resolvedOptions().timeZone;
+      } catch {
+        context.issues.push({
+          code: "custom",
+          input: value,
+          message: "Enter a valid IANA timezone, such as America/New_York.",
+        });
+        return z.NEVER;
+      }
+    }),
+});
+
 export const configSchema = z.object({
   version: z.literal(1),
+  preferences: preferencesSchema.default({ timeZone: null }),
   instances: z
     .array(storedInstanceSchema)
     .max(32)

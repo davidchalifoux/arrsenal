@@ -5,5 +5,5 @@ export const metadata = { title: "Calendar | Arrsenal" };
 
 export default async function CalendarPage() {
   await connection();
-  return <Calendar today={new Date().toISOString().slice(0, 10)} />;
+  return <Calendar now={new Date().toISOString()} />;
 }

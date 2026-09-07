@@ -1,16 +1,22 @@
 import {
+  act,
   cleanup,
   fireEvent,
-  render,
+  render as renderView,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ConnectionsPage, {
   metadata as connectionsMetadata,
 } from "@/app/(library)/settings/connections/page";
 import SettingsLayout from "@/app/(library)/settings/layout";
 import SettingsPage, { metadata } from "@/app/(library)/settings/page";
+import PersonalizationPage, {
+  metadata as personalizationMetadata,
+} from "@/app/(library)/settings/personalization/page";
 import ErrorPage from "@/app/error";
 
 const state = vi.hoisted(() => ({
@@ -36,14 +42,173 @@ vi.mock("@/components/library-provider", () => ({
   useLibraryActions: () => ({ notify: state.notify }),
 }));
 
+let client: QueryClient;
+let savedZone: string | null;
+const fetchMock = vi.fn<typeof fetch>();
+function render(view: ReactElement) {
+  return renderView(view, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  });
+}
+
 beforeEach(() => {
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  savedZone = null;
+  fetchMock.mockImplementation(async (_url, init) => {
+    if (init?.method === "PATCH") {
+      const value = JSON.parse(String(init.body)).timeZone;
+      if (value === "Invalid/Zone")
+        return Response.json(
+          { error: "Enter a valid IANA timezone." },
+          { status: 400 },
+        );
+      savedZone = value;
+    }
+    return Response.json({ timeZone: savedZone });
+  });
+  vi.stubGlobal("fetch", fetchMock);
   state.pathname = "/settings";
   state.pending = false;
   vi.clearAllMocks();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  client.clear();
+  vi.unstubAllGlobals();
+});
 
 describe("Settings routes and navigation", () => {
+  it("does not submit freeform search and disables the picker while a deliberate save is pending", async () => {
+    render(<PersonalizationPage />);
+    const trigger = screen.getByRole("combobox", { name: "Timezone" });
+    await waitFor(() => expect(trigger.hasAttribute("disabled")).toBe(false));
+    expect(
+      screen.getByRole("button", { name: "Save" }).hasAttribute("disabled"),
+    ).toBe(true);
+    fireEvent.click(trigger);
+    const search = await screen.findByRole("combobox", {
+      name: "Search timezones",
+    });
+    fireEvent.change(search, { target: { value: "Invalid/Zone" } });
+    expect(screen.getByText(/No matching timezones/)).toBeTruthy();
+    fireEvent.keyDown(search, { key: "Escape" });
+    expect(savedZone).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Save" }).hasAttribute("disabled"),
+    ).toBe(true);
+    fireEvent.click(trigger);
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "Search timezones" }),
+      { target: { value: "Tokyo" } },
+    );
+    fireEvent.click(
+      await screen.findByRole("option", { name: /Tokyo Asia\/Tokyo/ }),
+    );
+    let finish!: (response: Response) => void;
+    fetchMock.mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(
+      (await screen.findByRole("button", { name: "Saving..." })).hasAttribute(
+        "disabled",
+      ),
+    ).toBe(true);
+    expect(trigger.hasAttribute("disabled")).toBe(true);
+    await act(async () => finish(Response.json({ timeZone: "Asia/Tokyo" })));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Save" }).hasAttribute("disabled"),
+      ).toBe(true),
+    );
+    expect(trigger.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("implements Personalization with a searchable timezone field, save and automatic reset", async () => {
+    state.pathname = "/settings/personalization";
+    render(
+      <SettingsLayout>
+        <PersonalizationPage />
+      </SettingsLayout>,
+    );
+    expect(personalizationMetadata.title).toBe("Personalization | Arrsenal");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Personalization" }),
+    ).toBeTruthy();
+    const nav = screen.getByRole("navigation", { name: "Settings sections" });
+    expect(
+      within(nav)
+        .getByRole("link", { name: "Personalization" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    const input = screen.getByRole("combobox", { name: "Timezone" });
+    await waitFor(() => expect(input.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(input);
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "Search timezones" }),
+      { target: { value: "Tokyo" } },
+    );
+    fireEvent.click(
+      await screen.findByRole("option", { name: /Tokyo Asia\/Tokyo/ }),
+    );
+    expect(savedZone).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain("Asia/Tokyo"),
+    );
+    expect(savedZone).toBe("Asia/Tokyo");
+    fireEvent.click(input);
+    fireEvent.click(await screen.findByRole("option", { name: /Automatic/ }));
+    expect(savedZone).toBe("Asia/Tokyo");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain("Automatic"),
+    );
+    expect(savedZone).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText(/shared by all viewers/)).toBeTruthy();
+  });
+
+  it("shows config save failure feedback without applying an unsaved choice", async () => {
+    render(<PersonalizationPage />);
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("combobox", { name: "Timezone" })
+          .hasAttribute("disabled"),
+      ).toBe(false),
+    );
+    fetchMock.mockResolvedValue(
+      Response.json(
+        {
+          error:
+            "Unable to save Arrsenal configuration. Check directory permissions.",
+        },
+        { status: 500 },
+      ),
+    );
+    fireEvent.click(screen.getByRole("combobox", { name: "Timezone" }));
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "Search timezones" }),
+      { target: { value: "Tokyo" } },
+    );
+    fireEvent.click(
+      await screen.findByRole("option", { name: /Tokyo Asia\/Tokyo/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Check directory permissions",
+    );
+    expect(screen.getByRole("status").textContent).toContain("Automatic");
+    expect(savedZone).toBeNull();
+  });
+
   it("renders a usable overview with only implemented sections", async () => {
     render(
       <SettingsLayout>
@@ -57,7 +222,11 @@ describe("Settings routes and navigation", () => {
         .getByRole("link", { name: /Connections/ })
         .getAttribute("href"),
     ).toBe("/settings/connections");
-    expect(screen.queryByText("Personalization")).toBeNull();
+    expect(
+      within(overview)
+        .getByRole("link", { name: /Personalization/ })
+        .getAttribute("href"),
+    ).toBe("/settings/personalization");
     expect(screen.queryByRole("button", { name: "Add instance" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Back to Settings" })).toBeNull();
     const nav = screen.getByRole("navigation", { name: "Settings sections" });
@@ -163,3 +332,5 @@ describe("Settings routes and navigation", () => {
     ).toBe("/settings/connections");
   });
 });
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

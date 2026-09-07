@@ -11,10 +11,12 @@ import { ApiError, parseInput } from "./http";
 import {
   configSchema,
   instanceInputSchema,
+  preferencesSchema,
   type storedInstanceSchema,
 } from "./schemas";
 
 export type InstanceConfig = z.output<typeof storedInstanceSchema>;
+type Config = z.output<typeof configSchema>;
 
 export function instanceInput(value: unknown): Omit<InstanceConfig, "id"> {
   return parseInput(instanceInputSchema, value);
@@ -35,7 +37,7 @@ function isCode(error: unknown, code: string): boolean {
   );
 }
 
-async function readAt(directory: string): Promise<InstanceConfig[]> {
+async function readAt(directory: string): Promise<Config> {
   let file: FileHandle | undefined;
   try {
     file = await open(
@@ -45,10 +47,10 @@ async function readAt(directory: string): Promise<InstanceConfig[]> {
     const stat = await file.stat();
     if (!stat.isFile() || stat.size > 1024 * 1024)
       throw new Error("Invalid config file");
-    return configSchema.parse(JSON.parse(await file.readFile("utf8")))
-      .instances;
+    return configSchema.parse(JSON.parse(await file.readFile("utf8")));
   } catch (error) {
-    if (isCode(error, "ENOENT")) return [];
+    if (isCode(error, "ENOENT"))
+      return configSchema.parse({ version: 1, instances: [] });
     throw new ApiError(
       500,
       "Unable to read Arrsenal config.json. Check its format and file permissions; it was not overwritten.",
@@ -58,8 +60,22 @@ async function readAt(directory: string): Promise<InstanceConfig[]> {
   }
 }
 
-export function readInstances(): Promise<InstanceConfig[]> {
-  return readAt(configDirectory());
+export async function readInstances(): Promise<InstanceConfig[]> {
+  return (await readAt(configDirectory())).instances;
+}
+
+export async function readPreferences(): Promise<Config["preferences"]> {
+  return (await readAt(configDirectory())).preferences;
+}
+
+export function savePreferences(
+  value: unknown,
+): Promise<Config["preferences"]> {
+  const preferences = parseInput(preferencesSchema, value);
+  return mutateConfig((config) => {
+    config.preferences = preferences;
+    return preferences;
+  });
 }
 
 const state = globalThis as typeof globalThis & {
@@ -68,9 +84,7 @@ const state = globalThis as typeof globalThis & {
 state.__arrsenalConfigWrites ??= new Map();
 const writes = state.__arrsenalConfigWrites;
 
-async function mutateConfig<T>(
-  change: (instances: InstanceConfig[]) => T,
-): Promise<T> {
+async function mutateConfig<T>(change: (config: Config) => T): Promise<T> {
   const directory = configDirectory();
   const previous = writes.get(directory) ?? Promise.resolve();
   const task = previous
@@ -98,9 +112,9 @@ async function mutateConfig<T>(
       }
       const temporary = join(directory, `.config-${randomUUID()}.tmp`);
       try {
-        const instances = await readAt(directory);
-        const result = change(instances);
-        const config = configSchema.parse({ version: 1, instances });
+        const current = await readAt(directory);
+        const result = change(current);
+        const config = configSchema.parse(current);
         const file = await open(temporary, "wx", 0o600);
         try {
           await file.chmod(0o600);
@@ -134,7 +148,7 @@ async function mutateConfig<T>(
 export function saveInstance(
   input: Omit<InstanceConfig, "id">,
 ): Promise<InstanceConfig> {
-  return mutateConfig((instances) => {
+  return mutateConfig(({ instances }) => {
     if (instances.some((instance) => instance.url === input.url)) {
       throw new ApiError(
         409,
@@ -153,7 +167,7 @@ export function updateInstance(
   expected: InstanceConfig,
   input: Omit<InstanceConfig, "id">,
 ): Promise<InstanceConfig> {
-  return mutateConfig((instances) => {
+  return mutateConfig(({ instances }) => {
     const index = instances.findIndex(
       (instance) => instance.id === expected.id,
     );
@@ -188,7 +202,7 @@ export function updateInstance(
 }
 
 export function removeInstance(id: string): Promise<void> {
-  return mutateConfig((instances) => {
+  return mutateConfig(({ instances }) => {
     const index = instances.findIndex((instance) => instance.id === id);
     if (index === -1) throw new ApiError(404, "Instance not found.");
     instances.splice(index, 1);

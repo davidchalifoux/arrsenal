@@ -1,0 +1,188 @@
+// @vitest-environment node
+
+import {
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
+import { GET, PATCH } from "@/app/api/preferences/route";
+import {
+  readInstances,
+  readPreferences,
+  removeInstance,
+  saveInstance,
+  savePreferences,
+  updateInstance,
+} from "@/lib/server/config";
+
+let directory: string;
+const input = {
+  name: "Movies",
+  kind: "radarr" as const,
+  url: "http://radarr.test",
+  apiKey: "private-instance-api-key",
+};
+const patch = (body: unknown, headers: Record<string, string> = {}) =>
+  PATCH(
+    new Request("http://localhost/api/preferences", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: JSON.stringify(body),
+    }),
+  );
+
+beforeEach(async () => {
+  directory = await mkdtemp(join(tmpdir(), "arrsenal-preferences-"));
+  vi.stubEnv("ARRSENAL_CONFIG_DIR", directory);
+});
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  await rm(directory, { recursive: true, force: true });
+});
+
+describe("preferences config and API", () => {
+  it("returns Automatic for missing config and existing configs missing preferences without writing on GET", async () => {
+    const response = await GET();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toEqual({ timeZone: null });
+    expect(await readdir(directory)).toEqual([]);
+    const old = JSON.stringify({
+      version: 1,
+      instances: [{ id: "movies", ...input }],
+    });
+    await writeFile(join(directory, "config.json"), old);
+    expect(await (await GET()).json()).toEqual({ timeZone: null });
+    expect(await readFile(join(directory, "config.json"), "utf8")).toBe(old);
+    expect(await readInstances()).toEqual([{ id: "movies", ...input }]);
+  });
+
+  it("saves canonical zones and resets to null without exposing or losing instances and API keys", async () => {
+    const instance = await saveInstance(input);
+    const response = await patch({ timeZone: "america/new_york" });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ timeZone: "America/New_York" });
+    expect(await readPreferences()).toEqual({ timeZone: "America/New_York" });
+    expect(await readInstances()).toEqual([instance]);
+    for (const timeZone of [null, ""]) {
+      expect(await (await patch({ timeZone })).json()).toEqual({
+        timeZone: null,
+      });
+      expect(await readInstances()).toEqual([instance]);
+    }
+    const config = JSON.parse(
+      await readFile(join(directory, "config.json"), "utf8"),
+    );
+    expect(config).toEqual({
+      version: 1,
+      instances: [instance],
+      preferences: { timeZone: null },
+    });
+    expect((await stat(join(directory, "config.json"))).mode & 0o777).toBe(
+      0o600,
+    );
+    expect(await readdir(directory)).toEqual(["config.json"]);
+  });
+
+  it.each([
+    {},
+    { timeZone: "Not/A_Zone" },
+    { timeZone: "+01:00" },
+    { timeZone: " " },
+    { timeZone: 1 },
+    { timeZone: false },
+    { timeZone: [] },
+    { timeZone: "UTC", instances: [] },
+    null,
+  ])("strictly rejects invalid payload %j without changing config", async (body) => {
+    await saveInstance(input);
+    const before = await readFile(join(directory, "config.json"), "utf8");
+    const response = await patch(body);
+    expect(response.status).toBe(400);
+    expect(await response.text()).not.toContain(input.apiKey);
+    expect(await readFile(join(directory, "config.json"), "utf8")).toBe(before);
+    expect(await readdir(directory)).toEqual(["config.json"]);
+  });
+
+  it("uses the existing same-origin and content-type guards", async () => {
+    expect(
+      (await patch({ timeZone: "UTC" }, { origin: "http://evil.test" })).status,
+    ).toBe(403);
+    expect(
+      (await patch({ timeZone: "UTC" }, { "Content-Type": "text/plain" }))
+        .status,
+    ).toBe(415);
+    expect(await readdir(directory)).toEqual([]);
+  });
+
+  it("serializes preference changes with instance additions, edits and removals", async () => {
+    const first = await saveInstance(input);
+    const [, second] = await Promise.all([
+      savePreferences({ timeZone: "Asia/Tokyo" }),
+      saveInstance({
+        ...input,
+        name: "Shows",
+        kind: "sonarr",
+        url: "http://sonarr.test",
+        apiKey: "second-private-key",
+      }),
+      updateInstance(first, {
+        ...input,
+        name: "Renamed",
+        apiKey: "updated-private-key",
+      }),
+    ]);
+    expect(await readPreferences()).toEqual({ timeZone: "Asia/Tokyo" });
+    expect(await readInstances()).toEqual([
+      { ...first, name: "Renamed", apiKey: "updated-private-key" },
+      second,
+    ]);
+    await Promise.all([
+      removeInstance(second.id),
+      savePreferences({ timeZone: "Europe/Paris" }),
+    ]);
+    expect(await readInstances()).toEqual([
+      { ...first, name: "Renamed", apiKey: "updated-private-key" },
+    ]);
+    expect(await readPreferences()).toEqual({ timeZone: "Europe/Paris" });
+    expect(await readdir(directory)).toEqual(["config.json"]);
+  });
+
+  it("never overwrites corrupt config and returns useful errors without leaking keys", async () => {
+    const corrupt = JSON.stringify({
+      version: 1,
+      instances: [{ id: "movies", ...input }],
+      preferences: { timeZone: "Invalid/Zone" },
+    });
+    await writeFile(join(directory, "config.json"), corrupt);
+    for (const response of [await GET(), await patch({ timeZone: "UTC" })]) {
+      expect(response.status).toBe(500);
+      const text = await response.text();
+      expect(text).toContain("it was not overwritten");
+      expect(text).not.toContain(input.apiKey);
+    }
+    expect(await readFile(join(directory, "config.json"), "utf8")).toBe(
+      corrupt,
+    );
+    expect(await readdir(directory)).toEqual(["config.json"]);
+  });
+
+  it("reports write failures at the custom config path instead of pretending to save", async () => {
+    const path = join(directory, "not-a-directory");
+    await writeFile(path, "unchanged");
+    vi.stubEnv("ARRSENAL_CONFIG_DIR", path);
+    const response = await patch({ timeZone: "UTC" });
+    expect(response.status).toBe(500);
+    expect(await response.text()).toContain("Check directory permissions");
+    expect(await readFile(path, "utf8")).toBe("unchanged");
+  });
+});
