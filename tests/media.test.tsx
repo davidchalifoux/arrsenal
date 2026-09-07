@@ -867,6 +867,7 @@ describe("Library integration", () => {
     await screen.findByText("Library up to date");
   });
 
+  // Real dialog/select interactions take longer on shared CI runners.
   it("adds a target from its detail page and refreshes the library from the API", async () => {
     const seededMedia: MediaItem = {
       ...movie,
@@ -926,7 +927,7 @@ describe("Library integration", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: movie.title }),
     ).toBeTruthy();
-  });
+  }, 15_000);
 });
 
 describe("MediaDetails searches", () => {
