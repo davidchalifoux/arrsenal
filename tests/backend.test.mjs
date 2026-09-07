@@ -1,21 +1,16 @@
 import { expect, jest, mock, onTestFinished, spyOn, test } from "bun:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { once } from "node:events";
 import {
   mkdtemp,
   readdir,
-  readFile,
   rm,
   stat,
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import { advanceTime } from "./timers";
 
 mock.module("server-only", () => ({}));
@@ -125,147 +120,166 @@ async function setup(definitions = {}) {
     ]),
   );
   const calls = [];
-  const server = createServer(async (req, res) => {
-    const url = new URL(req.url, "http://mock.invalid");
-    const parts = url.pathname.split("/");
-    const node = nodes[parts[1]];
-    const endpoint = parts.slice(4).join("/");
-    let raw = "";
-    for await (const chunk of req) raw += chunk;
-    const body = raw ? JSON.parse(raw) : undefined;
-    calls.push({
-      node: parts[1],
-      endpoint,
-      method: req.method,
-      query: Object.fromEntries(url.searchParams),
-      body,
-      key: req.headers["x-api-key"],
-    });
-    const send = (data, status = 200) => {
-      res.writeHead(status, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(data));
-    };
-    if (url.pathname === "/leak") return send({ leaked: true });
-    if (!node || parts[2] !== "api" || parts[3] !== "v3")
-      return send({ error: "Not found" }, 404);
-    if (node.mode === "slow") return;
-    if (node.mode === "slow-body") {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.write("{");
-      return;
-    }
-    if (node.mode === "oversized") {
-      res.writeHead(200, {
-        "Content-Type": "application/json",
-        "Content-Length": 33 * 1024 * 1024,
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    idleTimeout: 0,
+    async fetch(req) {
+      const url = new URL(req.url);
+      const parts = url.pathname.split("/");
+      const node = nodes[parts[1]];
+      const endpoint = parts.slice(4).join("/");
+      const raw = await req.text();
+      const body = raw ? JSON.parse(raw) : undefined;
+      calls.push({
+        node: parts[1],
+        endpoint,
+        method: req.method,
+        query: Object.fromEntries(url.searchParams),
+        body,
+        key: req.headers.get("x-api-key") ?? undefined,
       });
-      res.write("{");
-      return;
-    }
-    if (node.mode === "redirect") {
-      res.writeHead(302, { Location: "/leak" });
-      res.end();
-      return;
-    }
-    if (req.headers["x-api-key"] !== node.apiKey)
-      return send({ error: secret }, 401);
-    if (node.mode === "error" || node.fail?.includes(endpoint))
-      return send({ error: `failure ${secret}`, apiKey: secret }, 503);
-    if (node.mode === "invalid") {
-      res.writeHead(200, { "Content-Type": "text/html" });
-      res.end(`<html>${secret}</html>`);
-      return;
-    }
-    if (endpoint === "system/status" && node.verify) await node.verify();
-    if (endpoint === "system/status")
-      return send({
-        appName: node.kind === "radarr" ? "Radarr" : "Sonarr",
-        version: "4.0.1",
-        apiKey: secret,
-      });
-    if (endpoint === "qualityprofile")
-      return send([{ id: 1, name: node.profile ?? "HD-1080p" }]);
-    if (endpoint === "rootfolder")
-      return send([{ id: 1, path: "/media", freeSpace: 100000 }]);
-    if (endpoint === "queue" && req.method === "GET") {
-      const page = Number(url.searchParams.get("page"));
-      if (node.queuePages) return send(node.queuePages[page - 1]);
-      const pageSize =
-        node.pageSize ?? Number(url.searchParams.get("pageSize"));
-      if (node.queuePageFailure === page) return send({ error: secret }, 503);
-      return send({
-        page,
-        pageSize,
-        totalRecords: node.queue.length,
-        records: node.queue.slice((page - 1) * pageSize, page * pageSize),
-      });
-    }
-    if (endpoint === "episodefile")
-      return send(
-        node.files ?? [
-          { quality: quality("WEBDL-1080p") },
-          { quality: quality("Bluray-1080p") },
-        ],
-      );
-    if (endpoint === "episode") return send(node.episodes ?? []);
-    if (/^episode\/\d+$/.test(endpoint)) {
-      const episode = node.episodes?.find(
-        (item) => item.id === Number(parts[5]),
-      );
-      return send(episode ?? {}, episode ? 200 : 404);
-    }
-    if (endpoint.endsWith("/lookup")) return send(node.lookup);
-    if (["movie", "series"].includes(endpoint) && req.method === "GET")
-      return send(node.media);
-    if (/^(movie|series)\/\d+$/.test(endpoint))
-      return send(
-        node.media.find((item) => item.id === Number(parts[5])) ?? {},
-        node.media.some((item) => item.id === Number(parts[5])) ? 200 : 404,
-      );
-    if (endpoint === "release" && req.method === "GET")
-      return send(
-        node.releases ?? [
+      const send = (data, status = 200) => Response.json(data, { status });
+      if (url.pathname === "/leak") return send({ leaked: true });
+      if (!node || parts[2] !== "api" || parts[3] !== "v3")
+        return send({ error: "Not found" }, 404);
+      if (node.mode === "slow") {
+        // Leave headers pending until the client disconnects, then release the handler.
+        return new Promise((resolve) => {
+          const aborted = () => resolve(new Response(null, { status: 204 }));
+          if (req.signal.aborted) aborted();
+          else req.signal.addEventListener("abort", aborted, { once: true });
+        });
+      }
+      if (node.mode === "slow-body") {
+        return new Response(
+          new ReadableStream({
+            type: "direct",
+            pull(controller) {
+              // Send headers and a partial body, leaving the stream open until cancellation.
+              controller.write("{");
+              controller.flush();
+            },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (node.mode === "oversized") {
+        // Bun uses chunked encoding for streams, so exceed the limit with actual bytes.
+        let remaining = 33;
+        const chunk = new Uint8Array(1024 * 1024).fill(32);
+        return new Response(
+          new ReadableStream({
+            pull(controller) {
+              controller.enqueue(chunk);
+              if (--remaining === 0) controller.close();
+            },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (node.mode === "redirect") {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: "/leak" },
+        });
+      }
+      if (req.headers.get("x-api-key") !== node.apiKey)
+        return send({ error: secret }, 401);
+      if (node.mode === "error" || node.fail?.includes(endpoint))
+        return send({ error: `failure ${secret}`, apiKey: secret }, 503);
+      if (node.mode === "invalid") {
+        return new Response(`<html>${secret}</html>`, {
+          headers: { "Content-Type": "text/html" },
+        });
+      }
+      if (endpoint === "system/status" && node.verify) await node.verify();
+      if (endpoint === "system/status")
+        return send({
+          appName: node.kind === "radarr" ? "Radarr" : "Sonarr",
+          version: "4.0.1",
+          apiKey: secret,
+        });
+      if (endpoint === "qualityprofile")
+        return send([{ id: 1, name: node.profile ?? "HD-1080p" }]);
+      if (endpoint === "rootfolder")
+        return send([{ id: 1, path: "/media", freeSpace: 100000 }]);
+      if (endpoint === "queue" && req.method === "GET") {
+        const page = Number(url.searchParams.get("page"));
+        if (node.queuePages) return send(node.queuePages[page - 1]);
+        const pageSize =
+          node.pageSize ?? Number(url.searchParams.get("pageSize"));
+        if (node.queuePageFailure === page) return send({ error: secret }, 503);
+        return send({
+          page,
+          pageSize,
+          totalRecords: node.queue.length,
+          records: node.queue.slice((page - 1) * pageSize, page * pageSize),
+        });
+      }
+      if (endpoint === "episodefile")
+        return send(
+          node.files ?? [
+            { quality: quality("WEBDL-1080p") },
+            { quality: quality("Bluray-1080p") },
+          ],
+        );
+      if (endpoint === "episode") return send(node.episodes ?? []);
+      if (/^episode\/\d+$/.test(endpoint)) {
+        const episode = node.episodes?.find(
+          (item) => item.id === Number(parts[5]),
+        );
+        return send(episode ?? {}, episode ? 200 : 404);
+      }
+      if (endpoint.endsWith("/lookup")) return send(node.lookup);
+      if (["movie", "series"].includes(endpoint) && req.method === "GET")
+        return send(node.media);
+      if (/^(movie|series)\/\d+$/.test(endpoint))
+        return send(
+          node.media.find((item) => item.id === Number(parts[5])) ?? {},
+          node.media.some((item) => item.id === Number(parts[5])) ? 200 : 404,
+        );
+      if (endpoint === "release" && req.method === "GET")
+        return send(
+          node.releases ?? [
+            {
+              guid: "release-guid",
+              indexerId: 4,
+              title: "Dune.2160p",
+              quality: quality("WEBDL-2160p"),
+              size: 12000,
+              age: 2,
+              seeders: 8,
+              protocol: "torrent",
+              indexer: "Sample indexer",
+              approved: false,
+              rejections: ["Quality cutoff already met"],
+            },
+          ],
+        );
+      if (endpoint.startsWith("MediaCover/")) {
+        if (node.imageStatus)
+          return send({ error: "Cover unavailable" }, node.imageStatus);
+        return new Response(
+          Buffer.from(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a00kAAAAASUVORK5CYII=",
+            "base64",
+          ),
           {
-            guid: "release-guid",
-            indexerId: 4,
-            title: "Dune.2160p",
-            quality: quality("WEBDL-2160p"),
-            size: 12000,
-            age: 2,
-            seeders: 8,
-            protocol: "torrent",
-            indexer: "Sample indexer",
-            approved: false,
-            rejections: ["Quality cutoff already met"],
+            headers: {
+              "Content-Type": node.imageType ?? "image/png",
+              "Set-Cookie": `secret=${secret}`,
+            },
           },
-        ],
-      );
-    if (endpoint.startsWith("MediaCover/")) {
-      if (node.imageStatus)
-        return send({ error: "Cover unavailable" }, node.imageStatus);
-      res.writeHead(200, {
-        "Content-Type": node.imageType ?? "image/png",
-        "Set-Cookie": `secret=${secret}`,
-      });
-      res.end(
-        Buffer.from(
-          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a00kAAAAASUVORK5CYII=",
-          "base64",
-        ),
-      );
-      return;
-    }
-    if (req.method === "POST" || req.method === "DELETE")
-      return send({ id: 100, apiKey: secret });
-    send({ error: "Not found" }, 404);
+        );
+      }
+      if (req.method === "POST" || req.method === "DELETE")
+        return send({ id: 100, apiKey: secret });
+      return send({ error: "Not found" }, 404);
+    },
   });
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  onTestFinished(async () => {
-    server.closeAllConnections();
-    await new Promise((resolve) => server.close(resolve));
-  });
-  const base = `http://127.0.0.1:${server.address().port}`;
+  onTestFinished(() => server.stop(true));
+  const base = server.url.origin;
   const input = (name) => ({
     name,
     kind: nodes[name].kind,
@@ -1172,7 +1186,7 @@ test("Zod persisted config rejects invalid schemas and normalized duplicates wit
       ),
       (error) => error.status === 500,
     );
-    assert.equal(await readFile(path, "utf8"), serialized);
+    assert.equal(await Bun.file(path).text(), serialized);
     assert.deepEqual(await readdir(env.directory), ["config.json"]);
   }
   const valid = JSON.stringify({
@@ -1187,7 +1201,7 @@ test("Zod persisted config rejects invalid schemas and normalized duplicates wit
       },
     ],
   });
-  await writeFile(path, valid);
+  await Bun.write(path, valid);
   assert.deepEqual(await readInstances(), [record]);
   await assert.rejects(
     saveInstance({
@@ -1197,7 +1211,7 @@ test("Zod persisted config rejects invalid schemas and normalized duplicates wit
     }),
     (error) => error.status === 500,
   );
-  assert.equal(await readFile(path, "utf8"), valid);
+  assert.equal(await Bun.file(path).text(), valid);
   assert.deepEqual(await readdir(env.directory), ["config.json"]);
   assert.equal(env.calls.length, 0);
 });
@@ -1215,9 +1229,7 @@ test("connectivity tests do not save; atomic config writes serialize and never e
     env.connect("sonarr"),
   ]);
   assert.equal((await readInstances()).length, 3);
-  const config = JSON.parse(
-    await readFile(join(env.directory, "config.json"), "utf8"),
-  );
+  const config = await Bun.file(join(env.directory, "config.json")).json();
   assert.equal(config.instances[0].apiKey, secret);
   assert.equal(
     (await stat(join(env.directory, "config.json"))).mode & 0o777,
@@ -1306,7 +1318,7 @@ test("saved-instance connection tests use retained or replacement keys without p
   const replacement = "draft-private-key";
   const env = await setup({ hd: {}, sonarr: { kind: "sonarr" } });
   const saved = await env.connect("hd");
-  const before = await readFile(join(env.directory, "config.json"), "utf8");
+  const before = await Bun.file(join(env.directory, "config.json")).text();
   const { apiKey: _key, ...draft } = env.input("sonarr");
   for (const apiKey of [undefined, replacement]) {
     env.nodes.sonarr.apiKey = apiKey ?? secret;
@@ -1328,7 +1340,7 @@ test("saved-instance connection tests use retained or replacement keys without p
       node: "sonarr",
       key: apiKey ?? secret,
     });
-    expect(await readFile(join(env.directory, "config.json"), "utf8")).toBe(
+    expect(await Bun.file(join(env.directory, "config.json")).text()).toBe(
       before,
     );
   }
@@ -1339,7 +1351,7 @@ test("instance edits reject duplicate URLs and both edit endpoints fail safely w
   const saved = await env.connect("hd");
   await env.connect("other");
   const configPath = join(env.directory, "config.json");
-  const before = await readFile(configPath, "utf8");
+  const before = await Bun.file(configPath).text();
   const context = { params: Promise.resolve({ id: saved.id }) };
   const duplicate = await instanceRoute.PATCH(
     request(`/api/instances/${saved.id}`, "PATCH", {
@@ -1349,7 +1361,7 @@ test("instance edits reject duplicate URLs and both edit endpoints fail safely w
     context,
   );
   expect(duplicate.status).toBe(409);
-  expect(await readFile(configPath, "utf8")).toBe(before);
+  expect(await Bun.file(configPath).text()).toBe(before);
   for (const [method, handler] of [
     ["PATCH", instanceRoute.PATCH],
     ["POST", instanceTestRoute.POST],
@@ -1373,7 +1385,7 @@ test("instance edits reject duplicate URLs and both edit endpoints fail safely w
       const text = await response.text();
       expect(text).not.toContain(secret);
       expect(text).not.toContain("wrong-private-key");
-      expect(await readFile(configPath, "utf8")).toBe(before);
+      expect(await Bun.file(configPath).text()).toBe(before);
     }
     env.nodes.hd.mode = "error";
     const failed = await handler(
@@ -1382,7 +1394,7 @@ test("instance edits reject duplicate URLs and both edit endpoints fail safely w
     );
     expect(failed.status).toBe(502);
     expect(await failed.text()).not.toContain(secret);
-    expect(await readFile(configPath, "utf8")).toBe(before);
+    expect(await Bun.file(configPath).text()).toBe(before);
     delete env.nodes.hd.mode;
   }
   expect(await readdir(env.directory)).toEqual(["config.json"]);
@@ -1391,7 +1403,7 @@ test("instance edits reject duplicate URLs and both edit endpoints fail safely w
 test("edit endpoints enforce mutation guards, full fields, optional-key validation, and path validation before upstream access", async () => {
   const env = await setup({ hd: {} });
   const saved = await env.connect("hd");
-  const before = await readFile(join(env.directory, "config.json"), "utf8");
+  const before = await Bun.file(join(env.directory, "config.json")).text();
   env.calls.length = 0;
   for (const [method, handler] of [
     ["PATCH", instanceRoute.PATCH],
@@ -1467,7 +1479,7 @@ test("edit endpoints enforce mutation guards, full fields, optional-key validati
     ).toBe(400);
   }
   expect(env.calls).toHaveLength(0);
-  expect(await readFile(join(env.directory, "config.json"), "utf8")).toBe(
+  expect(await Bun.file(join(env.directory, "config.json")).text()).toBe(
     before,
   );
 });
@@ -1548,20 +1560,32 @@ test("separate Bun processes cannot lose each other's config mutations", async (
   const loader = fileURLToPath(
     new URL("./backend-process-preload.mjs", import.meta.url),
   );
-  await Promise.all(
-    Array.from({ length: 5 }, (_, index) =>
-      promisify(execFile)(
-        process.execPath,
+  const results = await Promise.allSettled(
+    Array.from({ length: 5 }, async (_, index) => {
+      const worker = Bun.spawn(
         [
+          process.execPath,
           "--preload",
           loader,
           "-e",
           `const {saveInstance, instanceInput} = await import(${JSON.stringify(configUrl)}); await saveInstance(instanceInput({name:"Worker ${index}",kind:"radarr",url:"http://127.0.0.1:${8000 + index}",apiKey:"worker-test-secret"}));`,
         ],
-        { env: { ...process.env, ARRSENAL_CONFIG_DIR: env.directory } },
-      ),
-    ),
+        {
+          env: { ...process.env, ARRSENAL_CONFIG_DIR: env.directory },
+          stdout: "ignore",
+          stderr: "pipe",
+        },
+      );
+      const [exitCode, stderr] = await Promise.all([
+        worker.exited,
+        new Response(worker.stderr).text(),
+      ]);
+      assert.equal(exitCode, 0, `Config writer ${index} failed: ${stderr}`);
+    }),
   );
+  for (const result of results) {
+    if (result.status === "rejected") throw result.reason;
+  }
   assert.equal((await readInstances()).length, 5);
   assert.equal(
     (await stat(join(env.directory, "config.json"))).mode & 0o777,
@@ -1580,10 +1604,10 @@ test("corrupt or symlinked config fails closed without fallback or overwrite", a
     request("/api/instances", "POST", env.input("hd")),
   );
   assert.equal(saving.status, 500);
-  assert.equal(await readFile(path, "utf8"), "{broken");
+  assert.equal(await Bun.file(path).text(), "{broken");
   assert.deepEqual(await readdir(env.directory), ["config.json"]);
   await rm(path);
-  await writeFile(
+  await Bun.write(
     join(env.directory, "private.json"),
     JSON.stringify({ version: 1, instances: [] }),
   );

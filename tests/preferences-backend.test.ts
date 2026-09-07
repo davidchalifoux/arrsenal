@@ -1,12 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import {
-  mkdtemp,
-  readdir,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -59,9 +52,9 @@ describe("preferences config and API", () => {
       version: 1,
       instances: [{ id: "movies", ...input }],
     });
-    await writeFile(join(directory, "config.json"), old);
+    await Bun.write(join(directory, "config.json"), old);
     expect(await (await GET()).json()).toEqual({ timeZone: null });
-    expect(await readFile(join(directory, "config.json"), "utf8")).toBe(old);
+    expect(await Bun.file(join(directory, "config.json")).text()).toBe(old);
     expect(await readInstances()).toEqual([{ id: "movies", ...input }]);
   });
 
@@ -78,9 +71,7 @@ describe("preferences config and API", () => {
       });
       expect(await readInstances()).toEqual([instance]);
     }
-    const config = JSON.parse(
-      await readFile(join(directory, "config.json"), "utf8"),
-    );
+    const config = await Bun.file(join(directory, "config.json")).json();
     expect(config).toEqual({
       version: 1,
       instances: [instance],
@@ -104,11 +95,11 @@ describe("preferences config and API", () => {
     null,
   ])("strictly rejects invalid payload %j without changing config", async (body) => {
     await saveInstance(input);
-    const before = await readFile(join(directory, "config.json"), "utf8");
+    const before = await Bun.file(join(directory, "config.json")).text();
     const response = await patch(body);
     expect(response.status).toBe(400);
     expect(await response.text()).not.toContain(input.apiKey);
-    expect(await readFile(join(directory, "config.json"), "utf8")).toBe(before);
+    expect(await Bun.file(join(directory, "config.json")).text()).toBe(before);
     expect(await readdir(directory)).toEqual(["config.json"]);
   });
 
@@ -162,26 +153,24 @@ describe("preferences config and API", () => {
       instances: [{ id: "movies", ...input }],
       preferences: { timeZone: "Invalid/Zone" },
     });
-    await writeFile(join(directory, "config.json"), corrupt);
+    await Bun.write(join(directory, "config.json"), corrupt);
     for (const response of [await GET(), await patch({ timeZone: "UTC" })]) {
       expect(response.status).toBe(500);
       const text = await response.text();
       expect(text).toContain("it was not overwritten");
       expect(text).not.toContain(input.apiKey);
     }
-    expect(await readFile(join(directory, "config.json"), "utf8")).toBe(
-      corrupt,
-    );
+    expect(await Bun.file(join(directory, "config.json")).text()).toBe(corrupt);
     expect(await readdir(directory)).toEqual(["config.json"]);
   });
 
   it("reports write failures at the custom config path instead of pretending to save", async () => {
     const path = join(directory, "not-a-directory");
-    await writeFile(path, "unchanged");
+    await Bun.write(path, "unchanged");
     process.env.ARRSENAL_CONFIG_DIR = path;
     const response = await patch({ timeZone: "UTC" });
     expect(response.status).toBe(500);
     expect(await response.text()).toContain("Check directory permissions");
-    expect(await readFile(path, "utf8")).toBe("unchanged");
+    expect(await Bun.file(path).text()).toBe("unchanged");
   });
 });
