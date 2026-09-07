@@ -433,7 +433,7 @@ describe("Library integration", () => {
     ["library", "Home", 3],
     ["movies", "Movies", 2],
     ["shows", "Shows", 1],
-  ] as const)("keeps the %s total beside the title while filters narrow results", async (category, title, total) => {
+  ] as const)("shows one %s toolbar count while filters narrow results", async (category, title, total) => {
     queryClient.setQueryData(["library"], {
       items: [
         { ...movie, status: "available", targets: [hdTarget, uhdTarget] },
@@ -451,9 +451,12 @@ describe("Library integration", () => {
     await screen.findAllByRole("link", { name: /^View / });
     expect(
       screen.getByRole("heading", {
-        name: `${title} ${total} ${total === 1 ? "title" : "titles"}`,
+        name: title,
       }),
     ).toBeTruthy();
+    const toolbar = screen.getByRole("group", { name: "Library controls" });
+    const totalLabel = `${total} ${total === 1 ? "title" : "titles"}`;
+    expect(within(toolbar).getByText(totalLabel)).toBeTruthy();
     expect(screen.queryByText(/of \d+ titles?/)).toBeNull();
     for (const label of [
       "Total titles",
@@ -469,6 +472,18 @@ describe("Library integration", () => {
         `${category === "shows" ? 0 : 1} of ${total} ${total === 1 ? "title" : "titles"}`,
       ),
     ).toBeTruthy();
+    expect(screen.queryByText(totalLabel)).toBeNull();
+    expect(
+      within(toolbar).getByText(new RegExp(`of ${total} titles?`)),
+    ).toBeTruthy();
+    fireEvent.click(
+      within(toolbar).getByRole("button", { name: "Clear filters" }),
+    );
+    await waitFor(() =>
+      expect(within(toolbar).getByText(totalLabel)).toBeTruthy(),
+    );
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+    await choose("Filter by availability", "Available");
     fireEvent.click(screen.getByRole("button", { name: "Filters (1)" }));
     await choose("Filter by instance", hd.name);
     await choose("Filter by quality profile", "Ultra-HD");
@@ -479,7 +494,7 @@ describe("Library integration", () => {
     ).toBeTruthy();
     expect(
       screen.getByRole("heading", {
-        name: `${title} ${total} ${total === 1 ? "title" : "titles"}`,
+        name: title,
       }),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
@@ -488,7 +503,7 @@ describe("Library integration", () => {
     );
     expect(
       screen.getByRole("heading", {
-        name: `${title} ${total} ${total === 1 ? "title" : "titles"}`,
+        name: title,
       }),
     ).toBeTruthy();
   });
@@ -701,8 +716,11 @@ describe("Library integration", () => {
     );
     await screen.findByRole("link", { name: `View ${movie.title}` });
     expect(screen.queryByText("Loading your library...")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Movies" })).toBeTruthy();
     expect(
-      screen.getByRole("heading", { name: "Movies 1 title" }),
+      within(screen.getByRole("group", { name: "Library controls" })).getByText(
+        "1 title",
+      ),
     ).toBeTruthy();
     rerender(
       <QueryClientProvider client={queryClient}>
@@ -746,8 +764,11 @@ describe("Library integration", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Network unavailable.",
     );
+    expect(screen.getByRole("heading", { name: "Movies" })).toBeTruthy();
     expect(
-      screen.getByRole("heading", { name: "Movies 1 title" }),
+      within(screen.getByRole("group", { name: "Library controls" })).getByText(
+        "1 title",
+      ),
     ).toBeTruthy();
     expect(
       screen.getByRole("link", { name: `View ${movie.title}` }),

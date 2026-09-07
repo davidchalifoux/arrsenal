@@ -51,7 +51,14 @@ describe("DownloadQueue", () => {
         notify={vi.fn()}
       />,
     );
-    expect(screen.getByRole("heading", { name: "Downloads" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Downloads" }).className,
+    ).toContain("sr_true");
+    expect(
+      screen
+        .getByRole("button", { name: "Refresh" })
+        .parentElement?.querySelector("dl"),
+    ).toBeTruthy();
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe(
       "75",
     );

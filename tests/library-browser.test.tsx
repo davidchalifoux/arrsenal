@@ -1,3 +1,4 @@
+import { css } from "@styled-system/css";
 import {
   cleanup,
   fireEvent,
@@ -66,15 +67,25 @@ afterEach(() => {
 });
 
 describe("LibraryBrowser", () => {
-  it("keeps sync status beside Refresh instead of underneath the title", () => {
-    render(<LibraryBrowser category="library" />);
+  it.each([
+    ["library", "Home"],
+    ["movies", "Movies"],
+    ["shows", "Shows"],
+  ] as const)("keeps %s controls in one toolbar with only a visually hidden page heading", (category, title) => {
+    const { container } = render(<LibraryBrowser category={category} />);
     const refresh = screen.getByRole("button", { name: "Refresh library" });
+    const toolbar = screen.getByRole("group", { name: "Library controls" });
+    const heading = screen.getByRole("heading", { level: 1, name: title });
+    expect(heading.className).toBe(css({ srOnly: true }));
+    expect(heading.parentElement).toBe(container);
+    expect(container.querySelector("header")).toBeNull();
+    expect(toolbar.contains(screen.getByText("0 titles"))).toBe(true);
+    expect(toolbar.contains(refresh)).toBe(true);
+    expect(
+      toolbar.contains(screen.getAllByRole("button", { name: "Add media" })[0]),
+    ).toBe(true);
     expect(refresh.parentElement?.textContent).toContain("Library up to date");
     expect(screen.queryByText(/All your favorites/)).toBeNull();
-    expect(
-      screen.getByRole("heading", { name: "Home 0 titles" }).parentElement
-        ?.textContent,
-    ).toBe("Home 0 titles");
   });
   it("restores each category's filters, sorting, layout, and scroll after data loads", async () => {
     sessionStorage.setItem(
@@ -153,7 +164,7 @@ describe("LibraryBrowser", () => {
       JSON.stringify(saved),
     );
     render(<LibraryBrowser category="library" initialStatus="incomplete" />);
-    expect(screen.getByRole("heading", { name: "Home 0 titles" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Home" })).toBeTruthy();
     expect(
       screen.getByRole("combobox", { name: "Filter by availability" })
         .textContent,

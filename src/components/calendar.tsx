@@ -9,7 +9,6 @@ import { mediaHref } from "@/lib/client";
 import { calendarQuery } from "@/lib/queries";
 import { useTimezonePreference } from "@/lib/timezone-preference";
 import type { CalendarEvent } from "@/lib/types";
-import { PageHeader } from "./page-header";
 import { Button, mutedStyle } from "./ui";
 
 const labels = {
@@ -167,7 +166,6 @@ export function Calendar({ now }: { now: string }) {
   }
   return (
     <section>
-      <PageHeader title="Calendar" />
       <div
         className={css({
           display: "flex",
@@ -178,16 +176,16 @@ export function Calendar({ now }: { now: string }) {
           mb: "12px",
         })}
       >
-        <h2
+        <h1
           aria-live="polite"
           className={css({
             fontSize: "20px",
-            fontWeight: "600",
-            letterSpacing: "-0.5px",
+            fontWeight: "550",
+            letterSpacing: "-.4px",
           })}
         >
           {title}
-        </h2>
+        </h1>
         <div className={css({ display: "flex", gap: "8px" })}>
           <Button
             aria-label="Previous month"

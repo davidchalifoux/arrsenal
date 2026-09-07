@@ -16,7 +16,6 @@ import { useInstances, useLibrary } from "@/lib/collections";
 import { useLibraryActions } from "./library-provider";
 import { LibraryToolbar } from "./library-toolbar";
 import { MediaCard, MediaList } from "./media-card";
-import { PageHeader } from "./page-header";
 import { Button, Notice } from "./ui";
 import {
   type LibraryCategory,
@@ -225,29 +224,63 @@ function LibrarySection({
 
   return (
     <>
-      <PageHeader
-        title={
+      <h1 className={css({ srOnly: true })}>
+        {category === "library"
+          ? "Home"
+          : category === "missing"
+            ? "Incomplete"
+            : category === "movies"
+              ? "Movies"
+              : "Shows"}
+      </h1>
+      <LibraryToolbar
+        filterCount={filterCount}
+        instances={instances}
+        qualities={qualities}
+        instanceFilter={instanceFilter}
+        quality={quality}
+        status={status}
+        sort={sort}
+        sortDirection={sortDirection}
+        layout={layout}
+        onInstanceChange={setInstanceFilter}
+        onQualityChange={setQuality}
+        onStatusChange={setStatus}
+        onSortChange={(next) => {
+          setSort(next);
+          setSortDirection(next === "title" ? "asc" : "desc");
+        }}
+        onSortDirectionChange={setSortDirection}
+        onLayoutChange={setLayout}
+        onResetFilters={resetFilters}
+        count={
           <>
-            {category === "library"
-              ? "Home"
-              : category === "missing"
-                ? "Incomplete"
-                : category === "movies"
-                  ? "Movies"
-                  : "Shows"}{" "}
-            {hasCompleteData && (
+            {hasCompleteData && isReady && snapshotLoaded && (
               <span
                 className={css({
-                  ml: "10px",
                   color: "muted",
                   fontSize: "12px",
-                  fontWeight: "400",
-                  letterSpacing: "normal",
                   whiteSpace: "nowrap",
                 })}
               >
+                {filterCount > 0 || category === "missing"
+                  ? `${filtered.length} of `
+                  : ""}
                 {totalCount} {totalCount === 1 ? "title" : "titles"}
               </span>
+            )}
+            {library.data && (filterCount > 0 || category === "missing") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  resetFilters();
+                  if (category === "missing") router.push("/");
+                }}
+              >
+                <XIcon size={12} />
+                Clear filters
+              </Button>
             )}
           </>
         }
@@ -328,57 +361,6 @@ function LibrarySection({
           </Notice>
         </div>
       ))}
-      <LibraryToolbar
-        filterCount={filterCount}
-        instances={instances}
-        qualities={qualities}
-        instanceFilter={instanceFilter}
-        quality={quality}
-        status={status}
-        sort={sort}
-        sortDirection={sortDirection}
-        layout={layout}
-        onInstanceChange={setInstanceFilter}
-        onQualityChange={setQuality}
-        onStatusChange={setStatus}
-        onSortChange={(next) => {
-          setSort(next);
-          setSortDirection(next === "title" ? "asc" : "desc");
-        }}
-        onSortDirectionChange={setSortDirection}
-        onLayoutChange={setLayout}
-        onResetFilters={resetFilters}
-      />
-      {library.data && (filterCount > 0 || category === "missing") && (
-        <div
-          className={css({
-            display: "flex",
-            gap: "8px",
-            alignItems: "center",
-            mb: "20px",
-            fontSize: "11px",
-            color: "muted",
-          })}
-        >
-          {hasCompleteData && isReady && snapshotLoaded && (
-            <span>
-              {filtered.length} of {totalCount}{" "}
-              {totalCount === 1 ? "title" : "titles"}
-            </span>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              resetFilters();
-              if (category === "missing") router.push("/");
-            }}
-          >
-            <XIcon size={12} />
-            Clear filters
-          </Button>
-        </div>
-      )}
       {library.isError && !library.data ? (
         <Notice error>
           {library.error.message}{" "}

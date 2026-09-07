@@ -7,6 +7,7 @@ import {
   SquaresFourIcon,
 } from "@phosphor-icons/react";
 import { css } from "@styled-system/css";
+import type { ReactNode } from "react";
 import { Button, buttonStyle, SelectField } from "./ui";
 import type {
   LibraryLayout,
@@ -16,6 +17,8 @@ import type {
 } from "./use-library-view";
 
 export function LibraryToolbar({
+  count,
+  actions,
   filterCount,
   instances,
   qualities,
@@ -33,6 +36,8 @@ export function LibraryToolbar({
   onLayoutChange,
   onResetFilters,
 }: {
+  count?: ReactNode;
+  actions?: ReactNode;
   filterCount: number;
   instances: { id: string; name: string }[];
   qualities: string[];
@@ -51,9 +56,14 @@ export function LibraryToolbar({
   onResetFilters: () => void;
 }) {
   return (
-    <div
+    <fieldset
+      aria-label="Library controls"
       className={css({
         display: "flex",
+        minWidth: 0,
+        border: 0,
+        p: 0,
+        m: 0,
         alignItems: "center",
         justifyContent: "space-between",
         gap: "12px",
@@ -71,6 +81,7 @@ export function LibraryToolbar({
           flexWrap: "wrap",
         })}
       >
+        {count}
         <SelectField
           compact
           value={status}
@@ -272,6 +283,19 @@ export function LibraryToolbar({
           </button>
         </div>
       </div>
-    </div>
+      {actions && (
+        <div
+          className={css({
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "8px",
+            ml: "auto",
+          })}
+        >
+          {actions}
+        </div>
+      )}
+    </fieldset>
   );
 }

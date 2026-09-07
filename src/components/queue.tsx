@@ -16,7 +16,6 @@ import Image from "next/image";
 import { useId, useRef, useState } from "react";
 import { api, sizeLabel } from "@/lib/client";
 import type { ActionResponse, QueueItem, QueueResponse } from "@/lib/types";
-import { PageHeader } from "./page-header";
 import {
   Button,
   CheckField,
@@ -163,18 +162,18 @@ export function DownloadQueue({
 
   return (
     <section className={css({ minWidth: 0 })} aria-labelledby={`${id}-heading`}>
-      <PageHeader
-        id={`${id}-heading`}
-        title="Downloads"
-        actions={
-          <Button disabled={loading || !!busy} onClick={() => onRefresh()}>
-            {loading ? <Spinner size={15} /> : <ArrowClockwiseIcon size={15} />}
-            {loading ? "Refreshing..." : "Refresh"}
-          </Button>
-        }
-      />
+      <h1 id={`${id}-heading`} className={css({ srOnly: true })}>
+        Downloads
+      </h1>
 
-      <div className={css({ display: "grid", gap: "12px", mb: "20px" })}>
+      <div
+        className={css({
+          display: "grid",
+          gap: "12px",
+          mb: "20px",
+          _empty: { display: "none" },
+        })}
+      >
         {errors.map((error) => (
           <Notice error key={error.instanceId}>
             <div className={css({ minWidth: 0, overflowWrap: "anywhere" })}>
@@ -200,46 +199,61 @@ export function DownloadQueue({
         )}
       </div>
 
-      <dl
+      <div
         className={css({
           display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
           flexWrap: "wrap",
-          columnGap: "24px",
-          rowGap: "8px",
+          gap: "12px",
           mb: "20px",
-          fontSize: "12px",
+          minHeight: "36px",
         })}
       >
-        {[
-          {
-            label: "Active downloads",
-            value: data ? String(activeCount) : "--",
-          },
-          {
-            label: "Remaining size",
-            value: data ? sizeLabel(remainingSize) : "--",
-          },
-        ].map(({ label, value }) => (
-          <div
-            key={label}
-            className={css({
-              display: "flex",
-              alignItems: "baseline",
-              gap: "8px",
-            })}
-          >
-            <dt className={css({ color: "muted" })}>{label}</dt>
-            <dd
+        <dl
+          className={css({
+            display: "flex",
+            flexWrap: "wrap",
+            columnGap: "24px",
+            rowGap: "8px",
+            fontSize: "12px",
+          })}
+        >
+          {[
+            {
+              label: "Active downloads",
+              value: data ? String(activeCount) : "--",
+            },
+            {
+              label: "Remaining size",
+              value: data ? sizeLabel(remainingSize) : "--",
+            },
+          ].map(({ label, value }) => (
+            <div
+              key={label}
               className={css({
-                fontWeight: "550",
-                fontVariantNumeric: "tabular-nums",
+                display: "flex",
+                alignItems: "baseline",
+                gap: "8px",
               })}
             >
-              {value}
-            </dd>
-          </div>
-        ))}
-      </dl>
+              <dt className={css({ color: "muted" })}>{label}</dt>
+              <dd
+                className={css({
+                  fontWeight: "550",
+                  fontVariantNumeric: "tabular-nums",
+                })}
+              >
+                {value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <Button disabled={loading || !!busy} onClick={() => onRefresh()}>
+          {loading ? <Spinner size={15} /> : <ArrowClockwiseIcon size={15} />}
+          {loading ? "Refreshing..." : "Refresh"}
+        </Button>
+      </div>
 
       <div
         className={css({

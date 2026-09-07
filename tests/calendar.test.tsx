@@ -80,7 +80,10 @@ afterEach(() => {
 
 it("renders month and date-grouped agenda with UTC episode times, distinct release labels and only valid links", () => {
   render(<Calendar now="2026-09-06T12:00:00Z" />);
-  expect(screen.getByRole("heading", { name: "Calendar" })).toBeTruthy();
+  expect(
+    screen.getByRole("heading", { level: 1, name: "September 2026" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Calendar" })).toBeNull();
   expect(screen.getByLabelText("September 2026 month calendar")).toBeTruthy();
   expect(screen.getByLabelText("September 2026 agenda")).toBeTruthy();
   const time = new Intl.DateTimeFormat(undefined, {
