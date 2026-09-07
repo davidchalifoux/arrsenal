@@ -1,13 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
-import MoviePage from "@/app/(library)/movies/[id]/page";
-import ShowPage from "@/app/(library)/shows/[id]/page";
+import { describe, expect, it, mock } from "bun:test";
 
-vi.mock("@/components/media-screen", () => ({ MediaScreen: () => null }));
-vi.mock("next/navigation", () => ({
+mock.module("@/components/media-screen", () => ({ MediaScreen: () => null }));
+mock.module("next/navigation", () => ({
   notFound: () => {
     throw new Error("NEXT_NOT_FOUND");
   },
 }));
+const { default: MoviePage } = await import("@/app/(library)/movies/[id]/page");
+const { default: ShowPage } = await import("@/app/(library)/shows/[id]/page");
 
 describe("media detail pages", () => {
   it.each([

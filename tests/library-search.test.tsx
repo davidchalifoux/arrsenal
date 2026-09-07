@@ -1,3 +1,4 @@
+import { afterEach, beforeEach, expect, it, mock } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
@@ -7,19 +8,14 @@ import {
   waitFor,
 } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AddMedia } from "@/components/add-media";
-import {
-  LibraryProvider,
-  useLibraryActions,
-} from "@/components/library-provider";
-import { mediaHref } from "@/lib/client";
+
 import type { MediaItem } from "@/lib/types";
 
-const { push } = vi.hoisted(() => ({ push: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
-vi.mock("@/components/media-card", () => ({ Poster: () => null }));
-vi.mock("@/components/add-media", () => ({
+const { push } = { push: mock() };
+mock.module("next/navigation", () => ({ useRouter: () => ({ push }) }));
+mock.module("@/components/media-card", () => ({ Poster: () => null }));
+mock.module("@/components/add-media", () => ({
   AddMedia: ({ open, initialTerm, seed }: ComponentProps<typeof AddMedia>) =>
     open ? (
       <section aria-label="Catalog handoff">
@@ -28,10 +24,14 @@ vi.mock("@/components/add-media", () => ({
       </section>
     ) : null,
 }));
+const { LibraryProvider, useLibraryActions } = await import(
+  "@/components/library-provider"
+);
+const { mediaHref } = await import("@/lib/client");
 
 let client: QueryClient;
 beforeEach(() => {
-  vi.clearAllMocks();
+  mock.clearAllMocks();
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(["instances"], { instances: [] });
 });
@@ -189,7 +189,8 @@ it("navigates to the top ranked result on Enter and closes search, but not for a
   fireEvent.keyDown(input, { key: "Enter", isComposing: true });
   expect(push).not.toHaveBeenCalled();
   fireEvent.keyDown(input, { key: "Enter" });
-  expect(push).toHaveBeenCalledExactlyOnceWith(mediaHref(dune));
+  expect(push).toHaveBeenCalledTimes(1);
+  expect(push).toHaveBeenCalledWith(mediaHref(dune));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
 

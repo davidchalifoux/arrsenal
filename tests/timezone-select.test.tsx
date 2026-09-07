@@ -1,4 +1,13 @@
 import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from "bun:test";
+import {
   cleanup,
   fireEvent,
   render,
@@ -6,10 +15,10 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TimezoneSelect } from "@/components/timezone-select";
 
-const changed = vi.fn();
+const { TimezoneSelect } = await import("@/components/timezone-select");
+
+const changed = mock();
 function Picker({
   saved = "",
   disabled = false,
@@ -34,20 +43,20 @@ function Picker({
 
 beforeEach(() => {
   changed.mockClear();
-  vi.spyOn(Intl, "supportedValuesOf").mockReturnValue([
+  spyOn(Intl, "supportedValuesOf").mockReturnValue([
     "America/New_York",
     "Asia/Tokyo",
     "Europe/Paris",
   ]);
   const options = Intl.DateTimeFormat().resolvedOptions();
-  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+  spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
     ...options,
     timeZone: "US/Pacific",
   });
 });
 afterEach(() => {
   cleanup();
-  vi.restoreAllMocks();
+  mock.restore();
 });
 
 async function open() {

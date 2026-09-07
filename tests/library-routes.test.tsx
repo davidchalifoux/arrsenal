@@ -1,14 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
-import DiscoverPage from "@/app/(library)/discover/page";
-import MissingPage from "@/app/(library)/missing/page";
-import LibraryPage from "@/app/(library)/page";
+import { describe, expect, it, mock } from "bun:test";
 
-vi.mock("@/components/library-browser", () => ({ LibraryBrowser: () => null }));
-vi.mock("next/navigation", () => ({
+mock.module("@/components/library-browser", () => ({
+  LibraryBrowser: () => null,
+}));
+mock.module("next/navigation", () => ({
   redirect: (url: string) => {
     throw new Error(`REDIRECT:${url}`);
   },
 }));
+const { default: DiscoverPage } = await import("@/app/(library)/discover/page");
+const { default: MissingPage } = await import("@/app/(library)/missing/page");
+const { default: LibraryPage } = await import("@/app/(library)/page");
 
 describe("Library-first routes", () => {
   it("sends old Discover links into Add media", () => {

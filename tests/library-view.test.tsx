@@ -1,13 +1,14 @@
+import { afterEach, describe, expect, it, mock } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { useLibraryView } from "@/components/use-library-view";
-import { getCollections, useLibrary } from "@/lib/collections";
-import { libraryQuery } from "@/lib/queries";
+
 import type { MediaItem, MediaTarget } from "@/lib/types";
 
-vi.mock("@/lib/client", () => ({ api: vi.fn() }));
+mock.module("@/lib/client", () => ({ api: mock() }));
+const { useLibraryView } = await import("@/components/use-library-view");
+const { getCollections, useLibrary } = await import("@/lib/collections");
+const { libraryQuery } = await import("@/lib/queries");
 
 const target: MediaTarget = {
   instanceId: "a",
@@ -240,7 +241,7 @@ describe("useLibraryView", () => {
       sortDirection: sort === "title" ? "asc" : "desc",
     });
     await waitFor(() =>
-      expect(result.current.filtered.map((item) => item.id)).toEqual(ids),
+      expect(result.current.filtered.map((item) => item.id)).toEqual([...ids]),
     );
     rerender({
       ...defaults,

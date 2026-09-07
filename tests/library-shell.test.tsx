@@ -1,3 +1,4 @@
+import { afterEach, beforeEach, expect, it, mock } from "bun:test";
 import {
   cleanup,
   fireEvent,
@@ -6,18 +7,15 @@ import {
   within,
 } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { LibraryShell } from "@/components/library-shell";
-import { PageHeader } from "@/components/page-header";
 
-const mocks = vi.hoisted(() => ({
+const mocks = {
   pathname: "/",
-  add: vi.fn(),
-  searchLibrary: vi.fn(),
+  add: mock(),
+  searchLibrary: mock(),
   queue: { data: { items: [] as unknown[] } },
-}));
-vi.mock("next/navigation", () => ({ usePathname: () => mocks.pathname }));
-vi.mock("next/link", () => ({
+};
+mock.module("next/navigation", () => ({ usePathname: () => mocks.pathname }));
+mock.module("next/link", () => ({
   default: ({ href, onClick, ...props }: ComponentProps<"a">) => (
     <a
       {...props}
@@ -29,10 +27,12 @@ vi.mock("next/link", () => ({
     />
   ),
 }));
-vi.mock("@/lib/collections", () => ({ useQueue: () => mocks.queue }));
-vi.mock("@/components/library-provider", () => ({
+mock.module("@/lib/collections", () => ({ useQueue: () => mocks.queue }));
+mock.module("@/components/library-provider", () => ({
   useLibraryActions: () => mocks,
 }));
+const { LibraryShell } = await import("@/components/library-shell");
+const { PageHeader } = await import("@/components/page-header");
 
 const navigationNames = ["Main navigation", "Mobile navigation"];
 const destinations = [
@@ -44,7 +44,7 @@ const destinations = [
 ];
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  mock.clearAllMocks();
   mocks.pathname = "/";
   mocks.queue = { data: { items: [] } };
 });
@@ -217,14 +217,15 @@ it("keeps global Search and Add in the header and updates the Add seed with the 
     ["/calendar", "movie"],
     ["/settings/connections", "movie"],
   ]) {
-    vi.clearAllMocks();
+    mock.clearAllMocks();
     mocks.pathname = pathname;
     view.rerender(<LibraryShell>Library content</LibraryShell>);
     const header = within(screen.getByRole("banner"));
     expect(screen.getAllByRole("button")).toHaveLength(2);
     fireEvent.click(header.getByRole("button", { name: "Add media" }));
     fireEvent.click(header.getByRole("button", { name: "Search library" }));
-    expect(mocks.add).toHaveBeenCalledExactlyOnceWith(null, kind);
-    expect(mocks.searchLibrary).toHaveBeenCalledOnce();
+    expect(mocks.add).toHaveBeenCalledTimes(1);
+    expect(mocks.add).toHaveBeenCalledWith(null, kind);
+    expect(mocks.searchLibrary).toHaveBeenCalledTimes(1);
   }
 });

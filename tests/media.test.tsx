@@ -1,3 +1,13 @@
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+  mock,
+  spyOn,
+} from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -11,13 +21,6 @@ import {
 import type { ImageProps } from "next/image";
 import type { ComponentProps, ReactElement } from "react";
 import { renderToString } from "react-dom/server";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AddMedia } from "@/components/add-media";
-import { LibraryBrowser } from "@/components/library-browser";
-import { LibraryProvider } from "@/components/library-provider";
-import { MediaCard, MediaList } from "@/components/media-card";
-import { MediaDetails } from "@/components/media-details";
-import { MediaScreen } from "@/components/media-screen";
 import type {
   AddMediaRequest,
   Episode,
@@ -28,11 +31,12 @@ import type {
   MediaTarget,
   Release,
 } from "@/lib/types";
+import { advanceTime } from "./timers";
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ push: mock(), replace: mock(), refresh: mock() }),
 }));
-vi.mock("next/image", () => ({
+mock.module("next/image", () => ({
   default: ({ src, alt, onError, sizes, className, loading }: ImageProps) => (
     // Keep image errors testable without passing Next-only props to the DOM.
     // biome-ignore lint/performance/noImgElement: The Next Image test double is intentionally a native image.
@@ -46,6 +50,12 @@ vi.mock("next/image", () => ({
     />
   ),
 }));
+const { AddMedia } = await import("@/components/add-media");
+const { LibraryBrowser } = await import("@/components/library-browser");
+const { LibraryProvider } = await import("@/components/library-provider");
+const { MediaCard, MediaList } = await import("@/components/media-card");
+const { MediaDetails } = await import("@/components/media-details");
+const { MediaScreen } = await import("@/components/media-screen");
 
 const hd: InstanceSummary = {
   id: "radarr-hd",
@@ -126,7 +136,8 @@ const rejected: Release = {
   rejections: ["Quality is not allowed in this profile."],
 };
 
-const fetchMock = vi.fn<typeof fetch>();
+const fetchMock =
+  mock<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>();
 let queryClient: QueryClient;
 
 function renderUI(element: ReactElement) {
@@ -141,10 +152,10 @@ function renderAdd(overrides: Partial<ComponentProps<typeof AddMedia>> = {}) {
     seed: movie,
     instances: [hd, uhd, archive, sonarr],
     library: [],
-    onClose: vi.fn(),
-    onAdded: vi.fn(),
-    onConnect: vi.fn(),
-    notify: vi.fn(),
+    onClose: mock(),
+    onAdded: mock(),
+    onConnect: mock(),
+    notify: mock(),
     ...overrides,
   };
   renderUI(<AddMedia {...props} />);
@@ -154,9 +165,9 @@ function renderAdd(overrides: Partial<ComponentProps<typeof AddMedia>> = {}) {
 function renderDetails() {
   const props = {
     media: { ...movie, targets: [hdTarget, uhdTarget] },
-    onAddTarget: vi.fn(),
-    onChanged: vi.fn(),
-    notify: vi.fn(),
+    onAddTarget: mock(),
+    onChanged: mock(),
+    notify: mock(),
   };
   renderUI(<MediaDetails {...props} />);
   return props;
@@ -197,13 +208,15 @@ beforeEach(() => {
     if (id && options[id]) return Response.json(options[id]);
     throw new Error(`Unexpected request: ${path}`);
   });
-  vi.stubGlobal("fetch", fetchMock);
+  spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(fetchMock, { preconnect: fetch.preconnect }),
+  );
 });
 
 afterEach(() => {
   cleanup();
   queryClient.clear();
-  vi.unstubAllGlobals();
+  mock.restore();
 });
 
 describe("AddMedia", () => {
@@ -291,7 +304,8 @@ describe("AddMedia", () => {
       ),
     );
     await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1));
-    expect(props.onAdded).toHaveBeenCalledExactlyOnceWith();
+    expect(props.onAdded).toHaveBeenCalledTimes(1);
+    expect(props.onAdded).toHaveBeenCalledWith();
     expect(props.notify).toHaveBeenCalledWith("Added to Radarr 4K.");
   });
 
@@ -422,11 +436,10 @@ describe("AddMedia", () => {
 describe("Library integration", () => {
   beforeEach(() => {
     sessionStorage.clear();
-    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    spyOn(window, "scrollTo").mockImplementation(() => {});
   });
   afterEach(() => {
     sessionStorage.clear();
-    vi.mocked(window.scrollTo).mockRestore();
   });
 
   it.each([
@@ -782,7 +795,7 @@ describe("Library integration", () => {
       if (path === "/api/instances") return Response.json({ instances: [hd] });
       throw new Error(`Unexpected request: ${path}`);
     });
-    vi.useFakeTimers();
+    jest.useFakeTimers();
     try {
       renderUI(
         <LibraryProvider>
@@ -790,11 +803,11 @@ describe("Library integration", () => {
         </LibraryProvider>,
       );
       expect(screen.queryByText(/\d+ titles/)).toBeNull();
-      await act(async () => vi.advanceTimersByTimeAsync(4999));
+      await act(async () => advanceTime(4999));
       expect(
         screen.queryByRole("link", { name: "Check connections" }),
       ).toBeNull();
-      await act(async () => vi.advanceTimersByTimeAsync(1));
+      await act(async () => advanceTime(1));
       expect(screen.getByRole("status").textContent).toContain(
         "Still waiting for your instances.",
       );
@@ -807,7 +820,7 @@ describe("Library integration", () => {
         pending.resolve(
           Response.json({ error: "Library unavailable." }, { status: 503 }),
         );
-        await vi.advanceTimersByTimeAsync(1);
+        await advanceTime(1);
       });
       expect(screen.queryByText(/Still waiting for your instances/)).toBeNull();
       expect(screen.getByRole("alert").textContent).toContain(
@@ -817,7 +830,7 @@ describe("Library integration", () => {
       expect(screen.getByRole("heading", { name: "Incomplete" })).toBeTruthy();
       expect(screen.queryByText(/\d+ titles/)).toBeNull();
     } finally {
-      vi.useRealTimers();
+      jest.useRealTimers();
     }
   });
 
@@ -1136,9 +1149,9 @@ describe("Episode actions", () => {
     renderUI(
       <MediaDetails
         media={{ ...movie, kind: "series", targets }}
-        onAddTarget={vi.fn()}
-        notify={vi.fn()}
-        onChanged={vi.fn()}
+        onAddTarget={mock()}
+        notify={mock()}
+        onChanged={mock()}
       />,
     );
     await screen.findByRole("alert");
@@ -1184,8 +1197,8 @@ describe("Episode actions", () => {
       kind: "series",
       targets,
     };
-    const notify = vi.fn();
-    const onChanged = vi.fn();
+    const notify = mock();
+    const onChanged = mock();
     fetchMock.mockImplementation(async (path, init) => {
       const url = new URL(String(path), "http://localhost");
       if (url.pathname === "/api/episodes") {
@@ -1230,7 +1243,7 @@ describe("Episode actions", () => {
     renderUI(
       <MediaDetails
         media={show}
-        onAddTarget={vi.fn()}
+        onAddTarget={mock()}
         notify={notify}
         onChanged={onChanged}
       />,
@@ -1278,7 +1291,7 @@ describe("Episode actions", () => {
         name: "Auto search S01E01 on Sonarr 4K",
       }),
     );
-    await waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("dialog")).toBeNull();
     const write = writes()[0];
     expect(JSON.parse(String(write[1]?.body))).toEqual({
@@ -1388,7 +1401,7 @@ describe("MediaCard", () => {
   });
 
   it("shows the selected quality profile and remains usable after poster failure", () => {
-    const onClick = vi.fn();
+    const onClick = mock();
     renderUI(
       <MediaCard
         item={{

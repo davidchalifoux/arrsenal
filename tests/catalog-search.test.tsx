@@ -1,23 +1,36 @@
+import {
+  afterEach,
+  beforeEach,
+  expect,
+  it,
+  jest,
+  type Mock,
+  mock,
+} from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { api } from "@/lib/client";
-import { useCatalogSearch } from "@/lib/use-catalog-search";
+import { advanceTime } from "./timers";
 
-vi.mock("@/lib/client", () => ({ api: vi.fn() }));
+mock.module("@/lib/client", () => ({ api: mock() }));
+const { api } = await import("@/lib/client");
+const { useCatalogSearch } = await import("@/lib/use-catalog-search");
 
 let client: QueryClient;
 beforeEach(() => {
-  vi.useFakeTimers();
-  vi.mocked(api).mockReset();
-  vi.mocked(api).mockResolvedValue({ items: [], errors: [] });
+  jest.useFakeTimers();
+  (
+    api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+  ).mockReset();
+  (
+    api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+  ).mockResolvedValue({ items: [], errors: [] });
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 afterEach(() => {
   cleanup();
   client.clear();
-  vi.useRealTimers();
+  jest.useRealTimers();
 });
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -26,7 +39,7 @@ function wrapper({ children }: { children: ReactNode }) {
 
 async function advance(ms: number) {
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(ms);
+    await advanceTime(ms);
   });
 }
 
@@ -40,10 +53,10 @@ it("debounces rapid changes for 250ms and uses the trimmed query", async () => {
   await advance(249);
   expect(api).not.toHaveBeenCalled();
   await advance(1);
-  expect(api).toHaveBeenCalledExactlyOnceWith(
-    "/api/lookup?term=Dune&kind=movie",
-    { signal: expect.any(AbortSignal) },
-  );
+  expect(api).toHaveBeenCalledTimes(1);
+  expect(api).toHaveBeenCalledWith("/api/lookup?term=Dune&kind=movie", {
+    signal: expect.any(AbortSignal),
+  });
   rerender({ term: "Dune " });
   await advance(250);
   expect(api).toHaveBeenCalledTimes(1);
@@ -83,13 +96,17 @@ it("blocks short queries and lookups without a relevant instance", async () => {
 });
 
 it("cancels obsolete in-flight requests and separates media kinds", async () => {
-  vi.mocked(api).mockImplementation(() => new Promise(() => {}));
+  (
+    api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+  ).mockImplementation(() => new Promise(() => {}));
   const { result, rerender } = renderHook(
     ({ term, kind }) => useCatalogSearch(term, kind, true),
     { wrapper, initialProps: { term: "Dune", kind: "movie" } },
   );
   await advance(250);
-  const signal = vi.mocked(api).mock.calls[0][1]?.signal;
+  const signal = (
+    api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+  ).mock.calls[0][1]?.signal;
   rerender({ term: "Alien", kind: "movie" });
   expect(signal?.aborted).toBe(true);
   expect(result.current.data).toBeUndefined();

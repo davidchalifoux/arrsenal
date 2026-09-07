@@ -1,0 +1,4 @@
+[test]
+root = "./tests"
+preload = ["./tests/setup.mjs", "./tests/backend-process-preload.mjs"]
+# Bun 1.4.2 requires the CLI --isolate flag; it has no bunfig isolation setting.

@@ -1,3 +1,4 @@
+import { afterEach, beforeEach, expect, it, mock } from "bun:test";
 import {
   cleanup,
   fireEvent,
@@ -5,26 +6,27 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { Calendar } from "../src/components/calendar";
+
 import type { CalendarResponse } from "../src/lib/types";
 
-const { useQuery, prefetchQuery, preference } = vi.hoisted(() => ({
-  useQuery: vi.fn(),
-  prefetchQuery: vi.fn(),
+const { useQuery, prefetchQuery, preference } = {
+  useQuery: mock(),
+  prefetchQuery: mock(),
   preference: {
     timeZone: "UTC" as string | null,
     error: null as string | null,
   },
-}));
-vi.mock("../src/lib/timezone-preference", () => ({
+};
+mock.module("../src/lib/timezone-preference", () => ({
   useTimezonePreference: () => preference,
 }));
-vi.mock("@tanstack/react-query", async (original) => ({
-  ...(await original<object>()),
+const originalQuery = { ...(await import("@tanstack/react-query")) };
+mock.module("@tanstack/react-query", () => ({
+  ...originalQuery,
   useQuery,
   useQueryClient: () => ({ prefetchQuery }),
 }));
+const { Calendar } = await import("../src/components/calendar");
 
 const data: CalendarResponse = {
   instanceCount: 1,
@@ -70,12 +72,12 @@ beforeEach(() => {
     data,
     isPending: false,
     isError: false,
-    refetch: vi.fn(),
+    refetch: mock(),
   });
 });
 afterEach(() => {
   cleanup();
-  vi.clearAllMocks();
+  mock.clearAllMocks();
 });
 
 it("renders month and date-grouped agenda with UTC episode times, distinct release labels and only valid links", () => {
@@ -150,7 +152,7 @@ it("keeps the empty calendar frame visible while loading without a spinner or em
 });
 
 it("shows failures with retry", () => {
-  const refetch = vi.fn();
+  const refetch = mock();
   useQuery.mockReturnValue({
     isPending: false,
     isError: true,
@@ -162,7 +164,7 @@ it("shows failures with retry", () => {
     "Instances unavailable",
   );
   fireEvent.click(screen.getByRole("button", { name: "Retry calendar" }));
-  expect(refetch).toHaveBeenCalledOnce();
+  expect(refetch).toHaveBeenCalledTimes(1);
 });
 
 it.each([
@@ -530,7 +532,7 @@ it("does not prefetch either adjacent month until the timezone preference resolv
   preference.timeZone = "Pacific/Kiritimati";
   view.rerender(<Calendar now="2026-12-15T12:00:00Z" />);
   fireEvent.mouseEnter(screen.getByRole("button", { name: "Next month" }));
-  expect(prefetchQuery).toHaveBeenCalledOnce();
+  expect(prefetchQuery).toHaveBeenCalledTimes(1);
   expect(prefetchQuery.mock.lastCall?.[0].queryKey).toEqual([
     "calendar",
     "2026-12-31",

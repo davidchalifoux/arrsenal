@@ -1,3 +1,12 @@
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -8,12 +17,12 @@ import {
   waitFor,
 } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AddMedia } from "@/components/add-media";
-import { instanceOptionsQuery } from "@/lib/instance-options-query";
+
 import type { InstanceOptions, InstanceSummary, MediaItem } from "@/lib/types";
 
-vi.mock("next/image", () => ({ default: () => null }));
+mock.module("next/image", () => ({ default: () => null }));
+const { AddMedia } = await import("@/components/add-media");
+const { instanceOptionsQuery } = await import("@/lib/instance-options-query");
 
 const instance: InstanceSummary = {
   id: "radarr-hd",
@@ -46,7 +55,8 @@ const options: InstanceOptions = {
   rootFolders: [{ id: 1, path: "/movies" }],
 };
 const key = ["instance-options", instance.id];
-const fetchMock = vi.fn<typeof fetch>();
+const fetchMock =
+  mock<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>();
 let queryClient: QueryClient;
 
 function renderAdd(overrides: Partial<ComponentProps<typeof AddMedia>> = {}) {
@@ -57,10 +67,10 @@ function renderAdd(overrides: Partial<ComponentProps<typeof AddMedia>> = {}) {
         seed={movie}
         instances={[instance, sonarr]}
         library={[]}
-        onClose={vi.fn()}
-        onAdded={vi.fn()}
-        onConnect={vi.fn()}
-        notify={vi.fn()}
+        onClose={mock()}
+        onAdded={mock()}
+        onConnect={mock()}
+        notify={mock()}
         {...overrides}
       />
     </QueryClientProvider>,
@@ -73,13 +83,15 @@ beforeEach(() => {
   });
   fetchMock.mockReset();
   fetchMock.mockResolvedValue(Response.json(options));
-  vi.stubGlobal("fetch", fetchMock);
+  spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(fetchMock, { preconnect: fetch.preconnect }),
+  );
 });
 
 afterEach(() => {
   cleanup();
   queryClient.clear();
-  vi.unstubAllGlobals();
+  mock.restore();
 });
 
 describe("AddMedia target options prefetch", () => {
@@ -101,8 +113,11 @@ describe("AddMedia target options prefetch", () => {
     });
     if (interaction === "hover") fireEvent.mouseEnter(checkbox);
     else act(() => checkbox.focus());
-    await waitFor(() => expect(queryClient.getQueryData(key)).toEqual(options));
-    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+    await waitFor(() =>
+      expect(queryClient.getQueryData<InstanceOptions>(key)).toEqual(options),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
       `/api/instances/${instance.id}/options`,
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
@@ -169,7 +184,7 @@ describe("AddMedia target options prefetch", () => {
     await screen.findByRole("combobox", {
       name: `${instance.name} quality profile`,
     });
-    expect(queryClient.getQueryData(key)).toEqual(options);
+    expect(queryClient.getQueryData<InstanceOptions>(key)).toEqual(options);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

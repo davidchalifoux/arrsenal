@@ -1,7 +1,8 @@
+import { afterEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { LibraryToolbar } from "@/components/library-toolbar";
+
+const { LibraryToolbar } = await import("@/components/library-toolbar");
 
 afterEach(cleanup);
 
@@ -15,13 +16,13 @@ const props: ComponentProps<typeof LibraryToolbar> = {
   sort: "recent",
   sortDirection: "desc",
   layout: "grid",
-  onInstanceChange: vi.fn(),
-  onQualityChange: vi.fn(),
-  onStatusChange: vi.fn(),
-  onSortChange: vi.fn(),
-  onSortDirectionChange: vi.fn(),
-  onLayoutChange: vi.fn(),
-  onResetFilters: vi.fn(),
+  onInstanceChange: mock(),
+  onQualityChange: mock(),
+  onStatusChange: mock(),
+  onSortChange: mock(),
+  onSortDirectionChange: mock(),
+  onLayoutChange: mock(),
+  onResetFilters: mock(),
 };
 
 describe("LibraryToolbar", () => {
@@ -57,7 +58,7 @@ describe("LibraryToolbar", () => {
     ).toBeTruthy();
   });
   it("offers both sort directions with an accessible action label", () => {
-    const onSortDirectionChange = vi.fn();
+    const onSortDirectionChange = mock();
     const view = render(
       <LibraryToolbar
         {...props}
@@ -89,7 +90,7 @@ describe("LibraryToolbar", () => {
   });
 
   it("offers Incomplete directly in the toolbar without opening Filters", async () => {
-    const onStatusChange = vi.fn();
+    const onStatusChange = mock();
     render(<LibraryToolbar {...props} onStatusChange={onStatusChange} />);
     expect(screen.queryByText("Quality profile")).toBeNull();
     fireEvent.click(

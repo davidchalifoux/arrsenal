@@ -1,16 +1,17 @@
+import { afterEach, beforeEach, expect, it, type Mock, mock } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { AddMedia } from "@/components/add-media";
-import { api } from "@/lib/client";
+
 import type { InstanceSummary, MediaItem } from "@/lib/types";
 
-const connect = vi.fn();
-vi.mock("@/lib/client", () => ({ api: vi.fn() }));
-vi.mock("@/components/media-card", () => ({
+const connect = mock();
+mock.module("@/lib/client", () => ({ api: mock() }));
+mock.module("@/components/media-card", () => ({
   Poster: () => null,
 }));
+const { AddMedia } = await import("@/components/add-media");
+const { api } = await import("@/lib/client");
 
 const sonarr: InstanceSummary = {
   id: "sonarr",
@@ -22,9 +23,11 @@ const sonarr: InstanceSummary = {
 };
 let client: QueryClient;
 beforeEach(() => {
-  vi.clearAllMocks();
+  mock.clearAllMocks();
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  vi.mocked(api).mockResolvedValue({ instances: [sonarr] });
+  (
+    api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+  ).mockResolvedValue({ instances: [sonarr] });
 });
 afterEach(() => {
   cleanup();
@@ -45,9 +48,9 @@ it("seeds AddMedia search, guides movie connection, and clears with input focus"
       initialTerm="Dune"
       instances={[sonarr]}
       library={[]}
-      onClose={vi.fn()}
-      onAdded={vi.fn()}
-      notify={vi.fn()}
+      onClose={mock()}
+      onAdded={mock()}
+      notify={mock()}
       onConnect={connect}
     />,
   );
@@ -56,7 +59,7 @@ it("seeds AddMedia search, guides movie connection, and clears with input focus"
   });
   expect(input.value).toBe("Dune");
   fireEvent.click(screen.getByRole("button", { name: "Connect Radarr" }));
-  expect(connect).toHaveBeenCalledOnce();
+  expect(connect).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
   expect(input.value).toBe("");
   expect(document.activeElement).toBe(input);
@@ -64,7 +67,9 @@ it("seeds AddMedia search, guides movie connection, and clears with input focus"
 });
 
 it("starts in Shows when opened from the Shows section", async () => {
-  vi.mocked(api).mockResolvedValue({ items: [], errors: [] });
+  (
+    api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+  ).mockResolvedValue({ items: [], errors: [] });
   renderUI(
     <AddMedia
       open
@@ -73,16 +78,18 @@ it("starts in Shows when opened from the Shows section", async () => {
       initialTerm="Severance"
       instances={[sonarr]}
       library={[]}
-      onClose={vi.fn()}
-      onAdded={vi.fn()}
-      notify={vi.fn()}
+      onClose={mock()}
+      onAdded={mock()}
+      notify={mock()}
       onConnect={connect}
     />,
   );
   expect(screen.queryByRole("button", { name: "Connect Radarr" })).toBeNull();
   await screen.findByText(/No matches found/);
   expect(
-    vi.mocked(api).mock.calls.some(([url]) => url.includes("kind=series")),
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mock.calls.some(([url]) => url.includes("kind=series")),
   ).toBe(true);
 });
 
@@ -117,16 +124,18 @@ it("preserves catalog targets in AddMedia and hides stale results when the query
       },
     ],
   };
-  vi.mocked(api).mockResolvedValue({ items: [item], errors: [] });
+  (
+    api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+  ).mockResolvedValue({ items: [item], errors: [] });
   renderUI(
     <AddMedia
       open
       seed={null}
       instances={[radarr]}
       library={[]}
-      onClose={vi.fn()}
-      onAdded={vi.fn()}
-      notify={vi.fn()}
+      onClose={mock()}
+      onAdded={mock()}
+      notify={mock()}
       onConnect={connect}
     />,
   );

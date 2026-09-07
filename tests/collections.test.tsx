@@ -1,4 +1,16 @@
 import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+  type Mock,
+  mock,
+  onTestFinished,
+  spyOn,
+} from "bun:test";
+import {
   focusManager,
   QueryClient,
   QueryClientProvider,
@@ -13,19 +25,6 @@ import {
 } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
 import { renderToString } from "react-dom/server";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api } from "@/lib/client";
-import {
-  getCollections,
-  useClientReady,
-  useCollections,
-  useInstances,
-  useLibrary,
-  useQueue,
-  useSyncData,
-} from "@/lib/collections";
-import { configurePollingFocus } from "@/lib/polling";
-import { instancesQuery, libraryQuery, queueQuery } from "@/lib/queries";
 import type {
   InstanceSummary,
   LibraryResponse,
@@ -33,8 +32,23 @@ import type {
   MediaTarget,
   QueueItem,
 } from "@/lib/types";
+import { advanceTime } from "./timers";
 
-vi.mock("@/lib/client", () => ({ api: vi.fn() }));
+mock.module("@/lib/client", () => ({ api: mock() }));
+const { api } = await import("@/lib/client");
+const {
+  getCollections,
+  useClientReady,
+  useCollections,
+  useInstances,
+  useLibrary,
+  useQueue,
+  useSyncData,
+} = await import("@/lib/collections");
+const { configurePollingFocus } = await import("@/lib/polling");
+const { instancesQuery, libraryQuery, queueQuery } = await import(
+  "@/lib/queries"
+);
 
 const movie: MediaItem = {
   id: "movie:1",
@@ -85,7 +99,9 @@ function setup() {
 
 beforeEach(() => {
   // Returning mockReset() would register the API mock as a Vitest cleanup hook.
-  vi.mocked(api).mockReset();
+  (
+    api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+  ).mockReset();
 });
 afterEach(async () => {
   cleanup();
@@ -97,16 +113,18 @@ afterEach(async () => {
     );
     client.clear();
   }
-  vi.useRealTimers();
+  jest.useRealTimers();
   focusManager.setEventListener(() => undefined);
   focusManager.setFocused(undefined);
-  vi.restoreAllMocks();
+  mock.restore();
 });
 
 describe("collections", () => {
   it("does not start collections or fetch during server rendering, then loads on hydration", async () => {
     const { client, wrapper: Wrapper } = setup();
-    vi.mocked(api).mockImplementation(async (path) => {
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockImplementation(async (path) => {
       if (path === "/api/library") return { items: [movie], errors: [] };
       if (path === "/api/instances") return { instances: [instance] };
       if (path === "/api/queue") return { items: [download], errors: [] };
@@ -145,7 +163,7 @@ describe("collections", () => {
     for (const collection of Object.values(getCollections(client))) {
       expect(collection.status).toBe("idle");
     }
-    const onRecoverableError = vi.fn();
+    const onRecoverableError = mock();
     render(content, { container, hydrate: true, onRecoverableError });
     await waitFor(() =>
       expect(JSON.parse(container.textContent ?? "")).toEqual({
@@ -220,7 +238,9 @@ describe("collections", () => {
     await waitFor(() => expect(a.result.current.data?.items).toEqual([added]));
     expect(getCollections(first.client).library.has(movie.id)).toBe(false);
     expect(b.result.current.data?.items).toEqual([]);
-    expect(first.client.getQueryData(libraryQuery.queryKey)).toEqual({
+    expect(
+      first.client.getQueryData<LibraryResponse>(libraryQuery.queryKey),
+    ).toEqual({
       items: [added],
       errors: [],
     });
@@ -335,20 +355,20 @@ describe("collections", () => {
         JSON.stringify([download.instanceId, download.id]),
       ),
     ).toHaveProperty("$synced", true);
-    expect(client.getQueryData(libraryQuery.queryKey)).toEqual(library);
+    expect(client.getQueryData<LibraryResponse>(libraryQuery.queryKey)).toEqual(
+      library,
+    );
   });
 
-  it("retains rows and metadata after a refresh fails, then unmounts without recovery", async ({
-    onTestFinished,
-  }) => {
-    const runtimeError = vi.fn();
+  it("retains rows and metadata after a refresh fails, then unmounts without recovery", async () => {
+    const runtimeError = mock();
     window.addEventListener("error", runtimeError);
     window.addEventListener("unhandledrejection", runtimeError);
     onTestFinished(() => {
       window.removeEventListener("error", runtimeError);
       window.removeEventListener("unhandledrejection", runtimeError);
     });
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    spyOn(console, "error").mockImplementation(() => {});
     const { client, wrapper } = setup();
     const envelope = { items: [movie], errors: [serviceError] };
     client.setQueryData(libraryQuery.queryKey, envelope);
@@ -360,7 +380,9 @@ describe("collections", () => {
     const updatedAt = result.current.library.dataUpdatedAt;
     const failure = new Error("Refresh failed");
     const request = Promise.withResolvers<LibraryResponse>();
-    vi.mocked(api).mockReturnValue(request.promise);
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockReturnValue(request.promise);
     let syncing: Promise<void>;
     act(() => {
       syncing = result.current.sync("library");
@@ -393,9 +415,11 @@ describe("collections", () => {
   });
 
   it("unmounts and cleans up after an unrecovered initial error", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    spyOn(console, "error").mockImplementation(() => {});
     const { client, wrapper } = setup();
-    vi.mocked(api).mockRejectedValue(new Error("Initial failure"));
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockRejectedValue(new Error("Initial failure"));
     const { result, unmount } = renderHook(useLibrary, { wrapper });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.data).toBeUndefined();
@@ -407,10 +431,12 @@ describe("collections", () => {
   });
 
   it("keeps initial data undefined while loading, exposes failure, then recovers", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    spyOn(console, "error").mockImplementation(() => {});
     const { wrapper } = setup();
     const request = Promise.withResolvers<LibraryResponse>();
-    vi.mocked(api).mockReturnValueOnce(request.promise);
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockReturnValueOnce(request.promise);
     const states: {
       data: LibraryResponse | undefined;
       pending: boolean;
@@ -434,7 +460,9 @@ describe("collections", () => {
     await waitFor(() => expect(result.current.library.isError).toBe(true));
     expect(result.current.library.data).toBeUndefined();
     expect(result.current.library.isPending).toBe(false);
-    vi.mocked(api).mockResolvedValue({ items: [movie], errors: [] });
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockResolvedValue({ items: [movie], errors: [] });
     await act(() => result.current.sync("library"));
     await waitFor(() =>
       expect(result.current.library.data?.items).toEqual([movie]),
@@ -448,7 +476,7 @@ describe("collections", () => {
 
   it("centralizes scoped invalidation and deduplicates target episode keys", async () => {
     const { client, wrapper } = setup();
-    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const invalidate = spyOn(client, "invalidateQueries");
     const { result } = renderHook(useSyncData, { wrapper });
     const target: MediaTarget = {
       instanceId: "a",
@@ -478,12 +506,17 @@ describe("collections", () => {
   });
 
   it("owns one polling observer for multiple subscribers and stops after unmount", async () => {
-    vi.useFakeTimers();
+    jest.useFakeTimers();
     const { client, wrapper } = setup();
-    vi.mocked(api).mockResolvedValue({ items: [download], errors: [] });
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockResolvedValue({
+      items: [download],
+      errors: [],
+    });
     const first = renderHook(useQueue, { wrapper });
     const second = renderHook(useQueue, { wrapper });
-    await act(() => vi.advanceTimersByTimeAsync(1));
+    await act(() => advanceTime(1));
     expect(api).toHaveBeenCalledTimes(1);
     expect(first.result.current.data?.items).toEqual([download]);
     expect(second.result.current.data?.items).toEqual([download]);
@@ -493,37 +526,39 @@ describe("collections", () => {
     expect(
       observers?.filter((observer) => observer.options.enabled !== false),
     ).toHaveLength(1);
-    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    await act(() => advanceTime(60_000));
     expect(api).toHaveBeenCalledTimes(2);
     first.unmount();
-    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    await act(() => advanceTime(60_000));
     expect(api).toHaveBeenCalledTimes(3);
     second.unmount();
-    await act(() => vi.advanceTimersByTimeAsync(30_000));
+    await act(() => advanceTime(30_000));
     expect(api).toHaveBeenCalledTimes(3);
   });
 
   it("changes queue cadence immediately as active views mount and unmount without fetching", async () => {
-    vi.useFakeTimers();
+    jest.useFakeTimers();
     const { client, wrapper } = setup();
-    vi.mocked(api).mockResolvedValue({ items: [], errors: [] });
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockResolvedValue({ items: [], errors: [] });
     renderHook(() => useQueue(), { wrapper });
-    await act(() => vi.advanceTimersByTimeAsync(1));
-    await act(() => vi.advanceTimersByTimeAsync(15_000));
+    await act(() => advanceTime(1));
+    await act(() => advanceTime(15_000));
     expect(api).toHaveBeenCalledTimes(1);
     const view = renderHook(() => useQueue(true), { wrapper });
     const secondView = renderHook(() => useQueue(true), { wrapper });
-    await act(() => vi.advanceTimersByTimeAsync(1));
+    await act(() => advanceTime(1));
     expect(api).toHaveBeenCalledTimes(1);
-    await act(() => vi.advanceTimersByTimeAsync(15_000));
+    await act(() => advanceTime(15_000));
     expect(api).toHaveBeenCalledTimes(2);
     view.unmount();
-    await act(() => vi.advanceTimersByTimeAsync(15_000));
+    await act(() => advanceTime(15_000));
     expect(api).toHaveBeenCalledTimes(3);
     secondView.unmount();
-    await act(() => vi.advanceTimersByTimeAsync(15_000));
+    await act(() => advanceTime(15_000));
     expect(api).toHaveBeenCalledTimes(3);
-    await act(() => vi.advanceTimersByTimeAsync(45_000));
+    await act(() => advanceTime(45_000));
     expect(api).toHaveBeenCalledTimes(4);
     expect(
       client
@@ -534,20 +569,25 @@ describe("collections", () => {
   });
 
   it("pauses collection and ordinary query polling on blur or hidden tabs and resumes on focus", async () => {
-    vi.useFakeTimers();
-    const focused = vi.spyOn(document, "hasFocus").mockReturnValue(true);
-    const visibility = vi
-      .spyOn(document, "visibilityState", "get")
-      .mockReturnValue("visible");
+    jest.useFakeTimers();
+    const focused = spyOn(document, "hasFocus").mockReturnValue(true);
+    const visibility = mock(() => "visible");
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: visibility,
+    });
+    onTestFinished(() => Reflect.deleteProperty(document, "visibilityState"));
     configurePollingFocus();
     const { client, wrapper } = setup();
     client.setDefaultOptions({
       queries: { retry: false, refetchOnWindowFocus: false },
     });
-    vi.mocked(api).mockImplementation(async (path) =>
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockImplementation(async (path) =>
       path === "/api/instances" ? { instances: [] } : { items: [], errors: [] },
     );
-    const episodes = vi.fn(async () => []);
+    const episodes = mock(async () => []);
     renderHook(
       () => {
         useLibrary();
@@ -561,12 +601,12 @@ describe("collections", () => {
       },
       { wrapper },
     );
-    await act(() => vi.advanceTimersByTimeAsync(1));
+    await act(() => advanceTime(1));
     expect(api).toHaveBeenCalledTimes(3);
     expect(episodes).toHaveBeenCalledTimes(1);
     focused.mockReturnValue(false);
     act(() => window.dispatchEvent(new Event("blur")));
-    await act(() => vi.advanceTimersByTimeAsync(120_000));
+    await act(() => advanceTime(120_000));
     expect(api).toHaveBeenCalledTimes(3);
     expect(episodes).toHaveBeenCalledTimes(1);
     // Explicit reconciliation still works while polling is paused.
@@ -575,29 +615,38 @@ describe("collections", () => {
     focused.mockReturnValue(true);
     visibility.mockReturnValue("hidden");
     act(() => window.dispatchEvent(new Event("focus")));
-    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    await act(() => advanceTime(60_000));
     expect(api).toHaveBeenCalledTimes(4);
     visibility.mockReturnValue("visible");
     act(() => document.dispatchEvent(new Event("visibilitychange")));
-    await act(() => vi.advanceTimersByTimeAsync(1));
+    await act(() => advanceTime(1));
     expect(api).toHaveBeenCalledTimes(4);
-    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    await act(() => advanceTime(60_000));
     expect(api).toHaveBeenCalledTimes(10);
     expect(episodes).toHaveBeenCalledTimes(3);
   });
 
   it("retains queue rows through a total outage and replaces them on recovery", async () => {
     const { client, wrapper } = setup();
-    vi.mocked(api).mockResolvedValue({ items: [download], errors: [] });
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockResolvedValue({
+      items: [download],
+      errors: [],
+    });
     const { result } = renderHook(() => useQueue(), { wrapper });
     await waitFor(() => expect(result.current.data?.items).toEqual([download]));
-    vi.mocked(api).mockRejectedValue(
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockRejectedValue(
       new Error("Unable to load the queue from any configured instance."),
     );
     await act(() => client.invalidateQueries({ queryKey: ["queue"] }));
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.data?.items).toEqual([download]);
-    vi.mocked(api).mockResolvedValue({ items: [], errors: [] });
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockResolvedValue({ items: [], errors: [] });
     await act(() => client.invalidateQueries({ queryKey: ["queue"] }));
     await waitFor(() => expect(result.current.isError).toBe(false));
     expect(result.current.data?.items).toEqual([]);

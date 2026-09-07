@@ -1,25 +1,30 @@
-// @vitest-environment node
-
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  api,
-  mediaHref,
-  mediaIdFromRoute,
-  qualityLabel,
-  sizeLabel,
-} from "@/lib/client";
-import { addMediaSchema } from "@/lib/server/schemas";
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from "bun:test";
+
 import type { ActionResponse } from "@/lib/types";
 
-vi.mock("server-only", () => ({}));
+mock.module("server-only", () => ({}));
+const { api, mediaHref, mediaIdFromRoute, qualityLabel, sizeLabel } =
+  await import("@/lib/client");
+const { addMediaSchema } = await import("@/lib/server/schemas");
 
-const fetchMock = vi.fn<typeof fetch>();
+const fetchMock =
+  mock<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>();
 
 beforeEach(() => {
   fetchMock.mockReset();
-  vi.stubGlobal("fetch", fetchMock);
+  spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(fetchMock, { preconnect: fetch.preconnect }),
+  );
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => mock.restore());
 
 describe("media routes", () => {
   it.each([

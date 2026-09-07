@@ -19,16 +19,16 @@ Arrsenal is a self-hosted Next.js client for Sonarr and Radarr's v3 APIs. It com
 
 ## Development
 
-Use Node.js 24+ and the pinned pnpm version.
+Use [Bun](https://bun.sh/) 1.4.2, the pinned runtime, package manager, and test runner.
 
 ```sh
-pnpm install
-pnpm dev
+bun install --frozen-lockfile
+bun run dev
 ```
 
 Open [localhost:3000](http://localhost:3000). Select **Connect an instance**, enter its URL and API key, and test the connection. API keys are in **Settings > General > Security** in Sonarr/Radarr. Quality profiles, root folders, indexers, and download clients are configured in those applications.
 
-The interface uses Base UI, PandaCSS, Phosphor icons, Geist, and TanStack Query. React Compiler is enabled. Validation uses Zod and tests use Vitest with React Testing Library.
+The interface uses Base UI, PandaCSS, Phosphor icons, Geist, and TanStack Query. React Compiler is enabled. Validation uses Zod and tests use Bun with React Testing Library and jsdom.
 
 ## App Structure
 
@@ -76,13 +76,16 @@ A corrupt or unreadable config produces an error rather than being silently repl
 ## Verification
 
 ```sh
-pnpm test --run
-pnpm exec tsc --noEmit
-pnpm lint
-pnpm build
+bun run test
+bunx --bun next typegen
+bunx --bun tsc --noEmit
+bun run lint
+bun run build
 ```
 
-Vitest covers configuration persistence, request validation, origin checks, secret redaction, instance merging, search/add/release actions, queue pagination and actions, and connection/queue UI behavior. Backend tests use isolated config directories and local HTTP mocks, not your real media services.
+Bun tests cover configuration persistence, request validation, origin checks, secret redaction, instance merging, search/add/release actions, queue pagination and actions, and connection/queue UI behavior. Backend tests use isolated config directories and local HTTP mocks, not your real media services.
+
+Use `bun run test --watch` for watch mode or `bun run test tests/backend.test.mjs` for a focused suite. The test script passes `--isolate` so module mocks and DOM globals cannot leak between files; use it instead of bare `bun test`.
 
 ## Security And Scope
 

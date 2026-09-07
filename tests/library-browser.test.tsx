@@ -1,3 +1,12 @@
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from "bun:test";
 import { css } from "@styled-system/css";
 import {
   cleanup,
@@ -6,31 +15,30 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LibraryBrowser } from "@/components/library-browser";
+
 import type { MediaItem } from "@/lib/types";
 
-const mocks = vi.hoisted(() => ({
-  add: vi.fn(),
-  replace: vi.fn(),
+const mocks = {
+  add: mock(),
+  replace: mock(),
   ready: true,
   data: { items: [] as MediaItem[], errors: [] },
   pending: false,
+};
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ replace: mocks.replace, push: mock() }),
 }));
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: mocks.replace, push: vi.fn() }),
+mock.module("@/components/library-provider", () => ({
+  useLibraryActions: () => ({ add: mocks.add, refresh: mock() }),
 }));
-vi.mock("@/components/library-provider", () => ({
-  useLibraryActions: () => ({ add: mocks.add, refresh: vi.fn() }),
-}));
-vi.mock("@/lib/collections", () => ({
+mock.module("@/lib/collections", () => ({
   useLibrary: () => ({
     data: mocks.pending ? undefined : mocks.data,
     isPending: mocks.pending,
   }),
   useInstances: () => ({ data: { instances: [{ id: "a", name: "A" }] } }),
 }));
-vi.mock("@/components/use-library-view", () => ({
+mock.module("@/components/use-library-view", () => ({
   useLibraryView: () => ({
     filtered: mocks.data.items,
     totalCount: mocks.data.items.length,
@@ -39,10 +47,11 @@ vi.mock("@/components/use-library-view", () => ({
     isReady: mocks.ready,
   }),
 }));
-vi.mock("@/components/media-card", () => ({
+mock.module("@/components/media-card", () => ({
   MediaCard: () => <div>Grid result</div>,
   MediaList: () => <div>List results</div>,
 }));
+const { LibraryBrowser } = await import("@/components/library-browser");
 
 const saved = {
   instanceFilter: "a",
@@ -55,15 +64,16 @@ const saved = {
 };
 beforeEach(() => {
   sessionStorage.clear();
-  vi.clearAllMocks();
-  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  mock.clearAllMocks();
+  spyOn(window, "scrollTo").mockImplementation(() => {});
   mocks.pending = false;
   mocks.ready = true;
   mocks.data.items = [];
 });
 afterEach(() => {
   cleanup();
-  vi.restoreAllMocks();
+  mock.restore();
+  window.scrollY = 0;
 });
 
 describe("LibraryBrowser", () => {
@@ -120,7 +130,7 @@ describe("LibraryBrowser", () => {
       }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Sort descending" }));
-    vi.spyOn(window, "scrollY", "get").mockReturnValue(900);
+    window.scrollY = 900;
     fireEvent.scroll(window);
     view.rerender(<LibraryBrowser category="shows" />);
     expect(
@@ -186,10 +196,10 @@ describe("LibraryBrowser", () => {
   });
 
   it("works when session storage is unavailable", () => {
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+    spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("Blocked");
     });
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("Blocked");
     });
     render(<LibraryBrowser category="movies" />);

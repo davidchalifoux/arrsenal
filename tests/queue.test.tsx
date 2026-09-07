@@ -1,4 +1,13 @@
 import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  type Mock,
+  mock,
+} from "bun:test";
+import {
   act,
   cleanup,
   fireEvent,
@@ -7,15 +16,16 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DownloadQueue } from "@/components/queue";
-import { api } from "@/lib/client";
+
 import type { ActionResponse, QueueItem, QueueResponse } from "@/lib/types";
 
-vi.mock("@/lib/client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/client")>()),
-  api: vi.fn(),
+const originalClient = { ...(await import("@/lib/client")) };
+mock.module("@/lib/client", () => ({
+  ...originalClient,
+  api: mock(),
 }));
+const { DownloadQueue } = await import("@/components/queue");
+const { api } = await import("@/lib/client");
 
 const download: QueueItem = {
   id: -42,
@@ -38,7 +48,11 @@ function queue(items: QueueItem[] = [download]): QueueResponse {
   return { items, errors: [] };
 }
 
-beforeEach(() => vi.mocked(api).mockReset());
+beforeEach(() =>
+  (
+    api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+  ).mockReset(),
+);
 afterEach(cleanup);
 
 describe("DownloadQueue", () => {
@@ -47,8 +61,8 @@ describe("DownloadQueue", () => {
       <DownloadQueue
         data={queue()}
         loading={false}
-        onRefresh={vi.fn()}
-        notify={vi.fn()}
+        onRefresh={mock()}
+        notify={mock()}
       />,
     );
     expect(
@@ -95,8 +109,8 @@ describe("DownloadQueue", () => {
       <DownloadQueue
         data={queue([{ ...download, ...fields }])}
         loading={false}
-        onRefresh={vi.fn()}
-        notify={vi.fn()}
+        onRefresh={mock()}
+        notify={mock()}
       />,
     );
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe(
@@ -117,8 +131,8 @@ describe("DownloadQueue", () => {
       <DownloadQueue
         data={queue([download, completed])}
         loading={false}
-        onRefresh={vi.fn()}
-        notify={vi.fn()}
+        onRefresh={mock()}
+        notify={mock()}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Warnings" }));
@@ -141,7 +155,7 @@ describe("DownloadQueue", () => {
   });
 
   it("distinguishes loading, missing responses, all-service failure, and a truly empty queue", () => {
-    const props = { onRefresh: vi.fn(), notify: vi.fn() };
+    const props = { onRefresh: mock(), notify: mock() };
     const { rerender } = render(
       <DownloadQueue {...props} data={undefined} loading />,
     );
@@ -184,7 +198,7 @@ describe("DownloadQueue", () => {
       mediaTitle: "Dune",
       kind: "movie" as const,
     };
-    const props = { onRefresh: vi.fn(), notify: vi.fn(), loading: false };
+    const props = { onRefresh: mock(), notify: mock(), loading: false };
     const { rerender } = render(
       <DownloadQueue {...props} data={queue([download, other])} />,
     );
@@ -215,8 +229,8 @@ describe("DownloadQueue", () => {
           },
         ])}
         loading={false}
-        onRefresh={vi.fn()}
-        notify={vi.fn()}
+        onRefresh={mock()}
+        notify={mock()}
       />,
     );
     const poster = container.querySelector("img");
@@ -242,8 +256,8 @@ describe("DownloadQueue", () => {
           ],
         }}
         loading={false}
-        onRefresh={vi.fn()}
-        notify={vi.fn()}
+        onRefresh={mock()}
+        notify={mock()}
       />,
     );
     expect(
@@ -254,9 +268,11 @@ describe("DownloadQueue", () => {
 
   it("confirms real removal, sends both boolean flags, and blocks duplicate submissions", async () => {
     const pending = Promise.withResolvers<ActionResponse>();
-    vi.mocked(api).mockReturnValue(pending.promise);
-    const onRefresh = vi.fn();
-    const notify = vi.fn();
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockReturnValue(pending.promise);
+    const onRefresh = mock();
+    const notify = mock();
     render(
       <DownloadQueue
         data={queue()}
@@ -288,7 +304,9 @@ describe("DownloadQueue", () => {
     fireEvent.click(remove);
     fireEvent.click(remove);
     expect(api).toHaveBeenCalledTimes(1);
-    const [path, init] = vi.mocked(api).mock.calls[0];
+    const [path, init] = (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mock.calls[0];
     expect(path).toBe("/api/queue");
     expect(init?.method).toBe("DELETE");
     expect(JSON.parse(String(init?.body))).toEqual({
@@ -310,7 +328,9 @@ describe("DownloadQueue", () => {
   });
 
   it("treats success:false as failure, preserves the confirmation, and refreshes after uncertainty", async () => {
-    vi.mocked(api).mockResolvedValue({
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockResolvedValue({
       success: false,
       message: "Removal was not confirmed.",
       errors: [
@@ -321,8 +341,8 @@ describe("DownloadQueue", () => {
         },
       ],
     });
-    const onRefresh = vi.fn();
-    const notify = vi.fn();
+    const onRefresh = mock();
+    const notify = mock();
     render(
       <DownloadQueue
         data={queue()}
@@ -391,8 +411,8 @@ describe("DownloadQueue", () => {
       <DownloadQueue
         data={queue(entries)}
         loading={false}
-        onRefresh={vi.fn()}
-        notify={vi.fn()}
+        onRefresh={mock()}
+        notify={mock()}
       />,
     );
     expect(
@@ -416,13 +436,15 @@ describe("DownloadQueue", () => {
       status,
       downloadId: status === "delay" ? undefined : "download-one",
     };
-    vi.mocked(api).mockResolvedValue({
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockResolvedValue({
       success: true,
       message:
         "Queue action accepted. Import may still need manual intervention.",
     });
-    const onRefresh = vi.fn();
-    const notify = vi.fn();
+    const onRefresh = mock();
+    const notify = mock();
     render(
       <DownloadQueue
         data={queue([item])}
@@ -447,7 +469,7 @@ describe("DownloadQueue", () => {
   });
 
   it("blocks stale removal when the queue item disappears", async () => {
-    const props = { onRefresh: vi.fn(), notify: vi.fn(), loading: false };
+    const props = { onRefresh: mock(), notify: mock(), loading: false };
     const { rerender } = render(<DownloadQueue {...props} data={queue()} />);
     fireEvent.click(
       screen.getByRole("button", { name: "Remove Severance from queue" }),

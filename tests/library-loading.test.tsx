@@ -1,3 +1,14 @@
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+  type Mock,
+  mock,
+  spyOn,
+} from "bun:test";
 import { css } from "@styled-system/css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -11,15 +22,11 @@ import {
 import type { ImageProps } from "next/image";
 import { type PropsWithChildren, useEffect } from "react";
 import { renderToString } from "react-dom/server";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import LibraryError from "@/app/(library)/error";
-import { LibraryLoading } from "@/components/library-loading";
-import { api } from "@/lib/client";
-import { getCollections } from "@/lib/collections";
 import type { InstanceSummary, MediaItem, QueueItem } from "@/lib/types";
+import { advanceTime } from "./timers";
 
-vi.mock("@/lib/client", () => ({ api: vi.fn() }));
-vi.mock("next/image", () => ({
+mock.module("@/lib/client", () => ({ api: mock() }));
+mock.module("next/image", () => ({
   // Whitelist DOM props so Next-only options such as preload never leak.
   default: ({
     src,
@@ -42,6 +49,10 @@ vi.mock("next/image", () => ({
     />
   ),
 }));
+const { default: LibraryError } = await import("@/app/(library)/error");
+const { LibraryLoading } = await import("@/components/library-loading");
+const { api } = await import("@/lib/client");
+const { getCollections } = await import("@/lib/collections");
 
 const names = ["library", "instances", "queue"] as const;
 const movie: MediaItem = {
@@ -94,7 +105,9 @@ function setup(empty = false) {
     instances: Promise.withResolvers<typeof responses.instances>(),
     queue: Promise.withResolvers<typeof responses.queue>(),
   };
-  vi.mocked(api).mockImplementation((path) => {
+  (
+    api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+  ).mockImplementation((path) => {
     const name = names.find((name) => path === `/api/${name}`);
     if (!name) throw new Error(`Unexpected request: ${path}`);
     return requests[name].promise;
@@ -124,7 +137,9 @@ function expectBlocked(child: HTMLElement, blocked: boolean) {
 }
 
 beforeEach(() => {
-  vi.mocked(api).mockReset();
+  (
+    api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+  ).mockReset();
 });
 
 afterEach(async () => {
@@ -138,16 +153,15 @@ afterEach(async () => {
     await client.cancelQueries();
     client.clear();
   }
-  vi.clearAllTimers();
-  vi.useRealTimers();
-  vi.restoreAllMocks();
+  jest.useRealTimers();
+  mock.restore();
 });
 
 describe("LibraryLoading", () => {
   it("mounts hidden, inert children while all three requests start in parallel and exposes the logo and status", async () => {
     const { client, Wrapper, resolve } = setup();
-    const mounted = vi.fn();
-    const unmounted = vi.fn();
+    const mounted = mock();
+    const unmounted = mock();
     function Child() {
       useEffect(() => {
         mounted();
@@ -175,9 +189,10 @@ describe("LibraryLoading", () => {
     ).toBe(true);
     await waitFor(() => expect(api).toHaveBeenCalledTimes(3));
     expect(
-      vi
-        .mocked(api)
-        .mock.calls.map(([path]) => path)
+      (
+        api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+      ).mock.calls
+        .map(([path]) => path)
         .sort(),
     ).toEqual(names.map((name) => `/api/${name}`).sort());
     for (const name of names) {
@@ -194,9 +209,9 @@ describe("LibraryLoading", () => {
     expect(unmounted).not.toHaveBeenCalled();
   });
 
-  it.each(
-    names,
-  )("waits for %s when it is the final successful query", async (last) => {
+  it.each([
+    ...names,
+  ])("waits for %s when it is the final successful query", async (last) => {
     const { Wrapper, resolve } = setup();
     render(<div>Route content</div>, { wrapper: Wrapper });
     for (const name of names.filter((name) => name !== last)) {
@@ -217,10 +232,10 @@ describe("LibraryLoading", () => {
     expectBlocked(screen.getByText("Empty library"), false);
   });
 
-  it.each(
-    names,
-  )("dismisses on a terminal %s error while the other queries remain pending", async (failed) => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
+  it.each([
+    ...names,
+  ])("dismisses on a terminal %s error while the other queries remain pending", async (failed) => {
+    spyOn(console, "error").mockImplementation(() => {});
     const { client, requests, Wrapper } = setup();
     render(<div>Route content</div>, { wrapper: Wrapper });
     await waitFor(() => expect(api).toHaveBeenCalledTimes(3));
@@ -248,7 +263,9 @@ describe("LibraryLoading", () => {
     for (const name of names) await resolve(name);
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
     const refresh = Promise.withResolvers<typeof responses.library>();
-    vi.mocked(api).mockReturnValue(refresh.promise);
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockReturnValue(refresh.promise);
     let invalidating: Promise<void> | undefined;
     act(() => {
       invalidating = client.invalidateQueries({ queryKey: ["library"] });
@@ -269,17 +286,17 @@ describe("LibraryLoading", () => {
   });
 
   it("offers Check connections at five seconds and dismisses on its settings link", async () => {
-    vi.useFakeTimers();
+    jest.useFakeTimers();
     const { client, Wrapper } = setup();
     render(<div>Route content</div>, { wrapper: Wrapper });
-    await act(() => vi.advanceTimersByTimeAsync(4999));
+    await act(() => advanceTime(4999));
     expect(
       screen.queryByRole("link", { name: "Check connections" }),
     ).toBeNull();
     expect(screen.getByRole("status").textContent).toBe(
       "Loading your library...",
     );
-    await act(() => vi.advanceTimersByTimeAsync(1));
+    await act(() => advanceTime(1));
     expect(screen.getByRole("status").textContent).toContain(
       "Still connecting",
     );
@@ -292,7 +309,7 @@ describe("LibraryLoading", () => {
     expectBlocked(screen.getByText("Route content"), false);
     for (const name of names)
       expect(client.getQueryState([name])?.status).toBe("pending");
-    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await act(() => advanceTime(5000));
     expect(
       screen.queryByRole("link", { name: "Check connections" }),
     ).toBeNull();
@@ -317,7 +334,7 @@ describe("LibraryLoading", () => {
     expect(api).not.toHaveBeenCalled();
     for (const collection of Object.values(getCollections(client)))
       expect(collection.status).toBe("idle");
-    const onRecoverableError = vi.fn();
+    const onRecoverableError = mock();
     const view = render(content, {
       container,
       hydrate: true,
@@ -333,7 +350,7 @@ describe("LibraryLoading", () => {
 
   it("lets the real library route error dismiss through context with queries still pending", async () => {
     const { client, Wrapper } = setup();
-    const reset = vi.fn();
+    const reset = mock();
     const view = render(<div>Pending route</div>, { wrapper: Wrapper });
     expect(screen.getByRole("status")).toBeTruthy();
     view.rerender(<LibraryError reset={reset} />);

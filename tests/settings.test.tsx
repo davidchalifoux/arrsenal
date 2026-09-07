@@ -1,4 +1,13 @@
 import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  type Mock,
+  mock,
+} from "bun:test";
+import {
   act,
   cleanup,
   fireEvent,
@@ -7,12 +16,13 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Settings } from "@/components/settings";
-import { api } from "@/lib/client";
+
 import type { ActionResponse, InstanceSummary } from "@/lib/types";
 
-vi.mock("@/lib/client", () => ({ api: vi.fn() }));
+const originalClient = { ...(await import("@/lib/client")) };
+mock.module("@/lib/client", () => ({ ...originalClient, api: mock() }));
+const { Settings } = await import("@/components/settings");
+const { api } = await import("@/lib/client");
 
 const instance: InstanceSummary = {
   id: "sonarr-hd",
@@ -36,14 +46,23 @@ function fillForm(url = "http://localhost:8989") {
   });
 }
 
-beforeEach(() => vi.mocked(api).mockReset());
+beforeEach(() =>
+  (
+    api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+  ).mockReset(),
+);
 afterEach(cleanup);
 
 describe("Settings", () => {
   it("prefills edits, tests with the saved key, and updates the same instance", async () => {
-    const onChanged = vi.fn();
-    const notify = vi.fn();
-    vi.mocked(api).mockResolvedValueOnce({ success: true, version: "4.0.1" });
+    const onChanged = mock();
+    const notify = mock();
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockResolvedValueOnce({
+      success: true,
+      version: "4.0.1",
+    });
     render(
       <Settings instances={[instance]} onChanged={onChanged} notify={notify} />,
     );
@@ -70,7 +89,17 @@ describe("Settings", () => {
       "/api/instances/sonarr-hd/test",
       expect.objectContaining({ method: "POST" }),
     );
-    expect(JSON.parse(String(vi.mocked(api).mock.calls[0][1]?.body))).toEqual({
+    expect(
+      JSON.parse(
+        String(
+          (
+            api as Mock<
+              (...args: Parameters<typeof api>) => ReturnType<typeof api>
+            >
+          ).mock.calls[0][1]?.body,
+        ),
+      ),
+    ).toEqual({
       kind: "sonarr",
       name: "Renamed Sonarr",
       url: instance.url,
@@ -78,7 +107,9 @@ describe("Settings", () => {
     expect(onChanged).not.toHaveBeenCalled();
 
     const pending = Promise.withResolvers<{ instance: InstanceSummary }>();
-    vi.mocked(api).mockReturnValueOnce(pending.promise);
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockReturnValueOnce(pending.promise);
     const form = dialog.querySelector("form");
     if (!form) throw new Error("Edit form missing");
     fireEvent.submit(form);
@@ -106,14 +137,12 @@ describe("Settings", () => {
   });
 
   it("retains failed edits for retry and discards replacement credentials on close", async () => {
-    vi.mocked(api).mockRejectedValueOnce(new Error("Connection failed."));
-    const onChanged = vi.fn();
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockRejectedValueOnce(new Error("Connection failed."));
+    const onChanged = mock();
     render(
-      <Settings
-        instances={[instance]}
-        onChanged={onChanged}
-        notify={vi.fn()}
-      />,
+      <Settings instances={[instance]} onChanged={onChanged} notify={mock()} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Edit Sonarr HD" }));
     await screen.findByRole("dialog");
@@ -127,7 +156,17 @@ describe("Settings", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Connection failed.",
     );
-    expect(JSON.parse(String(vi.mocked(api).mock.calls[0][1]?.body))).toEqual({
+    expect(
+      JSON.parse(
+        String(
+          (
+            api as Mock<
+              (...args: Parameters<typeof api>) => ReturnType<typeof api>
+            >
+          ).mock.calls[0][1]?.body,
+        ),
+      ),
+    ).toEqual({
       kind: "sonarr",
       name: instance.name,
       url: "http://localhost:9999",
@@ -150,7 +189,7 @@ describe("Settings", () => {
   });
 
   it("shows an honest empty state and validates required fields before a request", async () => {
-    render(<Settings instances={[]} onChanged={vi.fn()} notify={vi.fn()} />);
+    render(<Settings instances={[]} onChanged={mock()} notify={mock()} />);
     expect(screen.getByText("Bring your library together")).toBeTruthy();
     expect(screen.queryByText("Connected")).toBeNull();
     fireEvent.click(
@@ -172,7 +211,7 @@ describe("Settings", () => {
     "http://localhost:8989\\sonarr",
   ])("rejects the invalid instance URL %s without throwing or contacting the server", async (url) => {
     render(
-      <Settings instances={[]} onChanged={vi.fn()} notify={vi.fn()} autoOpen />,
+      <Settings instances={[]} onChanged={mock()} notify={mock()} autoOpen />,
     );
     await screen.findByRole("dialog");
     fillForm(url);
@@ -182,17 +221,19 @@ describe("Settings", () => {
   });
 
   it("tests without saving and clears the verified result when any field changes", async () => {
-    vi.mocked(api).mockResolvedValue({
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockResolvedValue({
       success: true,
       version: "4.0.1",
       message: "Connection successful.",
     });
-    const onChanged = vi.fn();
+    const onChanged = mock();
     render(
       <Settings
         instances={[]}
         onChanged={onChanged}
-        notify={vi.fn()}
+        notify={mock()}
         autoOpen
       />,
     );
@@ -200,7 +241,9 @@ describe("Settings", () => {
     fillForm("http://host.docker.internal:8989/sonarr");
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await screen.findByText(/Connection verified.*Not saved yet/);
-    const [path, init] = vi.mocked(api).mock.calls[0];
+    const [path, init] = (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mock.calls[0];
     expect(path).toBe("/api/instances/test");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(String(init?.body))).toEqual({
@@ -220,16 +263,20 @@ describe("Settings", () => {
     const pending = Promise.withResolvers<
       ActionResponse & { version: string }
     >();
-    vi.mocked(api).mockReturnValue(pending.promise);
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockReturnValue(pending.promise);
     render(
-      <Settings instances={[]} onChanged={vi.fn()} notify={vi.fn()} autoOpen />,
+      <Settings instances={[]} onChanged={mock()} notify={mock()} autoOpen />,
     );
     await screen.findByRole("dialog");
     fillForm();
     fireEvent.click(screen.getByRole("button", { name: "Show API key" }));
     expect(screen.getByLabelText("API key").getAttribute("type")).toBe("text");
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    const signal = vi.mocked(api).mock.calls[0][1]?.signal;
+    const signal = (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mock.calls[0][1]?.signal;
     fireEvent.change(screen.getByLabelText("API key"), {
       target: { value: "new-secret" },
     });
@@ -250,9 +297,11 @@ describe("Settings", () => {
 
   it("saves once, prevents dismissal while saving, and refreshes connections on success", async () => {
     const pending = Promise.withResolvers<{ instance: InstanceSummary }>();
-    vi.mocked(api).mockReturnValue(pending.promise);
-    const onChanged = vi.fn();
-    const notify = vi.fn();
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockReturnValue(pending.promise);
+    const onChanged = mock();
+    const notify = mock();
     render(
       <Settings
         instances={[]}
@@ -268,7 +317,10 @@ describe("Settings", () => {
     fireEvent.submit(form);
     fireEvent.submit(form);
     expect(api).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(api).mock.calls[0][0]).toBe("/api/instances");
+    expect(
+      (api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>)
+        .mock.calls[0][0],
+    ).toBe("/api/instances");
     fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
     expect(screen.getByRole("dialog")).toBeTruthy();
     await act(async () => pending.resolve({ instance }));
@@ -283,11 +335,13 @@ describe("Settings", () => {
   });
 
   it("surfaces save failures and allows a retry", async () => {
-    vi.mocked(api).mockRejectedValueOnce(
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockRejectedValueOnce(
       new Error("An instance with this URL already exists."),
     );
-    const notify = vi.fn();
-    const onChanged = vi.fn();
+    const notify = mock();
+    const onChanged = mock();
     render(
       <Settings
         instances={[]}
@@ -315,12 +369,14 @@ describe("Settings", () => {
   });
 
   it("switches instance type through the shared select and sends the selected kind", async () => {
-    vi.mocked(api).mockResolvedValue({
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockResolvedValue({
       success: true,
       message: "Connection successful.",
     });
     render(
-      <Settings instances={[]} onChanged={vi.fn()} notify={vi.fn()} autoOpen />,
+      <Settings instances={[]} onChanged={mock()} notify={mock()} autoOpen />,
     );
     await screen.findByRole("dialog");
     fireEvent.click(screen.getByRole("combobox", { name: "Instance type" }));
@@ -332,19 +388,29 @@ describe("Settings", () => {
     fillForm("http://localhost:7878");
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await screen.findByText(/Connection verified/);
-    expect(JSON.parse(String(vi.mocked(api).mock.calls[0][1]?.body)).kind).toBe(
-      "radarr",
-    );
+    expect(
+      JSON.parse(
+        String(
+          (
+            api as Mock<
+              (...args: Parameters<typeof api>) => ReturnType<typeof api>
+            >
+          ).mock.calls[0][1]?.body,
+        ),
+      ).kind,
+    ).toBe("radarr");
     expect(screen.getByText(/Find it in Radarr/)).toBeTruthy();
   });
 
   it("does not treat a negative connection-test result as verified", async () => {
-    vi.mocked(api).mockResolvedValue({
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockResolvedValue({
       success: false,
       message: "This is Radarr, not Sonarr.",
     });
     render(
-      <Settings instances={[]} onChanged={vi.fn()} notify={vi.fn()} autoOpen />,
+      <Settings instances={[]} onChanged={mock()} notify={mock()} autoOpen />,
     );
     await screen.findByRole("dialog");
     fillForm();
@@ -356,8 +422,8 @@ describe("Settings", () => {
   });
 
   it("handles each auto-open request once, even when the parent callback changes", async () => {
-    const onAutoOpened = vi.fn();
-    const props = { instances: [], onChanged: vi.fn(), notify: vi.fn() };
+    const onAutoOpened = mock();
+    const props = { instances: [], onChanged: mock(), notify: mock() };
     const { rerender } = render(
       <Settings {...props} autoOpen onAutoOpened={onAutoOpened} />,
     );
@@ -379,12 +445,14 @@ describe("Settings", () => {
   });
 
   it("refreshes saved-key status through the parent and confirms local-only disconnection", async () => {
-    vi.mocked(api).mockResolvedValue({
+    (
+      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
+    ).mockResolvedValue({
       success: true,
       message: "Instance disconnected. No remote media or files were deleted.",
     });
-    const onChanged = vi.fn();
-    const notify = vi.fn();
+    const onChanged = mock();
+    const notify = mock();
     render(
       <Settings
         instances={[

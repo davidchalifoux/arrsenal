@@ -1,4 +1,13 @@
 import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from "bun:test";
+import {
   act,
   cleanup,
   fireEvent,
@@ -8,43 +17,45 @@ import {
   within,
 } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import ConnectionsPage, {
-  metadata as connectionsMetadata,
-} from "@/app/(library)/settings/connections/page";
-import SettingsLayout from "@/app/(library)/settings/layout";
-import SettingsPage, { metadata } from "@/app/(library)/settings/page";
-import PersonalizationPage, {
-  metadata as personalizationMetadata,
-} from "@/app/(library)/settings/personalization/page";
-import ErrorPage from "@/app/error";
 
-const state = vi.hoisted(() => ({
+const state = {
   pathname: "/settings",
-  replace: vi.fn(),
-  sync: vi.fn(),
-  notify: vi.fn(),
+  replace: mock(),
+  sync: mock(),
+  notify: mock(),
   pending: false,
-}));
+};
 
-vi.mock("next/navigation", () => ({
+mock.module("next/navigation", () => ({
   usePathname: () => state.pathname,
   useRouter: () => ({ replace: state.replace }),
   redirect: (url: string) => {
     throw new Error(`REDIRECT:${url}`);
   },
 }));
-vi.mock("@/lib/collections", () => ({
+mock.module("@/lib/collections", () => ({
   useInstances: () => ({ isPending: state.pending, data: { instances: [] } }),
   useSyncData: () => state.sync,
 }));
-vi.mock("@/components/library-provider", () => ({
+mock.module("@/components/library-provider", () => ({
   useLibraryActions: () => ({ notify: state.notify }),
 }));
+const { default: ConnectionsPage, metadata: connectionsMetadata } =
+  await import("@/app/(library)/settings/connections/page");
+const { default: SettingsLayout } = await import(
+  "@/app/(library)/settings/layout"
+);
+const { default: SettingsPage, metadata } = await import(
+  "@/app/(library)/settings/page"
+);
+const { default: PersonalizationPage, metadata: personalizationMetadata } =
+  await import("@/app/(library)/settings/personalization/page");
+const { default: ErrorPage } = await import("@/app/error");
 
 let client: QueryClient;
 let savedZone: string | null;
-const fetchMock = vi.fn<typeof fetch>();
+const fetchMock =
+  mock<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>();
 function render(view: ReactElement) {
   return renderView(view, {
     wrapper: ({ children }) => (
@@ -70,15 +81,17 @@ beforeEach(() => {
     }
     return Response.json({ timeZone: savedZone });
   });
-  vi.stubGlobal("fetch", fetchMock);
+  spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(fetchMock, { preconnect: fetch.preconnect }),
+  );
   state.pathname = "/settings";
   state.pending = false;
-  vi.clearAllMocks();
+  mock.clearAllMocks();
 });
 afterEach(() => {
   cleanup();
   client.clear();
-  vi.unstubAllGlobals();
+  mock.restore();
 });
 
 describe("Settings routes and navigation", () => {
@@ -222,11 +235,9 @@ describe("Settings routes and navigation", () => {
     ).rejects.toThrow("REDIRECT:/settings/connections?connect=1");
   });
 
-  it.each([
-    undefined,
-    "0",
-    ["1", "0"],
-  ])("does not auto-open for connect=%s", async (connect) => {
+  it.each(
+    [undefined, "0", ["1", "0"]].map((connect) => ({ connect })),
+  )("does not auto-open for connect=%s", async ({ connect }) => {
     await expect(
       SettingsPage({ searchParams: Promise.resolve({ connect }) }),
     ).rejects.toThrow("REDIRECT:/settings/connections");
@@ -284,10 +295,10 @@ describe("Settings routes and navigation", () => {
     expect(
       await screen.findByRole("dialog", { name: "Connect an instance" }),
     ).toBeTruthy();
-    expect(state.replace).toHaveBeenCalledExactlyOnceWith(
-      "/settings/connections",
-      { scroll: false },
-    );
+    expect(state.replace).toHaveBeenCalledTimes(1);
+    expect(state.replace).toHaveBeenCalledWith("/settings/connections", {
+      scroll: false,
+    });
     view.rerender(await ConnectionsPage({ searchParams: Promise.resolve({}) }));
     expect(
       screen.getByRole("dialog", { name: "Connect an instance" }),
@@ -297,7 +308,7 @@ describe("Settings routes and navigation", () => {
   });
 
   it("links error recovery directly to Connections", () => {
-    render(<ErrorPage reset={vi.fn()} />);
+    render(<ErrorPage reset={mock()} />);
     expect(
       screen.getByRole("link", { name: "Connections" }).getAttribute("href"),
     ).toBe("/settings/connections");

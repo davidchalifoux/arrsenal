@@ -1,5 +1,4 @@
-// @vitest-environment node
-
+import { expect, jest, mock, onTestFinished, spyOn, test } from "bun:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { once } from "node:events";
@@ -17,9 +16,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { expect, test, vi } from "vitest";
+import { advanceTime } from "./timers";
 
-vi.mock("server-only", () => ({}));
+mock.module("server-only", () => ({}));
 
 const instancesRoute = await import("../src/app/api/instances/route.ts");
 const testRoute = await import("../src/app/api/instances/test/route.ts");
@@ -103,11 +102,11 @@ function request(path, method = "GET", body, headers = {}) {
   });
 }
 
-async function setup(t, definitions = {}) {
+async function setup(definitions = {}) {
   const directory = await mkdtemp(join(tmpdir(), "arrsenal-backend-"));
   const previous = process.env.ARRSENAL_CONFIG_DIR;
   process.env.ARRSENAL_CONFIG_DIR = directory;
-  t.onTestFinished(async () => {
+  onTestFinished(async () => {
     if (previous === undefined) delete process.env.ARRSENAL_CONFIG_DIR;
     else process.env.ARRSENAL_CONFIG_DIR = previous;
     await rm(directory, { recursive: true, force: true });
@@ -262,7 +261,7 @@ async function setup(t, definitions = {}) {
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
-  t.onTestFinished(async () => {
+  onTestFinished(async () => {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
   });
@@ -285,7 +284,7 @@ async function setup(t, definitions = {}) {
   return { directory, nodes, calls, base, input, connect };
 }
 
-test("episode reads preserve per-instance identities, exact download matches, seasons, and partial file failures", async (t) => {
+test("episode reads preserve per-instance identities, exact download matches, seasons, and partial file failures", async () => {
   const episode = {
     id: 101,
     seriesId: 22,
@@ -296,7 +295,7 @@ test("episode reads preserve per-instance identities, exact download matches, se
     hasFile: false,
     airDateUtc: "2024-01-01T00:00:00Z",
   };
-  const env = await setup(t, {
+  const env = await setup({
     hd: {
       kind: "sonarr",
       media: [series],
@@ -368,8 +367,8 @@ test("episode reads preserve per-instance identities, exact download matches, se
   expect((await read(hd.id, 22)).status).toBe(502);
 });
 
-test("episode searches and releases use local episode IDs and reject wrong-series or movie scopes", async (t) => {
-  const env = await setup(t, {
+test("episode searches and releases use local episode IDs and reject wrong-series or movie scopes", async () => {
+  const env = await setup({
     sonarr: { kind: "sonarr", episodes: [{ id: 901, seriesId: 44 }] },
     radarr: {},
   });
@@ -446,8 +445,8 @@ test("episode searches and releases use local episode IDs and reject wrong-serie
   ).toHaveLength(actions);
 });
 
-test("unconfigured reads return empty collections without network access or persistence", async (t) => {
-  const { directory, calls } = await setup(t);
+test("unconfigured reads return empty collections without network access or persistence", async () => {
+  const { directory, calls } = await setup();
   for (const response of [
     await libraryRoute.GET(),
     await queueRoute.GET(),
@@ -468,8 +467,8 @@ for (const [name, handler] of [
   ["library", libraryRoute.GET],
   ["queue", queueRoute.GET],
 ]) {
-  test(`${name} distinguishes successful empty reads, total primary failures, partial success, and recovery`, async (t) => {
-    const env = await setup(t, { hd: {}, sonarr: { kind: "sonarr" } });
+  test(`${name} distinguishes successful empty reads, total primary failures, partial success, and recovery`, async () => {
+    const env = await setup({ hd: {}, sonarr: { kind: "sonarr" } });
     await env.connect("hd");
     const read = async (status) => {
       const response = await handler();
@@ -516,8 +515,8 @@ for (const [name, handler] of [
   });
 }
 
-test("library primary success remains successful with only auxiliary warnings", async (t) => {
-  const env = await setup(t, { sonarr: { kind: "sonarr" } });
+test("library primary success remains successful with only auxiliary warnings", async () => {
+  const env = await setup({ sonarr: { kind: "sonarr" } });
   await env.connect("sonarr");
   env.nodes.sonarr.fail = ["qualityprofile", "queue", "episodefile"];
   for (const media of [[], [series]]) {
@@ -543,8 +542,8 @@ test("library primary success remains successful with only auxiliary warnings", 
   }
 });
 
-test("lookup retains per-instance errors when all primary reads fail", async (t) => {
-  const env = await setup(t, { hd: {} });
+test("lookup retains per-instance errors when all primary reads fail", async () => {
+  const env = await setup({ hd: {} });
   const instance = await env.connect("hd");
   env.nodes.hd.fail = ["movie/lookup"];
   const response = await lookupRoute.GET(
@@ -563,8 +562,8 @@ test("lookup retains per-instance errors when all primary reads fail", async (t)
   });
 });
 
-test("unknown instances return 404 without upstream actions", async (t) => {
-  const { calls } = await setup(t);
+test("unknown instances return 404 without upstream actions", async () => {
+  const { calls } = await setup();
   const id = "unknown-instance";
   const responses = await Promise.all([
     episodesRoute.GET(request(`/api/episodes?instanceId=${id}&remoteId=22`)),
@@ -602,8 +601,8 @@ test("unknown instances return 404 without upstream actions", async (t) => {
   assert.equal(calls.length, 0);
 });
 
-test("mutations enforce Origin, fetch metadata, JSON types, and body limits before network access", async (t) => {
-  const env = await setup(t, { radarr: {} });
+test("mutations enforce Origin, fetch metadata, JSON types, and body limits before network access", async () => {
+  const env = await setup({ radarr: {} });
   const input = env.input("radarr");
   for (const headers of [
     { Origin: "https://evil.example" },
@@ -671,8 +670,8 @@ test("mutations enforce Origin, fetch metadata, JSON types, and body limits befo
   );
 });
 
-test("standalone origin checks use the addressed Host, not the internal bind address or forwarded host", async (t) => {
-  const env = await setup(t, { radarr: {} });
+test("standalone origin checks use the addressed Host, not the internal bind address or forwarded host", async () => {
+  const env = await setup({ radarr: {} });
   for (const [url, host, origin] of [
     [
       "http://0.0.0.0:3000/api/instances/test",
@@ -727,11 +726,11 @@ test("standalone origin checks use the addressed Host, not the internal bind add
   expect(env.calls).toHaveLength(calls);
 });
 
-test("request body deadlines reject stalled JSON and cancel the reader", async (t) => {
-  vi.useFakeTimers();
-  t.onTestFinished(() => vi.useRealTimers());
+test("request body deadlines reject stalled JSON and cancel the reader", async () => {
+  jest.useFakeTimers();
+  onTestFinished(() => jest.useRealTimers());
   let controller;
-  const cancel = vi.fn();
+  const cancel = mock();
   const stream = new ReadableStream({
     start(value) {
       controller = value;
@@ -739,7 +738,7 @@ test("request body deadlines reject stalled JSON and cancel the reader", async (
     },
     cancel,
   });
-  t.onTestFinished(() => {
+  onTestFinished(() => {
     if (!cancel.mock.calls.length) controller.close();
   });
   const pending = testRoute.POST(
@@ -754,14 +753,14 @@ test("request body deadlines reject stalled JSON and cancel the reader", async (
   void pending.then((result) => {
     response = result;
   });
-  await vi.advanceTimersByTimeAsync(10000);
+  await advanceTime(10000);
   expect(response?.status).toBe(408);
   expect(await response.json()).toEqual({ error: "Request body timed out." });
-  expect(cancel).toHaveBeenCalledOnce();
+  expect(cancel).toHaveBeenCalledTimes(1);
 });
 
-test("instance validation permits private HTTP(S) and subpaths, but not URL credentials or invalid headers", async (t) => {
-  const env = await setup(t, { radarr: {}, sonarr: { kind: "sonarr" } });
+test("instance validation permits private HTTP(S) and subpaths, but not URL credentials or invalid headers", async () => {
+  const env = await setup({ radarr: {}, sonarr: { kind: "sonarr" } });
   for (const url of [
     "ftp://localhost",
     "http://user:password@localhost",
@@ -829,8 +828,8 @@ test("instance validation permits private HTTP(S) and subpaths, but not URL cred
   );
 });
 
-test("Zod instance schemas preserve string limits, normalization, and credential-safe errors", async (t) => {
-  const env = await setup(t, { radarr: {} });
+test("Zod instance schemas preserve string limits, normalization, and credential-safe errors", async () => {
+  const env = await setup({ radarr: {} });
   const input = env.input("radarr");
   const invalid = [
     { name: null },
@@ -886,8 +885,8 @@ test("Zod instance schemas preserve string limits, normalization, and credential
   );
 });
 
-test("Zod action schemas reject coercion, invalid identities, bounds, and normalized duplicate targets", async (t) => {
-  const env = await setup(t);
+test("Zod action schemas reject coercion, invalid identities, bounds, and normalized duplicate targets", async () => {
+  const env = await setup();
   const target = {
     instanceId: "unconfigured",
     qualityProfileId: 1,
@@ -1022,8 +1021,8 @@ test("Zod action schemas reject coercion, invalid identities, bounds, and normal
   }
 });
 
-test("Zod query/path schemas preserve decimal-only IDs, optional lookup defaults, and first query values", async (t) => {
-  const env = await setup(t, { radarr: {} });
+test("Zod query/path schemas preserve decimal-only IDs, optional lookup defaults, and first query values", async () => {
+  const env = await setup({ radarr: {} });
   const instance = await env.connect("radarr");
   env.calls.length = 0;
   const release = { instanceId: instance.id, remoteId: "11", kind: "movie" };
@@ -1111,8 +1110,8 @@ test("Zod query/path schemas preserve decimal-only IDs, optional lookup defaults
   assert.deepEqual(env.calls.at(-1).query, { movieId: "11" });
 });
 
-test("Zod persisted config rejects invalid schemas and normalized duplicates without overwriting or leaking keys", async (t) => {
-  const env = await setup(t, { radarr: {} });
+test("Zod persisted config rejects invalid schemas and normalized duplicates without overwriting or leaking keys", async () => {
+  const env = await setup({ radarr: {} });
   const record = { id: "saved-instance", ...env.input("radarr") };
   const document = { version: 1, instances: [record] };
   const invalid = [
@@ -1203,8 +1202,8 @@ test("Zod persisted config rejects invalid schemas and normalized duplicates wit
   assert.equal(env.calls.length, 0);
 });
 
-test("connectivity tests do not save; atomic config writes serialize and never expose keys", async (t) => {
-  const env = await setup(t, { hd: {}, uhd: {}, sonarr: { kind: "sonarr" } });
+test("connectivity tests do not save; atomic config writes serialize and never expose keys", async () => {
+  const env = await setup({ hd: {}, uhd: {}, sonarr: { kind: "sonarr" } });
   const checked = await testRoute.POST(
     request("/api/instances/test", "POST", env.input("hd")),
   );
@@ -1259,9 +1258,9 @@ test("connectivity tests do not save; atomic config writes serialize and never e
   assert.equal((await readInstances()).length, 2);
 });
 
-test("instance edits retain or replace keys, normalize changes, and preserve identity", async (t) => {
+test("instance edits retain or replace keys, normalize changes, and preserve identity", async () => {
   const replacement = "replacement-private-key";
-  const env = await setup(t, { hd: {}, sonarr: { kind: "sonarr" } });
+  const env = await setup({ hd: {}, sonarr: { kind: "sonarr" } });
   const saved = await env.connect("hd");
   const path = `/api/instances/${saved.id}`;
   const context = { params: Promise.resolve({ id: saved.id }) };
@@ -1303,9 +1302,9 @@ test("instance edits retain or replace keys, normalize changes, and preserve ide
   expect(await readdir(env.directory)).toEqual(["config.json"]);
 });
 
-test("saved-instance connection tests use retained or replacement keys without persisting drafts", async (t) => {
+test("saved-instance connection tests use retained or replacement keys without persisting drafts", async () => {
   const replacement = "draft-private-key";
-  const env = await setup(t, { hd: {}, sonarr: { kind: "sonarr" } });
+  const env = await setup({ hd: {}, sonarr: { kind: "sonarr" } });
   const saved = await env.connect("hd");
   const before = await readFile(join(env.directory, "config.json"), "utf8");
   const { apiKey: _key, ...draft } = env.input("sonarr");
@@ -1335,8 +1334,8 @@ test("saved-instance connection tests use retained or replacement keys without p
   }
 });
 
-test("instance edits reject duplicate URLs and both edit endpoints fail safely without persistence", async (t) => {
-  const env = await setup(t, { hd: {}, other: {} });
+test("instance edits reject duplicate URLs and both edit endpoints fail safely without persistence", async () => {
+  const env = await setup({ hd: {}, other: {} });
   const saved = await env.connect("hd");
   await env.connect("other");
   const configPath = join(env.directory, "config.json");
@@ -1389,8 +1388,8 @@ test("instance edits reject duplicate URLs and both edit endpoints fail safely w
   expect(await readdir(env.directory)).toEqual(["config.json"]);
 });
 
-test("edit endpoints enforce mutation guards, full fields, optional-key validation, and path validation before upstream access", async (t) => {
-  const env = await setup(t, { hd: {} });
+test("edit endpoints enforce mutation guards, full fields, optional-key validation, and path validation before upstream access", async () => {
+  const env = await setup({ hd: {} });
   const saved = await env.connect("hd");
   const before = await readFile(join(env.directory, "config.json"), "utf8");
   env.calls.length = 0;
@@ -1473,8 +1472,8 @@ test("edit endpoints enforce mutation guards, full fields, optional-key validati
   );
 });
 
-test("edits compare every saved field under lock after verification and preserve concurrent changes", async (t) => {
-  const env = await setup(t, { hd: {}, other: {} });
+test("edits compare every saved field under lock after verification and preserve concurrent changes", async () => {
+  const env = await setup({ hd: {}, other: {} });
   const saved = await env.connect("hd");
   const path = `/api/instances/${saved.id}`;
   const context = { params: Promise.resolve({ id: saved.id }) };
@@ -1525,8 +1524,8 @@ test("edits compare every saved field under lock after verification and preserve
   expect(await readdir(env.directory)).toEqual(["config.json"]);
 });
 
-test("duplicate URLs introduced during verification are rejected under the write lock", async (t) => {
-  const env = await setup(t, { hd: {}, other: {} });
+test("duplicate URLs introduced during verification are rejected under the write lock", async () => {
+  const env = await setup({ hd: {}, other: {} });
   const saved = await env.connect("hd");
   env.nodes.other.verify = async () => {
     await saveInstance(env.input("other"));
@@ -1542,21 +1541,20 @@ test("duplicate URLs introduced during verification are rejected under the write
   ]);
 });
 
-test("separate Node processes cannot lose each other's config mutations", async (t) => {
-  const env = await setup(t);
+test("separate Bun processes cannot lose each other's config mutations", async () => {
+  const env = await setup();
   const configUrl = new URL("../src/lib/server/config.ts", import.meta.url)
     .href;
   const loader = fileURLToPath(
-    new URL("./backend-process-register.mjs", import.meta.url),
+    new URL("./backend-process-preload.mjs", import.meta.url),
   );
   await Promise.all(
     Array.from({ length: 5 }, (_, index) =>
       promisify(execFile)(
         process.execPath,
         [
-          "--import",
+          "--preload",
           loader,
-          "--input-type=module",
           "-e",
           `const {saveInstance, instanceInput} = await import(${JSON.stringify(configUrl)}); await saveInstance(instanceInput({name:"Worker ${index}",kind:"radarr",url:"http://127.0.0.1:${8000 + index}",apiKey:"worker-test-secret"}));`,
         ],
@@ -1572,8 +1570,8 @@ test("separate Node processes cannot lose each other's config mutations", async 
   assert.deepEqual(await readdir(env.directory), ["config.json"]);
 });
 
-test("corrupt or symlinked config fails closed without fallback or overwrite", async (t) => {
-  const env = await setup(t, { hd: {} });
+test("corrupt or symlinked config fails closed without fallback or overwrite", async () => {
+  const env = await setup({ hd: {} });
   const path = join(env.directory, "config.json");
   await writeFile(path, "{broken", { mode: 0o600 });
   for (const handler of [libraryRoute.GET, queueRoute.GET, instancesRoute.GET])
@@ -1593,8 +1591,8 @@ test("corrupt or symlinked config fails closed without fallback or overwrite", a
   assert.equal((await libraryRoute.GET()).status, 500);
 });
 
-test("upstream redirects, slow responses, malformed JSON, and reflected credentials are safe", async (t) => {
-  const env = await setup(t, {
+test("upstream redirects, slow responses, malformed JSON, and reflected credentials are safe", async () => {
+  const env = await setup({
     redirect: { mode: "redirect" },
     slow: { mode: "slow" },
     invalid: { mode: "invalid" },
@@ -1632,8 +1630,8 @@ test("upstream redirects, slow responses, malformed JSON, and reflected credenti
   assert.equal(JSON.parse(text).items[0].poster, "");
 });
 
-test("timeouts cover bodies and mutations, oversized responses fail, and malformed media reports errors", async (t) => {
-  const env = await setup(t, {
+test("timeouts cover bodies and mutations, oversized responses fail, and malformed media reports errors", async () => {
+  const env = await setup({
     body: { mode: "slow-body" },
     oversized: { mode: "oversized" },
     invalidMedia: { media: [{}] },
@@ -1664,8 +1662,8 @@ test("timeouts cover bodies and mutations, oversized responses fail, and malform
   });
 });
 
-test("library merges by provider identity, preserves per-target quality/counts, and isolates outages", async (t) => {
-  const env = await setup(t, {
+test("library merges by provider identity, preserves per-target quality/counts, and isolates outages", async () => {
+  const env = await setup({
     hd: {
       media: [
         movie,
@@ -1766,8 +1764,8 @@ test("normalization scopes fallback identities and does not conflate movie and s
   );
 });
 
-test("live lookup merges available results, reports failed targets, and never claims trending", async (t) => {
-  const env = await setup(t, {
+test("live lookup merges available results, reports failed targets, and never claims trending", async () => {
+  const env = await setup({
     hd: { lookup: [{ ...movie, id: 0 }] },
     uhd: { lookup: [{ ...movie, id: 0 }] },
     failed: {},
@@ -1804,8 +1802,8 @@ test("live lookup merges available results, reports failed targets, and never cl
   );
 });
 
-test("options and media add resolve trusted metadata per target and report partial success", async (t) => {
-  const env = await setup(t, {
+test("options and media add resolve trusted metadata per target and report partial success", async () => {
+  const env = await setup({
     hd: { lookup: [{ ...movie, id: 0 }] },
     uhd: { lookup: [{ ...movie, id: 0 }] },
     sonarr: { kind: "sonarr", lookup: [{ ...series, id: 0 }] },
@@ -1941,8 +1939,8 @@ test("options and media add resolve trusted metadata per target and report parti
   );
 });
 
-test("automatic search and release endpoints use the correct v3 IDs and commands", async (t) => {
-  const env = await setup(t, {
+test("automatic search and release endpoints use the correct v3 IDs and commands", async () => {
+  const env = await setup({
     hd: { media: [movie] },
     sonarr: { kind: "sonarr", media: [series] },
   });
@@ -2027,7 +2025,7 @@ test("automatic search and release endpoints use the correct v3 IDs and commands
   );
 });
 
-test("queue paginates every record, preserves progress and errors, and forwards delete flags", async (t) => {
+test("queue paginates every record, preserves progress and errors, and forwards delete flags", async () => {
   const downloads = Array.from({ length: 5 }, (_, index) => ({
     id: index - 3,
     title: `Download ${index}`,
@@ -2044,7 +2042,7 @@ test("queue paginates every record, preserves progress and errors, and forwards 
       { title: "Import warning", messages: ["Waiting for files"] },
     ],
   }));
-  const env = await setup(t, {
+  const env = await setup({
     hd: { queue: downloads, pageSize: 2 },
     sonarr: {
       kind: "sonarr",
@@ -2130,8 +2128,8 @@ test("queue paginates every record, preserves progress and errors, and forwards 
   assert.equal((await (await queueRoute.GET()).json()).errors.length, 2);
 });
 
-test("queue changes, clamped pages, and duplicate records are not reported as a complete queue", async (t) => {
-  const env = await setup(t, { hd: {} });
+test("queue changes, clamped pages, and duplicate records are not reported as a complete queue", async () => {
+  const env = await setup({ hd: {} });
   await env.connect("hd");
   const page = (number, totalRecords, ids, pageSize = 2) => ({
     page: number,
@@ -2171,8 +2169,8 @@ test("queue changes, clamped pages, and duplicate records are not reported as a 
   expect(body.errors).toEqual([]);
 });
 
-test("queue retry distinguishes delayed grabs, completed import scans, and active downloads", async (t) => {
-  const env = await setup(t, {
+test("queue retry distinguishes delayed grabs, completed import scans, and active downloads", async () => {
+  const env = await setup({
     hd: {
       queue: [
         { id: -1, status: "delay" },
@@ -2262,8 +2260,8 @@ test("queue retry distinguishes delayed grabs, completed import scans, and activ
   );
 });
 
-test("cached covers take priority and missing covers fall back without forwarding credentials", async (t) => {
-  const env = await setup(t, { sonarr: { kind: "sonarr" } });
+test("cached covers take priority and missing covers fall back without forwarding credentials", async () => {
+  const env = await setup({ sonarr: { kind: "sonarr" } });
   const instance = { ...(await env.connect("sonarr")), apiKey: secret };
   const remote = "https://artworks.thetvdb.com/banners/posters/example.jpg";
   const src = mediaImage(
@@ -2290,9 +2288,8 @@ test("cached covers take priority and missing covers fall back without forwardin
   const local = await imageRoute.GET(request(src));
   expect(local.status).toBe(200);
   const bytes = await local.arrayBuffer();
-  const fetchMock = vi
-    .spyOn(globalThis, "fetch")
-    .mockImplementation((input, init) => {
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    (input, init) => {
       if (String(input) !== remote) return actualFetch(input, init);
       fallbackRequests.push(init);
       return Promise.resolve(
@@ -2303,8 +2300,9 @@ test("cached covers take priority and missing covers fall back without forwardin
           },
         }),
       );
-    });
-  t.onTestFinished(() => fetchMock.mockRestore());
+    },
+  );
+  onTestFinished(() => fetchMock.mockRestore());
   expect((await imageRoute.GET(request(src))).status).toBe(200);
   expect(fallbackRequests).toHaveLength(0);
   env.nodes.sonarr.imageStatus = 404;
@@ -2327,8 +2325,8 @@ test("cached covers take priority and missing covers fall back without forwardin
   );
 });
 
-test("invalid artwork fallbacks and local paths cannot trigger a fetch", async (t) => {
-  const env = await setup(t, { sonarr: { kind: "sonarr" } });
+test("invalid artwork fallbacks and local paths cannot trigger a fetch", async () => {
+  const env = await setup({ sonarr: { kind: "sonarr" } });
   const instance = await env.connect("sonarr");
   const before = env.calls.length;
   for (const fallback of [
@@ -2361,8 +2359,8 @@ test("invalid artwork fallbacks and local paths cannot trigger a fetch", async (
   expect(env.calls).toHaveLength(before);
 });
 
-test("absolute local remotePoster and remoteUrl covers use the authenticated image proxy", async (t) => {
-  const env = await setup(t, { sonarr: { kind: "sonarr" } });
+test("absolute local remotePoster and remoteUrl covers use the authenticated image proxy", async () => {
+  const env = await setup({ sonarr: { kind: "sonarr" } });
   const instance = { ...(await env.connect("sonarr")), apiKey: secret };
   const cover = `${instance.url}/api/v3/MediaCover/22/poster.jpg?lastWrite=123`;
   expect((await fetch(cover)).status).toBe(401);
@@ -2385,8 +2383,8 @@ test("absolute local remotePoster and remoteUrl covers use the authenticated ima
   }
 });
 
-test("image proxy is base-aware, raster-only, key-safe, and refuses external or traversing paths", async (t) => {
-  const env = await setup(t, { sonarr: { kind: "sonarr" } });
+test("image proxy is base-aware, raster-only, key-safe, and refuses external or traversing paths", async () => {
+  const env = await setup({ sonarr: { kind: "sonarr" } });
   const instance = await env.connect("sonarr");
   const config = { ...instance, apiKey: secret };
   assert.equal(

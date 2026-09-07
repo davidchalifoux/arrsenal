@@ -145,10 +145,10 @@ Unknown instance IDs return `404`; episode reads resolve only configured instanc
 
 ## Focused Verification
 
-Run `pnpm exec vitest run tests/backend.test.mjs` with Node 24 or newer. These are
-native Vitest tests, using its Node environment and a test-local `server-only`
-mock; the project's shared jsdom configuration is unchanged. A small Node loader
-is retained only for the separate-process configuration-writer regression test.
+Run `bun run test tests/backend.test.mjs` with Bun 1.4.2. These are native
+`bun:test` tests. The shared preloads provide jsdom and a `server-only` mock;
+separate-process configuration writers use Bun's native TypeScript resolution
+and preload only the `server-only` mock.
 
 The suite uses real local HTTP mock servers and isolated temporary config
 directories. It covers API contracts, JSON/Origin validation, key redaction,

@@ -1,12 +1,19 @@
-// @vitest-environment node
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+  type Mock,
+  mock,
+  spyOn,
+} from "bun:test";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("server-only", () => ({}));
-vi.mock("../src/lib/server/config", () => ({ readInstances: vi.fn() }));
-
-import { GET } from "../src/app/api/calendar/route";
-import { readInstances } from "../src/lib/server/config";
+mock.module("server-only", () => ({}));
+mock.module("../src/lib/server/config", () => ({ readInstances: mock() }));
+const { GET } = await import("../src/app/api/calendar/route");
+const { readInstances } = await import("../src/lib/server/config");
 
 const instance = (id: string, kind: "sonarr" | "radarr" = "radarr") => ({
   id,
@@ -32,28 +39,33 @@ const episode = {
   airDateUtc: "2026-09-02T23:30:00Z",
   series: { id: 2, title: "Show", tvdbId: 99 },
 };
-const fetchMock = vi.fn<typeof fetch>();
+const fetchMock =
+  mock<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>();
 const request = (query = "start=2026-09-01&end=2026-10-01") =>
   GET(new Request(`http://localhost/api/calendar?${query}`));
 
 beforeEach(() => {
-  vi.mocked(readInstances).mockResolvedValue([
+  (readInstances as Mock<typeof readInstances>).mockResolvedValue([
     instance("movies"),
     instance("shows", "sonarr"),
   ]);
   fetchMock.mockImplementation(async (url) =>
     Response.json(String(url).includes("shows.test") ? [episode] : [movie]),
   );
-  vi.stubGlobal("fetch", fetchMock);
+  spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(fetchMock, { preconnect: fetch.preconnect }),
+  );
 });
 afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.resetAllMocks();
+  mock.restore();
+  jest.resetAllMocks();
 });
 
 describe("calendar API", () => {
   it("skips invalid movie release fields independently and does not invent a provider identity", async () => {
-    vi.mocked(readInstances).mockResolvedValue([instance("movies")]);
+    (readInstances as Mock<typeof readInstances>).mockResolvedValue([
+      instance("movies"),
+    ]);
     fetchMock.mockResolvedValue(
       Response.json([
         {
@@ -77,7 +89,9 @@ describe("calendar API", () => {
   });
 
   it("sorts same-time season drops numerically", async () => {
-    vi.mocked(readInstances).mockResolvedValue([instance("shows", "sonarr")]);
+    (readInstances as Mock<typeof readInstances>).mockResolvedValue([
+      instance("shows", "sonarr"),
+    ]);
     fetchMock.mockResolvedValue(
       Response.json(
         [10, 2, 1].map((episodeNumber) => ({ ...episode, episodeNumber })),
@@ -158,14 +172,18 @@ describe("calendar API", () => {
         },
       ]),
     );
-    vi.mocked(readInstances).mockResolvedValue([instance("movies")]);
+    (readInstances as Mock<typeof readInstances>).mockResolvedValue([
+      instance("movies"),
+    ]);
     const data = await (await request()).json();
     expect(data.items).toHaveLength(1);
     expect(data.items[0].type).toBe("digital");
   });
 
   it("skips malformed entries and impossible dates without discarding valid siblings", async () => {
-    vi.mocked(readInstances).mockResolvedValue([instance("shows", "sonarr")]);
+    (readInstances as Mock<typeof readInstances>).mockResolvedValue([
+      instance("shows", "sonarr"),
+    ]);
     fetchMock.mockResolvedValue(
       Response.json([
         null,
@@ -193,7 +211,7 @@ describe("calendar API", () => {
   });
 
   it("deduplicates stable identities across instances and retains sources, not title or local ID matches", async () => {
-    vi.mocked(readInstances).mockResolvedValue([
+    (readInstances as Mock<typeof readInstances>).mockResolvedValue([
       instance("one"),
       instance("two"),
     ]);
@@ -219,7 +237,7 @@ describe("calendar API", () => {
   });
 
   it("deduplicates episodes by series identity, season, episode and air time, not local IDs", async () => {
-    vi.mocked(readInstances).mockResolvedValue([
+    (readInstances as Mock<typeof readInstances>).mockResolvedValue([
       instance("one", "sonarr"),
       instance("two", "sonarr"),
     ]);
@@ -263,14 +281,14 @@ describe("calendar API", () => {
   });
 
   it("succeeds with no configured instances, and with an empty successful provider alongside a failure", async () => {
-    vi.mocked(readInstances).mockResolvedValue([]);
+    (readInstances as Mock<typeof readInstances>).mockResolvedValue([]);
     expect(await (await request()).json()).toEqual({
       items: [],
       errors: [],
       instanceCount: 0,
     });
     expect(fetchMock).not.toHaveBeenCalled();
-    vi.mocked(readInstances).mockResolvedValue([
+    (readInstances as Mock<typeof readInstances>).mockResolvedValue([
       instance("movies"),
       instance("shows", "sonarr"),
     ]);

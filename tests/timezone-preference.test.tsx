@@ -1,3 +1,12 @@
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -8,12 +17,13 @@ import {
 } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { renderToString } from "react-dom/server";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useTimezonePreference } from "@/lib/timezone-preference";
+
+const { useTimezonePreference } = await import("@/lib/timezone-preference");
 
 let client: QueryClient;
 let savedZone: string | null;
-const fetchMock = vi.fn<typeof fetch>();
+const fetchMock =
+  mock<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>();
 function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
@@ -28,13 +38,15 @@ beforeEach(() => {
       savedZone = JSON.parse(String(init.body)).timeZone;
     return Response.json({ timeZone: savedZone });
   });
-  vi.stubGlobal("fetch", fetchMock);
+  spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(fetchMock, { preconnect: fetch.preconnect }),
+  );
 });
 afterEach(() => {
   cleanup();
   client.clear();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
+  mock.restore();
+  mock.restore();
 });
 
 describe("server config timezone preference", () => {
@@ -57,7 +69,7 @@ describe("server config timezone preference", () => {
     const container = document.createElement("div");
     container.innerHTML = html;
     document.body.append(container);
-    const errors = vi.spyOn(console, "error");
+    const errors = spyOn(console, "error");
     render(view, { container, hydrate: true });
     expect(seen.every((zone) => zone === null)).toBe(true);
     await act(async () => resolve(Response.json({ timeZone: "Asia/Tokyo" })));
@@ -71,7 +83,7 @@ describe("server config timezone preference", () => {
     await waitFor(() => expect(result.current.timeZone).toBe(browser));
     expect(result.current).toMatchObject({ override: "", error: null });
     const options = Intl.DateTimeFormat().resolvedOptions();
-    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+    spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
       ...options,
       timeZone: "Pacific/Auckland",
     });
@@ -81,7 +93,7 @@ describe("server config timezone preference", () => {
 
   it("falls back to UTC only when the browser cannot report its timezone", async () => {
     const options = Intl.DateTimeFormat().resolvedOptions();
-    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+    spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
       ...options,
       timeZone: "",
     });
@@ -113,7 +125,7 @@ describe("server config timezone preference", () => {
   it("retains the confirmed zone after validation or config write failures and recovers on retry", async () => {
     savedZone = "Europe/Paris";
     const { result } = renderHook(useTimezonePreference, { wrapper });
-    await waitFor(() => expect(result.current.override).toBe(savedZone));
+    await waitFor(() => expect(result.current.override).toBe("Europe/Paris"));
     for (const [status, error] of [
       [400, "Enter a valid IANA timezone."],
       [500, "Check directory permissions."],

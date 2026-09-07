@@ -1,5 +1,4 @@
-// @vitest-environment node
-
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import {
   mkdtemp,
   readdir,
@@ -10,21 +9,20 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("server-only", () => ({}));
-
-import { GET, PATCH } from "@/app/api/preferences/route";
-import {
+mock.module("server-only", () => ({}));
+const { GET, PATCH } = await import("@/app/api/preferences/route");
+const {
   readInstances,
   readPreferences,
   removeInstance,
   saveInstance,
   savePreferences,
   updateInstance,
-} from "@/lib/server/config";
+} = await import("@/lib/server/config");
 
 let directory: string;
+const previousConfigDir = process.env.ARRSENAL_CONFIG_DIR;
 const input = {
   name: "Movies",
   kind: "radarr" as const,
@@ -42,10 +40,11 @@ const patch = (body: unknown, headers: Record<string, string> = {}) =>
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "arrsenal-preferences-"));
-  vi.stubEnv("ARRSENAL_CONFIG_DIR", directory);
+  process.env.ARRSENAL_CONFIG_DIR = directory;
 });
 afterEach(async () => {
-  vi.unstubAllEnvs();
+  if (previousConfigDir === undefined) delete process.env.ARRSENAL_CONFIG_DIR;
+  else process.env.ARRSENAL_CONFIG_DIR = previousConfigDir;
   await rm(directory, { recursive: true, force: true });
 });
 
@@ -179,7 +178,7 @@ describe("preferences config and API", () => {
   it("reports write failures at the custom config path instead of pretending to save", async () => {
     const path = join(directory, "not-a-directory");
     await writeFile(path, "unchanged");
-    vi.stubEnv("ARRSENAL_CONFIG_DIR", path);
+    process.env.ARRSENAL_CONFIG_DIR = path;
     const response = await patch({ timeZone: "UTC" });
     expect(response.status).toBe(500);
     expect(await response.text()).toContain("Check directory permissions");
