@@ -1,7 +1,5 @@
-import { LibraryBrowser } from "@/components/library-browser";
-
-export const metadata = { title: "Missing media | Arrsenal" };
+import { redirect } from "next/navigation";
 
 export default function MissingPage() {
-  return <LibraryBrowser category="missing" />;
+  redirect("/?status=incomplete");
 }

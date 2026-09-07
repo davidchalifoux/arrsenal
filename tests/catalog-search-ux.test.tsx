@@ -3,23 +3,13 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AddMedia } from "@/components/add-media";
-import { DiscoverBrowser } from "@/components/discover-browser";
 import { api } from "@/lib/client";
 import type { InstanceSummary, MediaItem } from "@/lib/types";
 
-const { connect, add } = vi.hoisted(() => ({ connect: vi.fn(), add: vi.fn() }));
+const connect = vi.fn();
 vi.mock("@/lib/client", () => ({ api: vi.fn() }));
-vi.mock("@/components/workspace-provider", () => ({
-  useWorkspace: () => ({ connect, add }),
-}));
-vi.mock("@/components/page-header", () => ({ PageHeader: () => null }));
 vi.mock("@/components/media-card", () => ({
   Poster: () => null,
-  MediaCard: ({ item, onClick }: { item: MediaItem; onClick: () => void }) => (
-    <button type="button" onClick={onClick}>
-      {item.title}: {item.targets.length} targets
-    </button>
-  ),
 }));
 
 const sonarr: InstanceSummary = {
@@ -73,37 +63,87 @@ it("seeds AddMedia search, guides movie connection, and clears with input focus"
   expect(api).not.toHaveBeenCalled();
 });
 
-it("gives Discover kind-specific connection guidance instead of making lookups", async () => {
-  renderUI(<DiscoverBrowser />);
-  fireEvent.change(screen.getByRole("textbox"), { target: { value: "Dune" } });
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Connect Radarr" }),
+it("starts in Shows when opened from the Shows section", async () => {
+  vi.mocked(api).mockResolvedValue({ items: [], errors: [] });
+  renderUI(
+    <AddMedia
+      open
+      seed={null}
+      initialKind="series"
+      initialTerm="Severance"
+      instances={[sonarr]}
+      library={[]}
+      onClose={vi.fn()}
+      onAdded={vi.fn()}
+      notify={vi.fn()}
+      onConnect={connect}
+    />,
   );
-  expect(connect).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("button", { name: "Connect Radarr" })).toBeNull();
+  await screen.findByText(/No matches found/);
   expect(
-    vi.mocked(api).mock.calls.every(([url]) => url === "/api/instances"),
+    vi.mocked(api).mock.calls.some(([url]) => url.includes("kind=series")),
   ).toBe(true);
 });
 
-it("preserves Discover targets for both the card and add handoff", async () => {
-  const item = {
+it("preserves catalog targets in AddMedia and hides stale results when the query changes", async () => {
+  const radarr: InstanceSummary = {
+    ...sonarr,
+    id: "radarr",
+    name: "Movies",
+    kind: "radarr",
+  };
+  const item: MediaItem = {
     id: "movie-1",
+    kind: "movie",
     title: "Dune",
-    targets: [{ instanceId: "radarr" }],
-  } as MediaItem;
-  client.setQueryData(["instances"], {
-    instances: [{ ...sonarr, id: "radarr", kind: "radarr" }],
-  });
+    year: 2021,
+    overview: "",
+    poster: "",
+    genres: [],
+    added: "",
+    status: "available",
+    targets: [
+      {
+        instanceId: radarr.id,
+        instanceName: radarr.name,
+        remoteId: 1,
+        qualityProfileId: 1,
+        qualityProfile: "HD",
+        quality: "1080p",
+        status: "available",
+        monitored: true,
+        sizeOnDisk: 0,
+      },
+    ],
+  };
   vi.mocked(api).mockResolvedValue({ items: [item], errors: [] });
-  renderUI(<DiscoverBrowser />);
+  renderUI(
+    <AddMedia
+      open
+      seed={null}
+      instances={[radarr]}
+      library={[]}
+      onClose={vi.fn()}
+      onAdded={vi.fn()}
+      notify={vi.fn()}
+      onConnect={connect}
+    />,
+  );
   expect(screen.getByText(/Enter at least 2 characters/)).toBeDefined();
   fireEvent.change(screen.getByRole("textbox"), { target: { value: "Dune" } });
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Dune: 1 targets" }),
-  );
-  expect(add).toHaveBeenCalledWith(item);
+  fireEvent.click(await screen.findByRole("button", { name: /Dune.*2021/ }));
+  expect(screen.getByText("Already added")).toBeDefined();
+  expect(screen.queryByRole("checkbox", { name: radarr.name })).toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: "Add to targets" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Back to results" }));
+  expect(screen.getByRole("button", { name: /Dune.*2021/ })).toBeDefined();
   fireEvent.change(screen.getByRole("textbox"), { target: { value: "Alien" } });
-  expect(screen.queryByRole("button", { name: "Dune: 1 targets" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Dune.*2021/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
   expect(screen.getByText(/Enter at least 2 characters/)).toBeDefined();
   expect(document.activeElement).toBe(screen.getByRole("textbox"));

@@ -6,17 +6,6 @@ import { LibraryToolbar } from "@/components/library-toolbar";
 afterEach(cleanup);
 
 const props: ComponentProps<typeof LibraryToolbar> = {
-  category: "library",
-  counts: {
-    library: 0,
-    movies: 0,
-    shows: 0,
-    missing: 0,
-    available: 0,
-    downloading: 0,
-  },
-  hasData: true,
-  isPending: false,
   filterCount: 0,
   instances: [],
   qualities: [],
@@ -36,6 +25,14 @@ const props: ComponentProps<typeof LibraryToolbar> = {
 };
 
 describe("LibraryToolbar", () => {
+  it("leaves section navigation to the global navigation", () => {
+    render(<LibraryToolbar {...props} />);
+    expect(screen.queryByRole("navigation")).toBeNull();
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(
+      screen.getByRole("combobox", { name: "Filter by availability" }),
+    ).toBeTruthy();
+  });
   it("offers both sort directions with an accessible action label", () => {
     const onSortDirectionChange = vi.fn();
     const view = render(
@@ -62,7 +59,23 @@ describe("LibraryToolbar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     expect(await screen.findByText("Instance")).toBeTruthy();
     expect(screen.getByText("Quality profile")).toBeTruthy();
-    expect(screen.getByText("Availability")).toBeTruthy();
+    expect(
+      screen.getByRole("combobox", { name: "Filter by availability" }),
+    ).toBeTruthy();
     expect(screen.queryByText("Make it your view")).toBeNull();
+  });
+
+  it("offers Incomplete directly in the toolbar without opening Filters", async () => {
+    const onStatusChange = vi.fn();
+    render(<LibraryToolbar {...props} onStatusChange={onStatusChange} />);
+    expect(screen.queryByText("Quality profile")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Filter by availability" }),
+    );
+    const option = await screen.findByRole("option", { name: "Incomplete" });
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
+    expect(onStatusChange).toHaveBeenCalledWith("incomplete");
+    expect(screen.queryByText("Incomplete / missing")).toBeNull();
   });
 });

@@ -193,10 +193,10 @@ it("navigates to the top ranked result on Enter and closes search, but not for a
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
 
-it("hands the trimmed current query to Search catalog and closes the library modal", async () => {
+it("hands the trimmed current query to Add media and closes the library modal", async () => {
   renderSearch();
   fireEvent.change(openSearch(), { target: { value: "  Dune: Part Two  " } });
-  fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add media" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(
     screen.getByRole("region", { name: "Catalog handoff" }).textContent,

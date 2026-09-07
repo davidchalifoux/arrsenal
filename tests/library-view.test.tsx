@@ -71,7 +71,56 @@ afterEach(async () => {
 });
 
 describe("useLibraryView", () => {
-  it("requires instance and quality to match the same target, keeping global summaries", async () => {
+  it("counts the whole category regardless of instance, quality, or availability filters", async () => {
+    const items: MediaItem[] = [
+      movie,
+      { ...movie, id: "movie:2", status: "downloading" },
+      {
+        ...movie,
+        id: "movie:3",
+        status: "missing",
+        targets: [{ ...target, qualityProfile: "4K" }],
+      },
+      {
+        ...movie,
+        id: "movie:4",
+        status: "partial",
+        targets: [{ ...target, instanceId: "b" }],
+      },
+      { ...movie, id: "series:1", kind: "series", status: "missing" },
+    ];
+    const { result, rerender } = setup(items);
+    await waitFor(() => expect(result.current.filtered).toHaveLength(5));
+    expect(result.current.totalCount).toBe(5);
+    const filters = {
+      ...defaults,
+      category: "movies" as const,
+      instanceFilter: "a",
+      quality: "HD",
+    };
+    rerender({ ...filters, status: "available" });
+    await waitFor(() =>
+      expect(result.current.filtered.map((item) => item.id)).toEqual([
+        movie.id,
+      ]),
+    );
+    expect(result.current.totalCount).toBe(4);
+    rerender({ ...filters, status: "downloading" });
+    await waitFor(() =>
+      expect(result.current.filtered.map((item) => item.id)).toEqual([
+        "movie:2",
+      ]),
+    );
+    expect(result.current.totalCount).toBe(4);
+    rerender({ ...filters, category: "shows", status: "available" });
+    await waitFor(() => expect(result.current.filtered).toHaveLength(0));
+    expect(result.current.totalCount).toBe(1);
+    rerender({ ...filters, category: "library", status: "available" });
+    await waitFor(() => expect(result.current.filtered).toHaveLength(1));
+    expect(result.current.totalCount).toBe(5);
+  });
+
+  it("requires instance and quality to match the same target without narrowing the total", async () => {
     const split = {
       ...movie,
       targets: [target, { ...target, instanceId: "b", qualityProfile: "4K" }],
@@ -82,16 +131,10 @@ describe("useLibraryView", () => {
     await waitFor(() => expect(result.current.filtered).toHaveLength(0));
     expect(result.current.filterCount).toBe(2);
     expect(result.current.qualities).toEqual(["4K", "HD"]);
-    expect(result.current.counts).toEqual({
-      library: 1,
-      movies: 1,
-      shows: 0,
-      missing: 0,
-      available: 1,
-      downloading: 0,
-    });
+    expect(result.current.totalCount).toBe(1);
     rerender({ ...defaults, instanceFilter: "b", quality: "4K" });
     await waitFor(() => expect(result.current.filtered).toHaveLength(1));
+    expect(result.current.totalCount).toBe(1);
   });
 
   it("includes partial and missing items and intersects category with availability", async () => {
@@ -124,6 +167,7 @@ describe("useLibraryView", () => {
       ]),
     );
     expect(result.current.filterCount).toBe(0);
+    expect(result.current.totalCount).toBe(2);
     rerender({ ...defaults, category: "movies", status: "incomplete" });
     await waitFor(() =>
       expect(result.current.filtered.map((item) => item.id)).toEqual([
@@ -131,6 +175,7 @@ describe("useLibraryView", () => {
       ]),
     );
     rerender({ ...defaults, category: "shows" });
+    expect(result.current.totalCount).toBe(1);
     await waitFor(() =>
       expect(result.current.filtered.map((item) => item.id)).toEqual([
         missing.id,
@@ -142,8 +187,7 @@ describe("useLibraryView", () => {
         downloading.id,
       ]),
     );
-    expect(result.current.counts.missing).toBe(2);
-    expect(result.current.counts.library).toBe(4);
+    expect(result.current.totalCount).toBe(4);
   });
 
   it.each([

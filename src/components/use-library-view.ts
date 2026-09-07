@@ -7,10 +7,6 @@ export type LibraryStatus = "all" | "available" | "incomplete" | "downloading";
 export type LibrarySort = "recent" | "title" | "year" | "rating";
 export type LibrarySortDirection = "asc" | "desc";
 export type LibraryLayout = "grid" | "list";
-export type LibraryCounts = Record<
-  LibraryCategory | "available" | "downloading",
-  number
->;
 
 export function useLibraryView(
   items: MediaItem[],
@@ -39,18 +35,29 @@ export function useLibraryView(
       ),
     ),
   ].sort((a, b) => a.localeCompare(b));
-  // Summary counts describe the whole library, independent of the current view.
-  const counts: LibraryCounts = {
-    library: items.length,
-    movies: items.filter((item) => item.kind === "movie").length,
-    shows: items.filter((item) => item.kind === "series").length,
-    missing: items.filter(
-      (item) => item.status === "partial" || item.status === "missing",
-    ).length,
-    available: items.filter((item) => item.status === "available").length,
-    downloading: items.filter((item) => item.status === "downloading").length,
-  };
-  const { data: matching } = useLiveQuery({
+  function inCategory(item: MediaItem) {
+    if (category === "movies" && item.kind !== "movie") return false;
+    if (category === "shows" && item.kind !== "series") return false;
+    if (
+      category === "missing" &&
+      item.status !== "partial" &&
+      item.status !== "missing"
+    )
+      return false;
+    return true;
+  }
+  const totalCount = items.filter(inCategory).length;
+  function inScope(item: MediaItem) {
+    return (
+      inCategory(item) &&
+      item.targets.some(
+        (target) =>
+          (instanceFilter === "all" || target.instanceId === instanceFilter) &&
+          (quality === "all" || target.qualityProfile === quality),
+      )
+    );
+  }
+  const { data: matching, isReady } = useLiveQuery({
     queryKey: [
       collections.library.id,
       "filtered",
@@ -63,14 +70,7 @@ export function useLibraryView(
     query: (q) =>
       clientReady
         ? q.from({ item: collections.library }).fn.where(({ item }) => {
-            if (category === "movies" && item.kind !== "movie") return false;
-            if (category === "shows" && item.kind !== "series") return false;
-            if (
-              category === "missing" &&
-              item.status !== "partial" &&
-              item.status !== "missing"
-            )
-              return false;
+            if (!inScope(item)) return false;
             if (
               status !== "all" &&
               (status === "incomplete"
@@ -78,12 +78,7 @@ export function useLibraryView(
                 : item.status !== status)
             )
               return false;
-            return item.targets.some(
-              (target) =>
-                (instanceFilter === "all" ||
-                  target.instanceId === instanceFilter) &&
-                (quality === "all" || target.qualityProfile === quality),
-            );
+            return true;
           })
         : undefined,
   });
@@ -106,5 +101,11 @@ export function useLibraryView(
     Number(quality !== "all") +
     Number(status !== "all");
 
-  return { filtered, counts, qualities, filterCount };
+  return {
+    filtered,
+    totalCount,
+    qualities,
+    filterCount,
+    isReady,
+  };
 }

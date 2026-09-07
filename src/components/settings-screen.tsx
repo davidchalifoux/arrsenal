@@ -44,7 +44,9 @@ export function SettingsScreen({ autoOpen = false }: { autoOpen?: boolean }) {
         }}
         notify={notify}
         autoOpen={autoOpen}
-        onAutoOpened={() => router.replace("/settings", { scroll: false })}
+        onAutoOpened={() =>
+          router.replace("/settings/connections", { scroll: false })
+        }
       />
     </>
   );

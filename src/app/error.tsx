@@ -15,7 +15,10 @@ export default function ErrorPage({ reset }: { reset: () => void }) {
       </p>
       <div className={css({ display: "flex", gap: "10px" })}>
         <Button onClick={reset}>Try again</Button>
-        <Link href="/settings" className={buttonStyle({ variant: "ghost" })}>
+        <Link
+          href="/settings/connections"
+          className={buttonStyle({ variant: "ghost" })}
+        >
           Connections
         </Link>
       </div>

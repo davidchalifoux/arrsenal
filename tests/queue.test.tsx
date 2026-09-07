@@ -51,9 +51,7 @@ describe("DownloadQueue", () => {
         notify={vi.fn()}
       />,
     );
-    expect(
-      screen.getByText("1 item across your connected instances."),
-    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Downloads" })).toBeTruthy();
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe(
       "75",
     );
@@ -69,9 +67,7 @@ describe("DownloadQueue", () => {
     expect(
       screen.getByText("Remaining size").parentElement?.textContent,
     ).toContain("256.0 MB");
-    expect(
-      screen.getByText("Instances involved").parentElement?.textContent,
-    ).toContain("1");
+    expect(screen.queryByText("Instances involved")).toBeNull();
     expect(
       screen.queryByRole("button", {
         name: /Pause|Resume|Grab now|Retry import/,
@@ -125,8 +121,11 @@ describe("DownloadQueue", () => {
     expect(screen.getByRole("article", { name: "Silo download" })).toBeTruthy();
     expect(screen.getByText("Import requires manual review.")).toBeTruthy();
     expect(
-      screen.getByText("2 items across your connected instances."),
-    ).toBeTruthy();
+      screen.getByText("Active downloads").parentElement?.textContent,
+    ).toContain("1");
+    expect(
+      screen.getByText("Remaining size").parentElement?.textContent,
+    ).toContain("256.0 MB");
     fireEvent.click(screen.getByRole("button", { name: "Downloading" }));
     expect(screen.queryByRole("article", { name: "Silo download" })).toBeNull();
     expect(

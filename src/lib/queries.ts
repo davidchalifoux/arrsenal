@@ -23,3 +23,15 @@ export const queueQuery = queryOptions({
   staleTime: 10_000,
   refetchInterval: 60_000,
 });
+
+export const calendarQuery = (start: string, end: string) =>
+  queryOptions({
+    queryKey: ["calendar", start, end],
+    queryFn: ({ signal }) =>
+      api<import("./types").CalendarResponse>(
+        `/api/calendar?${new URLSearchParams({ start, end })}`,
+        { signal },
+      ),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });

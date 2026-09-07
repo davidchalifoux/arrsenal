@@ -284,7 +284,7 @@ describe("WorkspaceLoading", () => {
       "Still connecting",
     );
     const link = screen.getByRole("link", { name: "Check connections" });
-    expect(link.getAttribute("href")).toBe("/settings");
+    expect(link.getAttribute("href")).toBe("/settings/connections");
     // Keep jsdom from navigating; the real Link's React onClick still runs.
     link.addEventListener("click", (event) => event.preventDefault());
     fireEvent.click(link);

@@ -6,20 +6,14 @@ import {
   PlusIcon,
 } from "@phosphor-icons/react";
 import { css } from "@styled-system/css";
-import { createContext, type ReactNode, useContext } from "react";
+import type { ReactNode } from "react";
 import { Button } from "./ui";
 import { useWorkspace } from "./workspace-provider";
 
-export const PageUtilitiesContext = createContext<
-  ((actions?: ReactNode) => ReactNode) | null
->(null);
-
 export function WorkspaceUtilities({
-  children,
-  desktopOnly = false,
+  addKind = "movie",
 }: {
-  children?: ReactNode;
-  desktopOnly?: boolean;
+  addKind?: "movie" | "series";
 }) {
   const { add, searchLibrary } = useWorkspace();
   return (
@@ -29,12 +23,12 @@ export function WorkspaceUtilities({
         onClick={searchLibrary}
         aria-label="Search library"
         className={css({
-          display: desktopOnly ? { base: "none", lg: "flex" } : "flex",
+          display: "flex",
           alignItems: "center",
           justifyContent: "center",
           gap: "9px",
-          height: { base: "44px", lg: "36px" },
-          width: { base: "44px", xl: "208px" },
+          height: { base: "44px", lg: "32px" },
+          width: { base: "44px", lg: "156px", xl: "190px" },
           px: { base: "10px", xl: "11px" },
           flexShrink: 0,
           color: "subtle",
@@ -47,12 +41,12 @@ export function WorkspaceUtilities({
         })}
       >
         <MagnifyingGlassIcon size={17} />
-        <span className={css({ display: { base: "none", xl: "inline" } })}>
+        <span className={css({ display: { base: "none", lg: "inline" } })}>
           Search library
         </span>
         <kbd
           className={css({
-            display: { base: "none", xl: "flex" },
+            display: { base: "none", lg: "flex" },
             alignItems: "center",
             gap: "2px",
             ml: "auto",
@@ -66,16 +60,15 @@ export function WorkspaceUtilities({
           <CommandIcon size={9} />K
         </kbd>
       </button>
-      {children}
       <div
         className={css({
-          display: desktopOnly ? { base: "none", lg: "contents" } : "contents",
+          display: { base: "none", lg: "contents" },
         })}
       >
         <Button
           variant="primary"
-          onClick={() => add()}
-          className={css({ height: { base: "44px", lg: "36px" } })}
+          onClick={() => add(null, addKind)}
+          className={css({ height: { base: "44px", lg: "32px" } })}
         >
           <PlusIcon size={15} weight="bold" />
           Add media
@@ -92,27 +85,28 @@ export function PageToolbar({
   children: ReactNode;
   actions?: ReactNode;
 }) {
-  const renderUtilities = useContext(PageUtilitiesContext);
   return (
     <div
       className={css({
         display: "flex",
         flexWrap: "wrap",
-        alignItems: "flex-start",
+        alignItems: "center",
         justifyContent: "space-between",
         gap: "16px",
-        mb: "24px",
+        minHeight: "36px",
+        mb: "20px",
       })}
     >
-      <div className={css({ flex: "1 1 240px", minWidth: 0 })}>{children}</div>
+      <div className={css({ flex: "1 1 auto", minWidth: 0 })}>{children}</div>
       <div
         className={css({
           display: "flex",
           alignItems: "center",
+          flexWrap: "wrap",
           gap: "8px",
         })}
       >
-        {renderUtilities ? renderUtilities(actions) : actions}
+        {actions}
       </div>
     </div>
   );
@@ -120,12 +114,10 @@ export function PageToolbar({
 
 export function PageHeader({
   title,
-  description,
   actions,
   id,
 }: {
   title: ReactNode;
-  description?: ReactNode;
   actions?: ReactNode;
   id?: string;
 }) {
@@ -134,26 +126,14 @@ export function PageHeader({
       <h1
         id={id}
         className={css({
-          fontSize: { base: "27px", md: "29px" },
-          letterSpacing: "-1px",
-          fontWeight: "600",
+          fontSize: "20px",
+          letterSpacing: "-.4px",
+          fontWeight: "550",
           lineHeight: "1.3",
         })}
       >
         {title}
       </h1>
-      {description && (
-        <p
-          className={css({
-            color: "muted",
-            fontSize: "12px",
-            mt: "7px",
-            lineHeight: "1.7",
-          })}
-        >
-          {description}
-        </p>
-      )}
     </PageToolbar>
   );
 }

@@ -146,3 +146,23 @@ export interface EpisodesResponse {
   episodes: Episode[];
   errors: ServiceError[];
 }
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  mediaId?: string;
+  kind: MediaKind;
+  type: "episode" | "theatrical" | "digital" | "physical";
+  date: string;
+  airDateUtc?: string;
+  episodeTitle?: string;
+  seasonNumber?: number;
+  episodeNumber?: number;
+  sources: { instanceId: string; instanceName: string }[];
+}
+
+export interface CalendarResponse {
+  items: CalendarEvent[];
+  errors: ServiceError[];
+  instanceCount: number;
+}

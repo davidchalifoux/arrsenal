@@ -98,7 +98,7 @@ export function WorkspaceLoading({ children }: { children: ReactNode }) {
           </output>
           {slow && (
             <Link
-              href="/settings"
+              href="/settings/connections"
               onClick={() => setFinished(true)}
               className={css({
                 mt: "20px",

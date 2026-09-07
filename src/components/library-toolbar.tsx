@@ -7,29 +7,15 @@ import {
   SquaresFourIcon,
 } from "@phosphor-icons/react";
 import { css } from "@styled-system/css";
-import Link from "next/link";
 import { Button, buttonStyle, SelectField } from "./ui";
 import type {
-  LibraryCategory,
-  LibraryCounts,
   LibraryLayout,
   LibrarySort,
   LibrarySortDirection,
   LibraryStatus,
 } from "./use-library-view";
 
-const categoryNames = {
-  library: "All media",
-  movies: "Movies",
-  shows: "Shows",
-  missing: "Missing",
-};
-
 export function LibraryToolbar({
-  category,
-  counts,
-  hasData,
-  isPending,
   filterCount,
   instances,
   qualities,
@@ -47,10 +33,6 @@ export function LibraryToolbar({
   onLayoutChange,
   onResetFilters,
 }: {
-  category: LibraryCategory;
-  counts: LibraryCounts;
-  hasData: boolean;
-  isPending: boolean;
   filterCount: number;
   instances: { id: string; name: string }[];
   qualities: string[];
@@ -81,62 +63,6 @@ export function LibraryToolbar({
         flexWrap: "wrap",
       })}
     >
-      <nav
-        aria-label="Library categories"
-        className={css({
-          display: "flex",
-          gap: { base: "16px", md: "21px" },
-          height: "34px",
-          alignItems: "center",
-        })}
-      >
-        {(["library", "movies", "shows"] as const).map((tab) => (
-          <Link
-            href={tab === "library" ? "/" : `/${tab}`}
-            key={tab}
-            aria-current={category === tab ? "page" : undefined}
-            className={css({
-              height: "50px",
-              display: "flex",
-              alignItems: "center",
-              gap: "7px",
-              position: "relative",
-              fontSize: "11px",
-              color: category === tab ? "ink" : "subtle",
-              fontWeight: category === tab ? "550" : "400",
-              _hover: { color: "ink" },
-              _after: {
-                content: '""',
-                position: "absolute",
-                left: 0,
-                right: 0,
-                bottom: { base: "7px", md: "-7px" },
-                height: "2px",
-                borderRadius: "2px",
-                bg: category === tab ? "accent" : "transparent",
-              },
-            })}
-          >
-            {tab === "library" ? "All media" : categoryNames[tab]}
-            <span
-              aria-hidden={isPending || undefined}
-              className={css({
-                fontSize: "9px",
-                fontFamily: "mono",
-                minWidth: isPending ? "24px" : undefined,
-                minHeight: isPending ? "16px" : undefined,
-                borderRadius: "4px",
-                px: "5px",
-                py: "1px",
-                color: category === tab ? "#c7c7c7" : "#858585",
-                bg: category === tab ? "#303030" : "#242424",
-              })}
-            >
-              {hasData ? counts[tab] : isPending ? null : "-"}
-            </span>
-          </Link>
-        ))}
-      </nav>
       <div
         className={css({
           display: "flex",
@@ -145,6 +71,27 @@ export function LibraryToolbar({
           flexWrap: "wrap",
         })}
       >
+        <SelectField
+          compact
+          value={status}
+          onChange={(value) => {
+            if (
+              value === "all" ||
+              value === "available" ||
+              value === "incomplete" ||
+              value === "downloading"
+            ) {
+              onStatusChange(value);
+            }
+          }}
+          label="Filter by availability"
+          options={[
+            { value: "all", label: "All availability" },
+            { value: "available", label: "Available" },
+            { value: "incomplete", label: "Incomplete" },
+            { value: "downloading", label: "Downloading" },
+          ]}
+        />
         <Popover.Root>
           <Popover.Trigger
             className={buttonStyle({
@@ -221,40 +168,6 @@ export function LibraryToolbar({
                           value: name,
                           label: name,
                         })),
-                      ]}
-                    />
-                  </div>
-                  <div>
-                    <p
-                      className={css({
-                        color: "muted",
-                        fontSize: "10px",
-                        mb: "7px",
-                      })}
-                    >
-                      Availability
-                    </p>
-                    <SelectField
-                      value={status}
-                      onChange={(value) => {
-                        if (
-                          value === "all" ||
-                          value === "available" ||
-                          value === "incomplete" ||
-                          value === "downloading"
-                        ) {
-                          onStatusChange(value);
-                        }
-                      }}
-                      label="Filter by availability"
-                      options={[
-                        { value: "all", label: "Any status" },
-                        { value: "available", label: "Available" },
-                        {
-                          value: "incomplete",
-                          label: "Incomplete / missing",
-                        },
-                        { value: "downloading", label: "Downloading" },
                       ]}
                     />
                   </div>

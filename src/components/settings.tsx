@@ -278,7 +278,6 @@ export function Settings({
       <PageHeader
         id={`${id}-heading`}
         title="Connections"
-        description="Your Sonarr and Radarr instances, connected in one place."
         actions={
           <Button variant="secondary" onClick={() => changeOpen(true)}>
             <PlusIcon size={15} /> Add instance

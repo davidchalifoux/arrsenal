@@ -51,6 +51,7 @@ export function AddMedia({
   notify,
   onConnect,
   initialTerm = "",
+  initialKind = "movie",
 }: {
   open: boolean;
   onClose: () => void;
@@ -61,6 +62,7 @@ export function AddMedia({
   notify: (message: string, error?: boolean) => void;
   onConnect: () => void;
   initialTerm?: string;
+  initialKind?: "movie" | "series";
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
@@ -85,6 +87,7 @@ export function AddMedia({
           onClose={onClose}
           onConnect={onConnect}
           initialTerm={initialTerm}
+          initialKind={initialKind}
           inputRef={inputRef}
         />
       )}
@@ -101,12 +104,13 @@ function AddMediaContent({
   onClose,
   onConnect,
   initialTerm = "",
+  initialKind = "movie",
   inputRef,
 }: Omit<Parameters<typeof AddMedia>[0], "open"> & {
   inputRef: RefObject<HTMLInputElement | null>;
 }) {
   const [term, setTerm] = useState(initialTerm);
-  const [kind, setKind] = useState("movie");
+  const [kind, setKind] = useState<string>(initialKind);
   const [selected, setSelected] = useState<MediaItem | null>(seed);
   const [choices, setChoices] = useState<Record<string, TargetChoice>>({});
   const [confirmedIds, setConfirmedIds] = useState<string[]>([]);

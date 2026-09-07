@@ -21,6 +21,11 @@
     margin: 0;
   }
 
+  html {
+    scroll-padding-top: 90px;
+    scroll-padding-bottom: calc(90px + env(safe-area-inset-bottom));
+  }
+
   button,
   input,
   select,

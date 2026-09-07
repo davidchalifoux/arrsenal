@@ -129,7 +129,6 @@ export function MediaCard({
       textAlign: "left",
       borderRadius: "9px",
       width: "100%",
-      animation: "enter .35s ease-out both",
     }),
   );
   const content = (

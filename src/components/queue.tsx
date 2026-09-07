@@ -5,11 +5,8 @@ import {
   ArrowDownIcon,
   CheckCircleIcon,
   ClockIcon,
-  DownloadSimpleIcon,
   FilmSlateIcon,
-  HardDrivesIcon,
   PlayIcon,
-  StackIcon,
   TelevisionIcon,
   TrashIcon,
   WarningCircleIcon,
@@ -109,7 +106,6 @@ export function DownloadQueue({
       total + (Number.isFinite(item.sizeleft) ? Math.max(0, item.sizeleft) : 0),
     0,
   );
-  const instanceCount = new Set(items.map((item) => item.instanceId)).size;
   const selectedUnavailable = errors.some(
     (error) => error.instanceId === selectedInstance,
   );
@@ -169,14 +165,7 @@ export function DownloadQueue({
     <section className={css({ minWidth: 0 })} aria-labelledby={`${id}-heading`}>
       <PageHeader
         id={`${id}-heading`}
-        title="Download queue"
-        description={
-          data
-            ? `${items.length} ${items.length === 1 ? "item" : "items"} across your connected instances.`
-            : loading
-              ? "Loading downloads from your instances."
-              : "Downloads from your Sonarr and Radarr instances."
-        }
+        title="Downloads"
         actions={
           <Button disabled={loading || !!busy} onClick={() => onRefresh()}>
             {loading ? <Spinner size={15} /> : <ArrowClockwiseIcon size={15} />}
@@ -213,71 +202,40 @@ export function DownloadQueue({
 
       <dl
         className={css({
-          display: "grid",
-          gridTemplateColumns: {
-            base: "minmax(0, 1fr)",
-            sm: "repeat(3, minmax(0, 1fr))",
-          },
-          gap: "12px",
-          mb: "24px",
+          display: "flex",
+          flexWrap: "wrap",
+          columnGap: "24px",
+          rowGap: "8px",
+          mb: "20px",
+          fontSize: "12px",
         })}
       >
         {[
           {
             label: "Active downloads",
             value: data ? String(activeCount) : "--",
-            icon: DownloadSimpleIcon,
-            detail: "Currently downloading",
           },
           {
             label: "Remaining size",
             value: data ? sizeLabel(remainingSize) : "--",
-            icon: HardDrivesIcon,
-            detail: "Across listed downloads",
           },
-          {
-            label: "Instances involved",
-            value: data ? String(instanceCount) : "--",
-            icon: StackIcon,
-            detail: "With items in the queue",
-          },
-        ].map(({ label, value, icon: Icon, detail }) => (
+        ].map(({ label, value }) => (
           <div
             key={label}
-            className={cx(panelStyle, css({ p: "18px", minWidth: 0 }))}
+            className={css({
+              display: "flex",
+              alignItems: "baseline",
+              gap: "8px",
+            })}
           >
-            <dt
-              className={css({
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: "8px",
-                color: "muted",
-                fontSize: "12px",
-              })}
-            >
-              {label}
-              <Icon
-                size={16}
-                className={css({ color: "subtle", flexShrink: 0 })}
-              />
-            </dt>
+            <dt className={css({ color: "muted" })}>{label}</dt>
             <dd
               className={css({
-                fontSize: "27px",
-                lineHeight: "1.3",
                 fontWeight: "550",
-                letterSpacing: "-.8px",
-                mt: "12px",
                 fontVariantNumeric: "tabular-nums",
               })}
             >
               {value}
-            </dd>
-            <dd
-              className={css({ color: "subtle", fontSize: "11px", mt: "5px" })}
-            >
-              {detail}
             </dd>
           </div>
         ))}

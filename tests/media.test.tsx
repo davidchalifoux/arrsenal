@@ -420,7 +420,98 @@ describe("AddMedia", () => {
 });
 
 describe("Library integration", () => {
-  it("eagerly loads two eight-column rows with sizes matching the denser library grid", async () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    sessionStorage.clear();
+    vi.mocked(window.scrollTo).mockRestore();
+  });
+
+  it.each([
+    ["library", "Home", 3],
+    ["movies", "Movies", 2],
+    ["shows", "Shows", 1],
+  ] as const)("keeps the %s total beside the title while filters narrow results", async (category, title, total) => {
+    queryClient.setQueryData(["library"], {
+      items: [
+        { ...movie, status: "available", targets: [hdTarget, uhdTarget] },
+        { ...movie, id: "other-movie", targets: [uhdTarget] },
+        { ...movie, id: "show", kind: "series", targets: [hdTarget] },
+      ],
+      errors: [],
+    });
+    queryClient.setQueryData(["instances"], { instances: [hd, uhd] });
+    renderUI(
+      <WorkspaceProvider>
+        <LibraryBrowser category={category} />
+      </WorkspaceProvider>,
+    );
+    await screen.findAllByRole("link", { name: /^View / });
+    expect(
+      screen.getByRole("heading", {
+        name: `${title} ${total} ${total === 1 ? "title" : "titles"}`,
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/of \d+ titles?/)).toBeNull();
+    for (const label of [
+      "Total titles",
+      "Ready in every quality",
+      "A target needs some love",
+      "Titles downloading",
+    ]) {
+      expect(screen.queryByText(label)).toBeNull();
+    }
+    await choose("Filter by availability", "Available");
+    expect(
+      await screen.findByText(
+        `${category === "shows" ? 0 : 1} of ${total} ${total === 1 ? "title" : "titles"}`,
+      ),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Filters (1)" }));
+    await choose("Filter by instance", hd.name);
+    await choose("Filter by quality profile", "Ultra-HD");
+    expect(
+      await screen.findByText(
+        `0 of ${total} ${total === 1 ? "title" : "titles"}`,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", {
+        name: `${title} ${total} ${total === 1 ? "title" : "titles"}`,
+      }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+    await waitFor(() =>
+      expect(screen.queryByText(/of \d+ titles?/)).toBeNull(),
+    );
+    expect(
+      screen.getByRole("heading", {
+        name: `${title} ${total} ${total === 1 ? "title" : "titles"}`,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("does not present partial instance results as a complete category count", async () => {
+    queryClient.setQueryData(["library"], {
+      items: [],
+      errors: [
+        { instanceId: hd.id, instanceName: hd.name, message: "Offline" },
+      ],
+    });
+    queryClient.setQueryData(["instances"], { instances: [hd] });
+    renderUI(
+      <WorkspaceProvider>
+        <LibraryBrowser category="movies" initialStatus="available" />
+      </WorkspaceProvider>,
+    );
+    expect(screen.getByRole("heading", { name: "Movies" })).toBeTruthy();
+    expect(screen.queryByText(/\d+ titles/)).toBeNull();
+    expect(await screen.findByRole("alert")).toBeTruthy();
+  });
+
+  it("eagerly loads initial posters with sizes matching the denser library grid", async () => {
     const items = Array.from({ length: 17 }, (_, index) => ({
       ...movie,
       id: `movie-${index}`,
@@ -441,7 +532,7 @@ describe("Library integration", () => {
       "lazy",
     ]);
     expect(posters[0].getAttribute("sizes")).toContain(
-      "(min-width: 1536px) calc((100vw - 426px) / 8)",
+      "(min-width: 1536px) calc((100vw - 224px) / 9)",
     );
     expect(posters[0].getAttribute("sizes")).toContain(
       "(min-width: 768px) calc((100vw - 144px) / 5)",
@@ -594,7 +685,7 @@ describe("Library integration", () => {
       "Loading your library...",
     );
     expect(screen.queryByText("Syncing library...")).toBeNull();
-    expect(screen.queryByText("0 movies · 0 shows")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Movies" })).toBeTruthy();
     expect(screen.queryByText("0 titles")).toBeNull();
     expect(screen.queryByText("0 instances")).toBeNull();
     expect(
@@ -610,6 +701,9 @@ describe("Library integration", () => {
     );
     await screen.findByRole("link", { name: `View ${movie.title}` });
     expect(screen.queryByText("Loading your library...")).toBeNull();
+    expect(
+      screen.getByRole("heading", { name: "Movies 1 title" }),
+    ).toBeTruthy();
     rerender(
       <QueryClientProvider client={queryClient}>
         <WorkspaceProvider>
@@ -653,6 +747,9 @@ describe("Library integration", () => {
       "Network unavailable.",
     );
     expect(
+      screen.getByRole("heading", { name: "Movies 1 title" }),
+    ).toBeTruthy();
+    expect(
       screen.getByRole("link", { name: `View ${movie.title}` }),
     ).toBeTruthy();
   });
@@ -671,7 +768,7 @@ describe("Library integration", () => {
           <LibraryBrowser category="missing" />
         </WorkspaceProvider>,
       );
-      expect(screen.queryByText("0 matching titles")).toBeNull();
+      expect(screen.queryByText(/\d+ titles/)).toBeNull();
       await act(async () => vi.advanceTimersByTimeAsync(4999));
       expect(
         screen.queryByRole("link", { name: "Check connections" }),
@@ -684,7 +781,7 @@ describe("Library integration", () => {
         screen
           .getByRole("link", { name: "Check connections" })
           .getAttribute("href"),
-      ).toBe("/settings");
+      ).toBe("/settings/connections");
       await act(async () => {
         pending.resolve(
           Response.json({ error: "Library unavailable." }, { status: 503 }),
@@ -696,7 +793,8 @@ describe("Library integration", () => {
         "Library unavailable.",
       );
       expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
-      expect(screen.queryByText("0 movies · 0 shows")).toBeNull();
+      expect(screen.getByRole("heading", { name: "Incomplete" })).toBeTruthy();
+      expect(screen.queryByText(/\d+ titles/)).toBeNull();
     } finally {
       vi.useRealTimers();
     }

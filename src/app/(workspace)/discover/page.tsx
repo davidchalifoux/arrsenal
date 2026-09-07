@@ -1,7 +1,5 @@
-import { DiscoverBrowser } from "@/components/discover-browser";
-
-export const metadata = { title: "Discover | Arrsenal" };
+import { redirect } from "next/navigation";
 
 export default function DiscoverPage() {
-  return <DiscoverBrowser />;
+  redirect("/?add=1");
 }

@@ -30,7 +30,7 @@ import { Poster } from "./media-card";
 import { Button, inputStyle, Modal, Notice } from "./ui";
 
 interface WorkspaceActions {
-  add: (media?: MediaItem | null) => void;
+  add: (media?: MediaItem | null, kind?: "movie" | "series") => void;
   connect: () => void;
   searchLibrary: () => void;
   notify: (message: string, error?: boolean) => void;
@@ -53,6 +53,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [addOpen, setAddOpen] = useState(false);
   const [seed, setSeed] = useState<MediaItem | null>(null);
   const [initialTerm, setInitialTerm] = useState("");
+  const [initialKind, setInitialKind] = useState<"movie" | "series">("movie");
   const [searchOpen, setSearchOpen] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -74,14 +75,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setSearchOpen(true);
   }
 
-  function add(media: MediaItem | null = null) {
+  function add(
+    media: MediaItem | null = null,
+    kind: "movie" | "series" = "movie",
+  ) {
+    setSearchOpen(false);
+    setInitialKind(media?.kind ?? kind);
     setInitialTerm("");
     setSeed(media);
     setAddOpen(true);
   }
   function connect() {
     setAddOpen(false);
-    router.push("/settings?connect=1");
+    router.push("/settings/connections?connect=1");
   }
   function notify(message: string, error = false) {
     setToast({ message, error });
@@ -123,6 +129,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         onClose={() => setAddOpen(false)}
         seed={seed}
         initialTerm={initialTerm}
+        initialKind={initialKind}
         instances={instances.data?.instances ?? []}
         library={items}
         onAdded={() => {
@@ -334,12 +341,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             onClick={() => {
               setSearchOpen(false);
               setSeed(null);
+              setInitialKind("movie");
               setInitialTerm(term.trim());
               setAddOpen(true);
             }}
           >
             <PlusIcon size={15} />
-            Search catalog
+            Add media
           </Button>
         </div>
       </Modal>
@@ -348,7 +356,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           role={toast.error ? "alert" : "status"}
           className={css({
             position: "fixed",
-            bottom: "24px",
+            bottom: {
+              base: "calc(90px + env(safe-area-inset-bottom))",
+              lg: "24px",
+            },
             right: { base: "16px", md: "28px" },
             left: { base: "16px", md: "auto" },
             maxWidth: "460px",

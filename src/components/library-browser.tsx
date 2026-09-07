@@ -3,15 +3,16 @@
 import {
   ArrowClockwiseIcon,
   FolderSimpleIcon,
+  PlusIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { css } from "@styled-system/css";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { z } from "zod";
 import { mediaHref } from "@/lib/client";
 import { useInstances, useLibrary } from "@/lib/collections";
-import { LibraryStats } from "./library-stats";
 import { LibraryToolbar } from "./library-toolbar";
 import { MediaCard, MediaList } from "./media-card";
 import { PageHeader } from "./page-header";
@@ -32,11 +33,22 @@ const gridStyle = css({
     base: "repeat(2, minmax(0, 1fr))",
     sm: "repeat(3, minmax(0, 1fr))",
     md: "repeat(5, minmax(0, 1fr))",
-    xl: "repeat(7, minmax(0, 1fr))",
-    "2xl": "repeat(8, minmax(0, 1fr))",
+    lg: "repeat(7, minmax(0, 1fr))",
+    xl: "repeat(8, minmax(0, 1fr))",
+    "2xl": "repeat(9, minmax(0, 1fr))",
   },
   columnGap: { base: "15px", md: "20px" },
   rowGap: "29px",
+});
+
+const snapshotSchema = z.object({
+  instanceFilter: z.string(),
+  quality: z.string(),
+  status: z.enum(["all", "available", "incomplete", "downloading"]),
+  sort: z.enum(["recent", "title", "year", "rating"]),
+  sortDirection: z.enum(["asc", "desc"]),
+  layout: z.enum(["grid", "list"]),
+  scrollY: z.number().finite().nonnegative(),
 });
 
 function LibraryLoadingStatus() {
@@ -53,7 +65,7 @@ function LibraryLoadingStatus() {
           Still waiting for your instances. Large libraries or slow connections
           can take a little longer.{" "}
           <Link
-            href="/settings"
+            href="/settings/connections"
             className={css({ textDecoration: "underline" })}
           >
             Check connections
@@ -66,28 +78,144 @@ function LibraryLoadingStatus() {
   );
 }
 
-export function LibraryBrowser({ category }: { category: LibraryCategory }) {
+export function LibraryBrowser(props: {
+  category: LibraryCategory;
+  initialStatus?: LibraryStatus;
+  openAdd?: boolean;
+}) {
+  return (
+    <LibrarySection
+      key={`${props.category}:${props.initialStatus ?? "all"}`}
+      {...props}
+    />
+  );
+}
+
+function LibrarySection({
+  category,
+  initialStatus = "all",
+  openAdd = false,
+}: {
+  category: LibraryCategory;
+  initialStatus?: LibraryStatus;
+  openAdd?: boolean;
+}) {
   const router = useRouter();
   const { add, refresh } = useWorkspace();
   const library = useLibrary();
   const instanceQuery = useInstances();
   const [instanceFilter, setInstanceFilter] = useState("all");
   const [quality, setQuality] = useState("all");
-  const [status, setStatus] = useState<LibraryStatus>("all");
+  const [status, setStatus] = useState<LibraryStatus>(initialStatus);
+  const openRequestedAdd = useEffectEvent(() => {
+    add();
+    router.replace("/", { scroll: false });
+  });
+  useEffect(() => {
+    if (openAdd) openRequestedAdd();
+  }, [openAdd]);
   const [sort, setSort] = useState<LibrarySort>("recent");
   const [sortDirection, setSortDirection] =
     useState<LibrarySortDirection>("desc");
   const [layout, setLayout] = useState<LibraryLayout>("grid");
-  const items = library.data?.items ?? [];
-  const instances = instanceQuery.data?.instances ?? [];
-  const { filtered, counts, qualities, filterCount } = useLibraryView(items, {
-    category,
-    status,
+  const [snapshotLoaded, setSnapshotLoaded] = useState(false);
+  const scrollPosition = useRef(0);
+  const scrollRestored = useRef(false);
+  const storageKey = `arrsenal:library-view:${category}`;
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem(storageKey);
+      const snapshot = snapshotSchema.safeParse(
+        stored ? JSON.parse(stored) : null,
+      );
+      if (snapshot.success) {
+        const saved = snapshot.data;
+        setInstanceFilter(saved.instanceFilter);
+        setQuality(saved.quality);
+        setStatus(initialStatus === "all" ? saved.status : initialStatus);
+        setSort(saved.sort);
+        setSortDirection(saved.sortDirection);
+        setLayout(saved.layout);
+        scrollPosition.current = initialStatus === "all" ? saved.scrollY : 0;
+      }
+    } catch {
+      // Storage may be unavailable or contain an interrupted/invalid snapshot.
+    }
+    setSnapshotLoaded(true);
+  }, [storageKey, initialStatus]);
+
+  const saveSnapshot = useEffectEvent(() => {
+    if (!snapshotLoaded) return;
+    try {
+      sessionStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          instanceFilter,
+          quality,
+          status,
+          sort,
+          sortDirection,
+          layout,
+          scrollY: scrollPosition.current,
+        }),
+      );
+    } catch {
+      // Browsing still works when session storage is blocked or full.
+    }
+  });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: View changes must trigger persistence; the event also serves scroll/pagehide listeners.
+  useEffect(() => {
+    saveSnapshot();
+  }, [
+    snapshotLoaded,
     instanceFilter,
     quality,
+    status,
     sort,
     sortDirection,
-  });
+    layout,
+  ]);
+  useEffect(() => {
+    const onScroll = () => {
+      if (!scrollRestored.current) return;
+      scrollPosition.current = window.scrollY;
+      saveSnapshot();
+    };
+    const onPageHide = () => saveSnapshot();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("pagehide", onPageHide);
+    };
+  }, []);
+  const items = library.data?.items ?? [];
+  const instances = instanceQuery.data?.instances ?? [];
+  const { filtered, totalCount, qualities, filterCount, isReady } =
+    useLibraryView(items, {
+      category,
+      status,
+      instanceFilter,
+      quality,
+      sort,
+      sortDirection,
+    });
+  useEffect(() => {
+    if (!snapshotLoaded || !library.data || !isReady || scrollRestored.current)
+      return;
+    // Wait for the restored layout and live query to commit before scrolling.
+    const frame = requestAnimationFrame(() => {
+      window.scrollTo({ top: scrollPosition.current, behavior: "instant" });
+      scrollRestored.current = true;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [snapshotLoaded, library.data, isReady]);
+
+  const hasCompleteData = !!library.data && library.data.errors.length === 0;
+
+  function addMedia() {
+    add(null, category === "shows" ? "series" : "movie");
+  }
 
   function resetFilters() {
     setInstanceFilter("all");
@@ -99,68 +227,89 @@ export function LibraryBrowser({ category }: { category: LibraryCategory }) {
     <>
       <PageHeader
         title={
-          category === "library"
-            ? "Your library"
-            : category === "missing"
-              ? "Missing"
-              : category === "movies"
-                ? "Movies"
-                : "Shows"
-        }
-        description={
           <>
-            {category === "missing"
-              ? "A little closer to complete. See what your quality targets are missing."
-              : "All your favorites. Every quality. One place."}{" "}
-            <span
-              className={css({
-                display: "inline-block",
-                ml: "8px",
-                color: "subtle",
-                fontSize: "10px",
-              })}
-            >
-              {library.isPending ? (
-                <LibraryLoadingStatus />
-              ) : library.isFetching ? (
-                "Syncing library..."
-              ) : library.isError ? (
-                "Sync failed"
-              ) : library.data?.errors.length ? (
-                "Some instances need attention"
-              ) : (
-                "Library up to date"
-              )}
-            </span>
+            {category === "library"
+              ? "Home"
+              : category === "missing"
+                ? "Incomplete"
+                : category === "movies"
+                  ? "Movies"
+                  : "Shows"}{" "}
+            {hasCompleteData && (
+              <span
+                className={css({
+                  ml: "10px",
+                  color: "muted",
+                  fontSize: "12px",
+                  fontWeight: "400",
+                  letterSpacing: "normal",
+                  whiteSpace: "nowrap",
+                })}
+              >
+                {totalCount} {totalCount === 1 ? "title" : "titles"}
+              </span>
+            )}
           </>
         }
         actions={
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label="Refresh library"
-            disabled={library.isFetching}
-            onClick={refresh}
-          >
-            <ArrowClockwiseIcon
-              size={16}
-              className={
-                library.isFetching && !library.isPending
-                  ? css({
-                      animation: "spin 1s linear infinite",
-                      _motionReduce: { animation: "none" },
-                    })
-                  : undefined
-              }
-            />
-          </Button>
+          <>
+            <Button
+              variant="primary"
+              onClick={addMedia}
+              className={css({ display: { base: "inline-flex", lg: "none" } })}
+            >
+              <PlusIcon size={14} />
+              Add media
+            </Button>
+            <div
+              className={css({
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                minWidth: 0,
+              })}
+            >
+              <span
+                className={css({
+                  color: "subtle",
+                  fontSize: "11px",
+                  maxWidth: "260px",
+                })}
+              >
+                {library.isPending ? (
+                  <LibraryLoadingStatus />
+                ) : library.isFetching ? (
+                  "Syncing library..."
+                ) : library.isError ? (
+                  "Sync failed"
+                ) : library.data?.errors.length ? (
+                  "Some instances need attention"
+                ) : (
+                  "Library up to date"
+                )}
+              </span>
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label="Refresh library"
+                disabled={library.isFetching}
+                onClick={refresh}
+              >
+                <ArrowClockwiseIcon
+                  size={16}
+                  className={
+                    library.isFetching && !library.isPending
+                      ? css({
+                          animation: "spin 1s linear infinite",
+                          _motionReduce: { animation: "none" },
+                        })
+                      : undefined
+                  }
+                />
+              </Button>
+            </div>
+          </>
         }
-      />
-      <LibraryStats
-        counts={counts}
-        hasData={!!library.data}
-        isPending={library.isPending}
-        onStatusChange={setStatus}
       />
       {library.isError && library.data && (
         <div className={css({ mb: "14px" })}>
@@ -180,10 +329,6 @@ export function LibraryBrowser({ category }: { category: LibraryCategory }) {
         </div>
       ))}
       <LibraryToolbar
-        category={category}
-        counts={counts}
-        hasData={!!library.data}
-        isPending={library.isPending}
         filterCount={filterCount}
         instances={instances}
         qualities={qualities}
@@ -215,7 +360,12 @@ export function LibraryBrowser({ category }: { category: LibraryCategory }) {
             color: "muted",
           })}
         >
-          <span>{filtered.length} matching titles</span>
+          {hasCompleteData && isReady && snapshotLoaded && (
+            <span>
+              {filtered.length} of {totalCount}{" "}
+              {totalCount === 1 ? "title" : "titles"}
+            </span>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -249,7 +399,7 @@ export function LibraryBrowser({ category }: { category: LibraryCategory }) {
                 item={item}
                 index={index}
                 priority={index < 16}
-                sizes="(min-width: 2022px) 200px, (min-width: 1536px) calc((100vw - 426px) / 8), (min-width: 1280px) calc((100vw - 406px) / 7), (min-width: 1024px) calc((100vw - 366px) / 5), (min-width: 768px) calc((100vw - 144px) / 5), (min-width: 640px) calc((100vw - 68px) / 3), calc((100vw - 53px) / 2)"
+                sizes="(min-width: 1864px) 183px, (min-width: 1536px) calc((100vw - 224px) / 9), (min-width: 1280px) calc((100vw - 204px) / 8), (min-width: 1024px) calc((100vw - 184px) / 7), (min-width: 768px) calc((100vw - 144px) / 5), (min-width: 640px) calc((100vw - 62px) / 3), calc((100vw - 47px) / 2)"
                 href={mediaHref(item)}
               />
             ))}
@@ -289,7 +439,7 @@ export function LibraryBrowser({ category }: { category: LibraryCategory }) {
               if (items.length) {
                 resetFilters();
                 router.push("/");
-              } else add();
+              } else addMedia();
             }}
           >
             {items.length ? "Show all media" : "Add media"}
@@ -311,8 +461,6 @@ export function LibraryBrowser({ category }: { category: LibraryCategory }) {
         })}
       >
         <span>
-          {library.data ? `${filtered.length} titles` : "Titles"}
-          <span className={css({ mx: "7px", color: "#4d4d4d" })}>·</span>
           {instanceQuery.data ? `${instances.length} instances` : "Instances"}
           <span className={css({ mx: "7px", color: "#4d4d4d" })}>·</span>
           One library
@@ -356,7 +504,7 @@ export function LibraryBrowser({ category }: { category: LibraryCategory }) {
                 borderRadius: "50%",
               })}
             />
-            Missing
+            Incomplete
           </span>
           <span
             className={css({

@@ -1,365 +1,105 @@
 "use client";
 
 import {
-  CircleDashedIcon,
-  CompassIcon,
+  CalendarBlankIcon,
   DownloadSimpleIcon,
   FilmSlateIcon,
   GearSixIcon,
-  ListIcon,
-  PlusIcon,
-  SquaresFourIcon,
-  TelevisionIcon,
+  HouseIcon,
   TelevisionSimpleIcon,
 } from "@phosphor-icons/react";
-import { css, cva } from "@styled-system/css";
+import { css } from "@styled-system/css";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type ReactNode, useState } from "react";
-import { useInstances, useQueue } from "@/lib/collections";
-import { PageUtilitiesContext, WorkspaceUtilities } from "./page-header";
-import { Button, Modal } from "./ui";
-import { useWorkspace } from "./workspace-provider";
+import type { ReactNode } from "react";
+import { useQueue } from "@/lib/collections";
+import { WorkspaceUtilities } from "./page-header";
 
 const navigation = [
-  { href: "/", label: "Library", icon: SquaresFourIcon },
-  { href: "/discover", label: "Discover", icon: CompassIcon },
-  { href: "/queue", label: "Download queue", icon: DownloadSimpleIcon },
-];
-const collections = [
+  { href: "/", label: "Home", icon: HouseIcon },
   { href: "/movies", label: "Movies", icon: FilmSlateIcon },
   { href: "/shows", label: "Shows", icon: TelevisionSimpleIcon },
-  { href: "/missing", label: "Missing", icon: CircleDashedIcon },
+  { href: "/queue", label: "Downloads", icon: DownloadSimpleIcon },
+  { href: "/calendar", label: "Calendar", icon: CalendarBlankIcon },
 ];
-const navStyle = cva({
-  base: {
-    display: "flex",
-    alignItems: "center",
-    gap: "11px",
-    px: "12px",
-    height: "39px",
-    borderRadius: "6px",
-    fontSize: "12px",
-    transition: "background 150ms, color 150ms",
-    border: "1px solid transparent",
-    _hover: { bg: "elevated", color: "ink" },
-  },
-  variants: {
-    active: {
-      true: {
-        bg: "#2a2a2a",
-        color: "accent",
-        borderColor: "#e5e5e50b",
-        fontWeight: "500",
-      },
-      false: { color: "muted" },
-    },
-  },
-});
 
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { connect } = useWorkspace();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const instanceQuery = useInstances();
   const queue = useQueue();
-  const instances = instanceQuery.data?.instances ?? [];
-  const isLibrary =
-    pathname === "/" ||
-    collections.some(
-      (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
-    );
-  function openConnections() {
-    setMobileOpen(false);
-    connect();
-  }
-  function sidebar(mobile = false) {
-    return (
-      <>
+  const count = queue.data?.items.length ?? 0;
+  const current = navigation.find((item) =>
+    item.href === "/"
+      ? pathname === "/"
+      : pathname === item.href || pathname.startsWith(`${item.href}/`),
+  );
+  const settingsActive =
+    pathname === "/settings" || pathname.startsWith("/settings/");
+
+  function links(mobile: boolean) {
+    return navigation.map((item) => {
+      const active = current === item;
+      return (
         <Link
-          href="/"
-          aria-label="Arrsenal home"
-          onClick={() => setMobileOpen(false)}
+          key={item.href}
+          href={item.href}
+          aria-current={active ? "page" : undefined}
           className={css({
             display: "flex",
+            flexDirection: mobile ? "column" : "row",
             alignItems: "center",
-            px: "12px",
-            height: "75px",
-            mb: "19px",
+            justifyContent: "center",
+            gap: mobile ? "4px" : "7px",
+            minWidth: 0,
+            minHeight: mobile ? "60px" : "32px",
+            px: mobile ? "2px" : "12px",
+            borderRadius: "8px",
+            color: "muted",
+            fontSize: mobile ? "10px" : "12px",
+            fontWeight: "500",
+            transition: "background 150ms, color 150ms",
+            _currentPage: { color: "accent", bg: "elevated" },
+            _hover: { bg: "elevated", color: "ink" },
+            _focusVisible: {
+              outline: "2px solid token(colors.accent)",
+              outlineOffset: "-2px",
+            },
           })}
         >
-          <Image
-            src="/logo.svg"
-            loading="eager"
-            width={34}
-            height={34}
-            alt=""
-            aria-hidden="true"
-          />
-        </Link>
-        <nav aria-label={mobile ? "Mobile navigation" : "Main navigation"}>
-          <div
-            className={css({
-              display: "flex",
-              flexDirection: "column",
-              gap: "5px",
-            })}
-          >
-            {navigation.map((item) => {
-              const active =
-                item.href === "/" ? isLibrary : pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className={navStyle({ active })}
-                  aria-current={pathname === item.href ? "page" : undefined}
-                >
-                  <item.icon size={19} weight={active ? "fill" : "regular"} />
-                  <span className={css({ flex: 1 })}>{item.label}</span>
-                  {item.href === "/queue" &&
-                    (queue.data?.items.length ?? 0) > 0 && (
-                      <span
-                        className={css({
-                          bg: "#2a2a2a",
-                          color: "accent",
-                          border: "1px solid #414141",
-                          borderRadius: "4px",
-                          minWidth: "19px",
-                          height: "18px",
-                          textAlign: "center",
-                          fontSize: "10px",
-                          lineHeight: "16px",
-                          fontFamily: "mono",
-                        })}
-                      >
-                        {queue.data?.items.length}
-                      </span>
-                    )}
-                </Link>
-              );
-            })}
-          </div>
-          <p
-            className={css({
-              fontSize: "9px",
-              fontWeight: "550",
-              color: "subtle",
-              letterSpacing: "1.3px",
-              textTransform: "uppercase",
-              px: "12px",
-              mt: "33px",
-              mb: "10px",
-            })}
-          >
-            Library
-          </p>
-          <div
-            className={css({
-              display: "flex",
-              flexDirection: "column",
-              gap: "3px",
-            })}
-          >
-            {collections.map((item) => {
-              const active =
-                pathname === item.href || pathname.startsWith(`${item.href}/`);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className={navStyle({ active })}
-                  aria-current={pathname === item.href ? "page" : undefined}
-                >
-                  <item.icon size={18} />
-                  <span className={css({ flex: 1 })}>{item.label}</span>
-                </Link>
-              );
-            })}
-          </div>
-        </nav>
-        <div
-          className={css({
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            px: "12px",
-            mt: "29px",
-            mb: "8px",
-          })}
-        >
-          <p
-            className={css({
-              fontSize: "9px",
-              fontWeight: "550",
-              color: "subtle",
-              letterSpacing: "1.3px",
-              textTransform: "uppercase",
-            })}
-          >
-            Instances
-          </p>
-          <button
-            type="button"
-            onClick={openConnections}
-            aria-label="Connect an instance"
-            className={css({
-              color: "subtle",
-              p: "3px",
-              borderRadius: "3px",
-              _hover: { color: "accent", bg: "elevated" },
-            })}
-          >
-            <PlusIcon size={13} />
-          </button>
-        </div>
-        <div
-          className={css({
-            display: "flex",
-            flexDirection: "column",
-            gap: "2px",
-          })}
-        >
-          {instances.map((instance) => (
-            <Link
-              key={instance.id}
-              href="/settings"
-              onClick={() => setMobileOpen(false)}
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                px: "13px",
-                py: "10px",
-                fontSize: "11px",
-                color: "muted",
-                borderRadius: "5px",
-                _hover: { bg: "elevated", color: "ink" },
-              })}
-            >
+          <span className={css({ position: "relative", display: "flex" })}>
+            <item.icon
+              size={mobile ? 22 : 18}
+              weight={active ? "fill" : "regular"}
+            />
+            {item.href === "/queue" && count > 0 && (
               <span
+                role="img"
+                aria-label={`${count} downloads`}
                 className={css({
-                  color: instance.kind === "sonarr" ? "info" : "warning",
+                  position: "absolute",
+                  top: "-7px",
+                  right: "-10px",
+                  minWidth: "15px",
+                  height: "15px",
+                  px: "3px",
+                  display: "grid",
+                  placeItems: "center",
+                  borderRadius: "8px",
+                  bg: "accent",
+                  color: "canvas",
+                  fontSize: "9px",
+                  fontFamily: "mono",
+                  lineHeight: 1,
                 })}
               >
-                {instance.kind === "sonarr" ? (
-                  <TelevisionIcon size={16} />
-                ) : (
-                  <FilmSlateIcon size={16} />
-                )}
+                {count > 99 ? "99+" : count}
               </span>
-              <span className={css({ flex: 1 })}>{instance.name}</span>
-              <span
-                title={instance.connected ? "Connected" : "Unavailable"}
-                className={css({
-                  width: "5px",
-                  height: "5px",
-                  borderRadius: "50%",
-                  bg: instance.connected ? "positive" : "negative",
-                })}
-              />
-            </Link>
-          ))}
-          {instanceQuery.isPending && (
-            <p
-              className={css({
-                px: "13px",
-                py: "10px",
-                color: "subtle",
-                fontSize: "11px",
-              })}
-            >
-              Loading instances...
-            </p>
-          )}
-          {instanceQuery.isError && (
-            <Link
-              href="/settings"
-              className={css({
-                px: "13px",
-                py: "10px",
-                color: "warning",
-                fontSize: "11px",
-              })}
-            >
-              Connection status unavailable
-            </Link>
-          )}
-          {instanceQuery.data && !instances.length && (
-            <button
-              type="button"
-              onClick={openConnections}
-              className={css({
-                mx: "12px",
-                py: "12px",
-                border: "1px dashed token(colors.line)",
-                borderRadius: "6px",
-                fontSize: "11px",
-                color: "subtle",
-                _hover: { color: "accent", borderColor: "subtle" },
-              })}
-            >
-              + Connect your first instance
-            </button>
-          )}
-        </div>
-        <div className={css({ flex: 1, minHeight: "35px" })} />
-        <Link
-          href="/settings"
-          onClick={() => setMobileOpen(false)}
-          className={navStyle({ active: pathname === "/settings" })}
-        >
-          <GearSixIcon size={18} />
-          <span>Settings</span>
-        </Link>
-        <div
-          className={css({
-            display: "flex",
-            alignItems: "center",
-            gap: "7px",
-            px: "13px",
-            py: "20px",
-            mt: "9px",
-            borderTop: "1px solid token(colors.line)",
-            color: "subtle",
-            fontSize: "9px",
-          })}
-        >
-          <span
-            className={css({
-              width: "5px",
-              height: "5px",
-              borderRadius: "50%",
-              bg: instanceQuery.isPending
-                ? "subtle"
-                : instances.length &&
-                    instances.every((instance) => instance.connected)
-                  ? "positive"
-                  : "warning",
-            })}
-          />
-          {instanceQuery.isPending
-            ? "Checking connections..."
-            : instances.length &&
-                instances.every((instance) => instance.connected)
-              ? "All instances connected"
-              : "Local workspace"}
-          <span
-            className={css({
-              ml: "auto",
-              color: "#555555",
-              fontFamily: "mono",
-              fontSize: "8px",
-            })}
-          >
-            v0.1.0
+            )}
           </span>
-        </div>
-      </>
-    );
+          {item.label}
+        </Link>
+      );
+    });
   }
 
   return (
@@ -381,97 +121,160 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       >
         Skip to content
       </a>
-      <aside
+      <header
         className={css({
-          position: "fixed",
-          left: 0,
+          position: "sticky",
           top: 0,
-          bottom: 0,
-          width: "222px",
-          bg: "sidebar",
-          borderRight: "1px solid token(colors.line)",
-          display: { base: "none", lg: "flex" },
-          flexDirection: "column",
-          px: "15px",
-          overflowY: "auto",
-          zIndex: 20,
+          zIndex: 30,
+          bg: "#111111f5",
+          backdropFilter: "blur(12px)",
+          borderBottom: "1px solid token(colors.line)",
+          paddingTop: "env(safe-area-inset-top)",
         })}
       >
-        {sidebar()}
-      </aside>
-      <div className={css({ ml: { base: 0, lg: "222px" }, minWidth: 0 })}>
-        <header
+        <div
           className={css({
-            height: "56px",
-            borderBottom: "1px solid token(colors.line)",
-            display: { base: "flex", lg: "none" },
+            display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
-            gap: "14px",
-            px: { base: "19px", md: "32px" },
-            bg: "#111111f5",
+            gap: { base: "10px", lg: "20px" },
+            minHeight: "56px",
+            px: { base: "16px", md: "32px" },
+            maxWidth: "1864px",
+            mx: "auto",
           })}
         >
-          <div
+          <Link
+            href="/"
+            aria-label="Arrsenal home"
             className={css({
-              display: "flex",
-              alignItems: "center",
-              gap: "13px",
-              minWidth: 0,
+              display: { base: "none", lg: "flex" },
+              flexShrink: 0,
             })}
           >
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Open navigation"
-              onClick={() => setMobileOpen(true)}
+            <Image
+              src="/logo.svg"
+              loading="eager"
+              width={30}
+              height={30}
+              alt=""
+              aria-hidden="true"
+            />
+          </Link>
+          <span
+            className={css({
+              display: { base: "block", lg: "none" },
+              fontSize: "17px",
+              fontWeight: "600",
+              flex: 1,
+            })}
+          >
+            {settingsActive ? "Settings" : (current?.label ?? "Arrsenal")}
+          </span>
+          <nav
+            aria-label="Main navigation"
+            className={css({
+              display: { base: "none", lg: "flex" },
+              gap: "4px",
+            })}
+          >
+            {links(false)}
+            <Link
+              href="/settings"
+              aria-current={settingsActive ? "page" : undefined}
               className={css({
-                width: "44px",
-                height: "44px",
-                ml: "-7px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "7px",
+                minHeight: "32px",
+                px: "12px",
+                borderRadius: "8px",
+                color: "muted",
+                fontSize: "12px",
+                fontWeight: "500",
+                _currentPage: { color: "accent", bg: "elevated" },
+                _hover: { bg: "elevated", color: "ink" },
               })}
             >
-              <ListIcon size={22} />
-            </Button>
-          </div>
+              <GearSixIcon
+                size={18}
+                weight={settingsActive ? "fill" : "regular"}
+              />
+              Settings
+            </Link>
+          </nav>
           <div
             className={css({
               display: "flex",
               alignItems: "center",
               gap: "8px",
+              ml: "auto",
             })}
           >
-            <WorkspaceUtilities />
+            <WorkspaceUtilities
+              addKind={current?.href === "/shows" ? "series" : "movie"}
+            />
+            <Link
+              href="/settings"
+              aria-label="Settings"
+              aria-current={settingsActive ? "page" : undefined}
+              className={css({
+                display: { base: "flex", lg: "none" },
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "7px",
+                minWidth: "44px",
+                minHeight: "44px",
+                px: "10px",
+                borderRadius: "7px",
+                color: "muted",
+                fontSize: "12px",
+                _currentPage: { color: "accent", bg: "elevated" },
+                _hover: { bg: "elevated", color: "ink" },
+              })}
+            >
+              <GearSixIcon
+                size={21}
+                weight={settingsActive ? "fill" : "regular"}
+              />
+            </Link>
           </div>
-        </header>
-        <main
-          id="main-content"
-          className={css({
-            px: { base: "19px", md: "32px" },
-            pt: { base: "20px", lg: "28px" },
-            pb: "30px",
-            maxWidth: "1800px",
-            mx: "auto",
-          })}
-        >
-          <PageUtilitiesContext
-            value={(actions) => (
-              <WorkspaceUtilities desktopOnly>{actions}</WorkspaceUtilities>
-            )}
-          >
-            {children}
-          </PageUtilitiesContext>
-        </main>
-      </div>
-      <Modal
-        open={mobileOpen}
-        onOpenChange={setMobileOpen}
-        title="Your workspace"
-      >
-        <div className={css({ display: "flex", flexDirection: "column" })}>
-          {sidebar(true)}
         </div>
-      </Modal>
+      </header>
+      <main
+        id="main-content"
+        className={css({
+          px: { base: "16px", md: "32px" },
+          pt: { base: "20px", lg: "28px" },
+          pb: { base: "calc(96px + env(safe-area-inset-bottom))", lg: "32px" },
+          maxWidth: "1864px",
+          mx: "auto",
+          minWidth: 0,
+        })}
+      >
+        {children}
+      </main>
+      <nav
+        aria-label="Mobile navigation"
+        className={css({
+          display: { base: "grid", lg: "none" },
+          gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+          gap: "2px",
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 40,
+          bg: "#151515f5",
+          backdropFilter: "blur(16px)",
+          borderTop: "1px solid token(colors.line)",
+          pt: "6px",
+          px: "max(6px, env(safe-area-inset-left), env(safe-area-inset-right))",
+          pb: "max(6px, env(safe-area-inset-bottom))",
+        })}
+      >
+        {links(true)}
+      </nav>
     </div>
   );
 }
