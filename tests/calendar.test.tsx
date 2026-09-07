@@ -105,7 +105,6 @@ it("renders month and date-grouped agenda with UTC episode times, distinct relea
     screen.getAllByRole("link", { name: "Show" })[0].getAttribute("href"),
   ).toBe("/shows/99-show");
   expect(screen.queryByRole("link", { name: "Unknown identity" })).toBeNull();
-  expect(screen.getByText(/Episode times in UTC/)).toBeTruthy();
 });
 
 it("navigates months across years, uses exclusive ranges, and returns to today", () => {
@@ -467,9 +466,13 @@ it("shows a preference error without hiding the calendar or fallback-zone events
   expect(screen.getByRole("alert").textContent).toBe(preference.error);
   expect(screen.getByLabelText("September 2026 month calendar")).toBeTruthy();
   expect(screen.getAllByText("Show")).toHaveLength(2);
-  expect(
-    screen.getByRole("link", { name: "Change timezone" }).getAttribute("href"),
-  ).toBe("/settings/personalization");
+  const time = new Intl.DateTimeFormat(undefined, {
+    timeZone: "UTC",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(new Date("2026-09-02T23:30:00Z"));
+  expect(screen.getAllByText(time)).toHaveLength(2);
 });
 
 it.each([

@@ -86,6 +86,8 @@ A corrupt or unreadable config produces an error rather than being silently repl
 
 ## Verification
 
+The **CI** GitHub Actions workflow runs `test` and `build` as separate parallel checks when pull requests are opened, updated, or reopened. Each check installs the Bun version pinned in `package.json`, installs dependencies with `--frozen-lockfile`, and runs the corresponding script. New commits cancel outdated runs. The workflow can also be run manually from the Actions tab.
+
 ```sh
 bun run test
 bunx --bun next typegen
@@ -111,9 +113,9 @@ Squash-merge feature PRs with a [Conventional Commit](https://www.conventionalco
 
 The first automated release uses `0.1.0` as its version baseline and only considers commits after `e5f0eb2ec4ed5a5f4fac302c67df5ebf08331316`. This avoids including the earlier development history. The `bootstrap-sha` setting is ignored after the first release. A setup-only chore commit will not open a release PR until a releasable change is merged.
 
-The workflow uses the built-in `GITHUB_TOKEN`; no additional secret is required. Under **Settings > Actions > General > Workflow permissions**, **Allow GitHub Actions to create and approve pull requests** must be enabled. Review the generated release PR and run the verification commands above before merging.
+Release Please uses the repository Actions secret `RELEASE_PLEASE_TOKEN`. Configure it as a fine-grained personal access token restricted to this repository with **Contents**, **Issues**, and **Pull requests** read/write permissions. Replace the secret before the token expires. Review the generated release PR and ensure its CI checks pass before merging.
 
-PRs and release tags created with `GITHUB_TOKEN` do not automatically trigger other GitHub Actions workflows. Image publishing therefore runs in the same workflow using Release Please's outputs. If required PR checks are added, use a GitHub App token for Release Please so its PRs trigger those checks.
+Using `RELEASE_PLEASE_TOKEN` instead of the built-in `GITHUB_TOKEN` allows release PR creation and updates to trigger the PR build and test checks automatically. Image publishing still runs in the same workflow using Release Please's outputs and does not use the personal access token.
 
 The image publishing job has `packages: write` permission and uses `GITHUB_TOKEN` to authenticate to GHCR. After the first successful publish, check the `arrsenal` package settings on GitHub and set its visibility to **Public** if anonymous image pulls are desired; new packages default to private. The image's source label links it to this repository.
 
