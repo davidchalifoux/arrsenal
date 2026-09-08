@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/davidchalifoux/arrsenal/compare/v0.4.0...v0.4.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* include SignalR runtime dependencies in standalone output ([#8](https://github.com/davidchalifoux/arrsenal/issues/8)) ([28faf40](https://github.com/davidchalifoux/arrsenal/commit/28faf40122a452232f9adb832459d98d94acdedf))
+
 ## [0.4.0](https://github.com/davidchalifoux/arrsenal/compare/v0.3.0...v0.4.0) (2026-09-08)
 
 
