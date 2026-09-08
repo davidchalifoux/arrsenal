@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/davidchalifoux/arrsenal/compare/v0.3.0...v0.4.0) (2026-09-08)
+
+
+### Features
+
+* add season searches and compact queue warnings ([#5](https://github.com/davidchalifoux/arrsenal/issues/5)) ([d3fca6c](https://github.com/davidchalifoux/arrsenal/commit/d3fca6c73837acb07a66faee61202935efe2dfeb))
+* replace polling with shared realtime snapshots ([#7](https://github.com/davidchalifoux/arrsenal/issues/7)) ([eb696bd](https://github.com/davidchalifoux/arrsenal/commit/eb696bdf633981afd2c051d8b04c5a882019a939))
+
 ## [0.3.0](https://github.com/davidchalifoux/arrsenal/compare/v0.2.0...v0.3.0) (2026-09-08)
 
 
