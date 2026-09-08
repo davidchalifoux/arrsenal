@@ -1,22 +1,12 @@
-import { instanceSummary, testConnection } from "../../../lib/server/arr";
-import {
-  instanceInput,
-  readInstances,
-  saveInstance,
-} from "../../../lib/server/config";
+import { testConnection } from "../../../lib/server/arr";
+import { instanceInput, saveInstance } from "../../../lib/server/config";
 import { api, jsonBody } from "../../../lib/server/http";
+import { readRealtimeSnapshot } from "../../../lib/server/realtime-snapshots";
 
 export const runtime = "nodejs";
 
 export function GET(request: Request) {
-  return api(
-    async () => ({
-      instances: await Promise.all(
-        (await readInstances()).map(instanceSummary),
-      ),
-    }),
-    request,
-  );
+  return api(() => readRealtimeSnapshot(["instances"]), request);
 }
 
 export function POST(request: Request) {

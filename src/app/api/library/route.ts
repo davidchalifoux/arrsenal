@@ -1,8 +1,8 @@
 import { api } from "../../../lib/server/http";
-import { library } from "../../../lib/server/services";
+import { readRealtimeSnapshot } from "../../../lib/server/realtime-snapshots";
 
 export const runtime = "nodejs";
 
 export function GET(request: Request) {
-  return api(library, request);
+  return api(() => readRealtimeSnapshot(["library"]), request);
 }

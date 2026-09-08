@@ -1,18 +1,39 @@
 import { afterEach, beforeEach, expect, it, mock } from "bun:test";
 import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+} from "@tanstack/react-query";
+import {
+  act,
   cleanup,
   fireEvent,
   render,
   screen,
   within,
 } from "@testing-library/react";
-import type { ComponentProps } from "react";
+import type { ComponentProps, PropsWithChildren } from "react";
+import type { RealtimeConnection } from "@/lib/use-realtime";
 
 const mocks = {
   pathname: "/",
   add: mock(),
   searchLibrary: mock(),
   queue: { data: { items: [] as unknown[] } },
+  realtime: {
+    connection: "connecting",
+    instances: [],
+  } as RealtimeConnection,
+  instances: {
+    data: {
+      instances: [
+        { id: "private-radarr-id", name: "Movies server" },
+        { id: "private-sonarr-id", name: "Shows server" },
+      ],
+    },
+  },
+  sync: mock(async (_scope: string) => {}),
+  notify: mock(),
 };
 mock.module("next/navigation", () => ({ usePathname: () => mocks.pathname }));
 mock.module("next/link", () => ({
@@ -27,7 +48,11 @@ mock.module("next/link", () => ({
     />
   ),
 }));
-mock.module("@/lib/collections", () => ({ useQueue: () => mocks.queue }));
+mock.module("@/lib/collections", () => ({
+  useQueue: () => mocks.queue,
+  useInstances: () => mocks.instances,
+  useSyncData: () => mocks.sync,
+}));
 mock.module("@/components/library-provider", () => ({
   useLibraryActions: () => mocks,
 }));
@@ -43,18 +68,32 @@ const destinations = [
   ["Calendar", "/calendar"],
 ];
 
+let client: QueryClient;
+function wrapper({ children }: PropsWithChildren) {
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+
 beforeEach(() => {
   mock.clearAllMocks();
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  mocks.realtime = { connection: "connecting", instances: [] };
+  mocks.sync.mockImplementation(async () => {});
   mocks.pathname = "/";
   mocks.queue = { data: { items: [] } };
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  client.clear();
+});
 
 function renderShell() {
   return render(
     <LibraryShell>
       <h1>Library content</h1>
     </LibraryShell>,
+    { wrapper },
   );
 }
 
@@ -112,6 +151,7 @@ it("keeps the page title in PageHeader without repeating it in the banner", () =
     <LibraryShell>
       <PageHeader title="Movies" />
     </LibraryShell>,
+    { wrapper },
   );
 
   const banner = within(screen.getByRole("banner"));
@@ -228,4 +268,128 @@ it("keeps global Search and Add in the header and updates the Add seed with the 
     expect(mocks.add).toHaveBeenCalledWith(null, kind);
     expect(mocks.searchLibrary).toHaveBeenCalledTimes(1);
   }
+});
+
+it("keeps cached content visible and clears only recovered or removed instance warnings", () => {
+  const view = renderShell();
+  expect(screen.queryByRole("alert")).toBeNull();
+  const content = screen.getByRole("heading", { name: "Library content" });
+  mocks.realtime = {
+    connection: "connected",
+    instances: [
+      { instanceId: "private-radarr-id", status: "disconnected" },
+      { instanceId: "private-sonarr-id", status: "disconnected" },
+    ],
+  };
+  const update = () =>
+    view.rerender(
+      <LibraryShell>
+        <h1>Library content</h1>
+      </LibraryShell>,
+    );
+  update();
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  const warning = screen.getByRole("alert");
+  expect(warning.textContent).toContain("Movies server");
+  expect(warning.textContent).toContain("Shows server");
+  expect(warning.textContent).not.toContain("private-");
+  expect(
+    within(warning)
+      .getByRole("link", { name: "Check instances" })
+      .getAttribute("href"),
+  ).toBe("/settings/connections");
+  expect(screen.getByRole("heading", { name: "Library content" })).toBe(
+    content,
+  );
+
+  mocks.realtime.instances = [
+    { instanceId: "private-radarr-id", status: "connected" },
+    { instanceId: "private-sonarr-id", status: "disconnected" },
+  ];
+  update();
+  expect(screen.getByRole("alert").textContent).not.toContain("Movies server");
+  expect(screen.getByRole("alert").textContent).toContain("Shows server");
+  mocks.realtime.instances = [
+    { instanceId: "private-radarr-id", status: "connected" },
+  ];
+  update();
+  expect(screen.queryByRole("alert")).toBeNull();
+
+  mocks.realtime.connection = "disconnected";
+  update();
+  expect(screen.getByRole("alert").textContent).toContain("browser");
+  mocks.realtime.connection = "connected";
+  update();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("refreshes in place while disconnected without clearing the warning", async () => {
+  mocks.realtime.connection = "disconnected";
+  let finish!: () => void;
+  mocks.sync.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  renderShell();
+  const content = screen.getByRole("heading", { name: "Library content" });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh data" }));
+  const pending = screen.getByRole("button", { name: "Refreshing..." });
+  expect(pending.hasAttribute("disabled")).toBe(true);
+  fireEvent.click(pending);
+  expect(mocks.sync).toHaveBeenCalledTimes(1);
+  expect(mocks.sync).toHaveBeenCalledWith("all");
+  await act(async () => finish());
+  expect(
+    screen
+      .getByRole("button", { name: "Refresh data" })
+      .hasAttribute("disabled"),
+  ).toBe(false);
+  expect(screen.getByRole("alert").textContent).toContain(
+    "Live updates disconnected",
+  );
+  expect(screen.getByRole("heading", { name: "Library content" })).toBe(
+    content,
+  );
+  expect(mocks.notify).not.toHaveBeenCalled();
+});
+
+it("reports failed refreshes without replacing cached content or dismissing the warning", async () => {
+  mocks.realtime.connection = "disconnected";
+  function CachedData() {
+    const query = useQuery({
+      queryKey: ["library"],
+      queryFn: async () => {
+        throw new Error("Service unavailable");
+      },
+      initialData: "Cached title",
+    });
+    return <p>{query.data}</p>;
+  }
+  mocks.sync.mockImplementation(async () => {
+    await client.invalidateQueries();
+  });
+  render(
+    <LibraryShell>
+      <CachedData />
+    </LibraryShell>,
+    { wrapper },
+  );
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Refresh data" }));
+  });
+  expect(mocks.notify).toHaveBeenCalledWith(
+    "Some data could not be refreshed. Please try again.",
+    true,
+  );
+  expect(screen.getByText("Cached title")).toBeDefined();
+  expect(screen.getByRole("alert").textContent).toContain(
+    "Live updates disconnected",
+  );
+  expect(
+    screen
+      .getByRole("button", { name: "Refresh data" })
+      .hasAttribute("disabled"),
+  ).toBe(false);
 });

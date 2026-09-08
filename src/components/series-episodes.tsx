@@ -11,9 +11,10 @@ import {
   WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { css, cva } from "@styled-system/css";
-import { useQueries } from "@tanstack/react-query";
+import { type QueryFunctionContext, useQueries } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { api, qualityLabel, sizeLabel } from "@/lib/client";
+import { realtimeQuery } from "@/lib/realtime-query";
 import type {
   ActionResponse,
   Episode,
@@ -175,10 +176,10 @@ export function SeriesEpisodes({
   const queries = useQueries({
     queries: media.targets.map((target) => ({
       queryKey: ["episodes", target.instanceId, target.remoteId],
-      queryFn: async ({ signal }: { signal: AbortSignal }) => {
-        const response = await api<EpisodesResponse>(
+      queryFn: async (context: QueryFunctionContext) => {
+        const response = await realtimeQuery<EpisodesResponse>(
+          context,
           `/api/episodes?instanceId=${encodeURIComponent(target.instanceId)}&remoteId=${target.remoteId}`,
-          { signal },
         );
         if (
           response.instanceId !== target.instanceId ||
@@ -187,7 +188,6 @@ export function SeriesEpisodes({
           throw new Error("Episode response does not match this target.");
         return response;
       },
-      refetchInterval: 30_000,
       staleTime: 30_000,
       retry: false,
     })),

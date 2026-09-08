@@ -11,8 +11,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useSyncExternalStore } from "react";
-import { queuePollingInterval, subscribeQueueView } from "./polling";
+import { useSyncExternalStore } from "react";
 import { instancesQuery, libraryQuery, queueQuery } from "./queries";
 import type {
   InstanceSummary,
@@ -56,7 +55,6 @@ function createCollections(queryClient: QueryClient) {
     queue: createCollection(
       queryCollectionOptions({
         ...queueQuery,
-        refetchInterval: () => queuePollingInterval(queryClient),
         queryKey: [...queueQuery.queryKey],
         queryFn: queueQuery.queryFn,
         queryClient,
@@ -171,11 +169,7 @@ export function useInstances() {
   };
 }
 
-export function useQueue(activeView = false) {
-  const client = useQueryClient();
-  useEffect(() => {
-    if (activeView) return subscribeQueueView(client);
-  }, [client, activeView]);
+export function useQueue() {
   const collections = useCollections();
   const ready = useClientReady();
   const live = useLiveQuery({

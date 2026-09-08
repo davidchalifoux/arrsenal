@@ -1,14 +1,11 @@
 import { api, jsonBody } from "../../../lib/server/http";
-import {
-  queue,
-  removeQueueItem,
-  retryQueueItem,
-} from "../../../lib/server/services";
+import { readRealtimeSnapshot } from "../../../lib/server/realtime-snapshots";
+import { removeQueueItem, retryQueueItem } from "../../../lib/server/services";
 
 export const runtime = "nodejs";
 
 export function GET(request: Request) {
-  return api(queue, request);
+  return api(() => readRealtimeSnapshot(["queue"]), request);
 }
 
 export function DELETE(request: Request) {

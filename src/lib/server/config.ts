@@ -101,9 +101,19 @@ export function savePreferences(
 
 const state = globalThis as typeof globalThis & {
   __arrsenalConfigWrites?: Map<string, Promise<unknown>>;
+  __arrsenalInstanceListeners?: Set<() => void>;
 };
 state.__arrsenalConfigWrites ??= new Map();
 const writes = state.__arrsenalConfigWrites;
+state.__arrsenalInstanceListeners ??= new Set();
+const instanceListeners = state.__arrsenalInstanceListeners;
+
+export function subscribeInstanceChanges(listener: () => void): () => void {
+  instanceListeners.add(listener);
+  return () => {
+    instanceListeners.delete(listener);
+  };
+}
 
 async function mutateConfig<T>(change: (config: Config) => T): Promise<T> {
   const directory = configDirectory();
@@ -166,10 +176,24 @@ async function mutateConfig<T>(change: (config: Config) => T): Promise<T> {
   }
 }
 
+async function mutateInstances<T>(
+  change: (instances: InstanceConfig[]) => T,
+): Promise<T> {
+  const result = await mutateConfig(({ instances }) => change(instances));
+  for (const listener of instanceListeners) {
+    try {
+      listener();
+    } catch {
+      // A notification failure must not turn a committed write into a failed save.
+    }
+  }
+  return result;
+}
+
 export function saveInstance(
   input: Omit<InstanceConfig, "id">,
 ): Promise<InstanceConfig> {
-  return mutateConfig(({ instances }) => {
+  return mutateInstances((instances) => {
     if (instances.some((instance) => instance.url === input.url)) {
       throw new ApiError(
         409,
@@ -188,7 +212,7 @@ export function updateInstance(
   expected: InstanceConfig,
   input: Omit<InstanceConfig, "id">,
 ): Promise<InstanceConfig> {
-  return mutateConfig(({ instances }) => {
+  return mutateInstances((instances) => {
     const index = instances.findIndex(
       (instance) => instance.id === expected.id,
     );
@@ -223,7 +247,7 @@ export function updateInstance(
 }
 
 export function removeInstance(id: string): Promise<void> {
-  return mutateConfig(({ instances }) => {
+  return mutateInstances((instances) => {
     const index = instances.findIndex((instance) => instance.id === id);
     if (index === -1) throw new ApiError(404, "Instance not found.");
     instances.splice(index, 1);

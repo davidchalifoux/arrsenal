@@ -45,10 +45,8 @@ const {
   useQueue,
   useSyncData,
 } = await import("@/lib/collections");
-const { configurePollingFocus } = await import("@/lib/polling");
-const { instancesQuery, libraryQuery, queueQuery } = await import(
-  "@/lib/queries"
-);
+const { calendarQuery, instancesQuery, libraryQuery, queueQuery } =
+  await import("@/lib/queries");
 
 const movie: MediaItem = {
   id: "movie:1",
@@ -505,125 +503,46 @@ describe("collections", () => {
     expect(invalidate.mock.calls).toEqual([[]]);
   });
 
-  it("owns one polling observer for multiple subscribers and stops after unmount", async () => {
+  it("shares cached data without interval polling and refreshes it on demand", async () => {
     jest.useFakeTimers();
-    const { client, wrapper } = setup();
+    const { wrapper } = setup();
+    let remaining = download.sizeleft;
     (
       api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
-    ).mockResolvedValue({
-      items: [download],
-      errors: [],
+    ).mockImplementation(async (path) => {
+      if (path === "/api/instances") return { instances: [instance] };
+      if (path === "/api/library") return { items: [movie], errors: [] };
+      if (path === "/api/queue") {
+        return { items: [{ ...download, sizeleft: remaining }], errors: [] };
+      }
+      return { items: [], errors: [] };
     });
-    const first = renderHook(useQueue, { wrapper });
-    const second = renderHook(useQueue, { wrapper });
-    await act(() => advanceTime(1));
-    expect(api).toHaveBeenCalledTimes(1);
-    expect(first.result.current.data?.items).toEqual([download]);
-    expect(second.result.current.data?.items).toEqual([download]);
-    const observers = client
-      .getQueryCache()
-      .find({ queryKey: queueQuery.queryKey })?.observers;
-    expect(
-      observers?.filter((observer) => observer.options.enabled !== false),
-    ).toHaveLength(1);
-    await act(() => advanceTime(60_000));
-    expect(api).toHaveBeenCalledTimes(2);
-    first.unmount();
-    await act(() => advanceTime(60_000));
-    expect(api).toHaveBeenCalledTimes(3);
-    second.unmount();
-    await act(() => advanceTime(30_000));
-    expect(api).toHaveBeenCalledTimes(3);
-  });
-
-  it("changes queue cadence immediately as active views mount and unmount without fetching", async () => {
-    jest.useFakeTimers();
-    const { client, wrapper } = setup();
-    (
-      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
-    ).mockResolvedValue({ items: [], errors: [] });
-    renderHook(() => useQueue(), { wrapper });
-    await act(() => advanceTime(1));
-    await act(() => advanceTime(15_000));
-    expect(api).toHaveBeenCalledTimes(1);
-    const view = renderHook(() => useQueue(true), { wrapper });
-    const secondView = renderHook(() => useQueue(true), { wrapper });
-    await act(() => advanceTime(1));
-    expect(api).toHaveBeenCalledTimes(1);
-    await act(() => advanceTime(15_000));
-    expect(api).toHaveBeenCalledTimes(2);
-    view.unmount();
-    await act(() => advanceTime(15_000));
-    expect(api).toHaveBeenCalledTimes(3);
-    secondView.unmount();
-    await act(() => advanceTime(15_000));
-    expect(api).toHaveBeenCalledTimes(3);
-    await act(() => advanceTime(45_000));
-    expect(api).toHaveBeenCalledTimes(4);
-    expect(
-      client
-        .getQueryCache()
-        .find({ queryKey: ["queue"] })
-        ?.observers.filter((observer) => observer.options.enabled !== false),
-    ).toHaveLength(1);
-  });
-
-  it("pauses collection and ordinary query polling on blur or hidden tabs and resumes on focus", async () => {
-    jest.useFakeTimers();
-    const focused = spyOn(document, "hasFocus").mockReturnValue(true);
-    const visibility = mock(() => "visible");
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      get: visibility,
-    });
-    onTestFinished(() => Reflect.deleteProperty(document, "visibilityState"));
-    configurePollingFocus();
-    const { client, wrapper } = setup();
-    client.setDefaultOptions({
-      queries: { retry: false, refetchOnWindowFocus: false },
-    });
-    (
-      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
-    ).mockImplementation(async (path) =>
-      path === "/api/instances" ? { instances: [] } : { items: [], errors: [] },
-    );
-    const episodes = mock(async () => []);
-    renderHook(
-      () => {
-        useLibrary();
-        useInstances();
-        useQueue(true);
-        useQuery({
-          queryKey: ["episodes"],
-          queryFn: episodes,
-          refetchInterval: 30_000,
-        });
-      },
+    const first = renderHook(
+      () => ({
+        library: useLibrary(),
+        instances: useInstances(),
+        queue: useQueue(),
+        calendar: useQuery(calendarQuery("2026-09-01", "2026-09-30")),
+        sync: useSyncData(),
+      }),
       { wrapper },
     );
+    const second = renderHook(useQueue, { wrapper });
     await act(() => advanceTime(1));
-    expect(api).toHaveBeenCalledTimes(3);
-    expect(episodes).toHaveBeenCalledTimes(1);
-    focused.mockReturnValue(false);
-    act(() => window.dispatchEvent(new Event("blur")));
+    expect(api).toHaveBeenCalledTimes(4);
+    expect(first.result.current.queue.data?.items[0].sizeleft).toBe(remaining);
+    expect(second.result.current.data?.items[0].sizeleft).toBe(remaining);
     await act(() => advanceTime(120_000));
-    expect(api).toHaveBeenCalledTimes(3);
-    expect(episodes).toHaveBeenCalledTimes(1);
-    // Explicit reconciliation still works while polling is paused.
-    await act(() => client.invalidateQueries({ queryKey: ["queue"] }));
     expect(api).toHaveBeenCalledTimes(4);
-    focused.mockReturnValue(true);
-    visibility.mockReturnValue("hidden");
-    act(() => window.dispatchEvent(new Event("focus")));
-    await act(() => advanceTime(60_000));
-    expect(api).toHaveBeenCalledTimes(4);
-    visibility.mockReturnValue("visible");
-    act(() => document.dispatchEvent(new Event("visibilitychange")));
+
+    remaining = 0;
+    await act(() => first.result.current.sync("all"));
     await act(() => advanceTime(1));
-    expect(api).toHaveBeenCalledTimes(4);
-    await act(() => advanceTime(60_000));
-    expect(api).toHaveBeenCalledTimes(10);
-    expect(episodes).toHaveBeenCalledTimes(3);
+    expect(first.result.current.queue.data?.items[0].sizeleft).toBe(0);
+    expect(second.result.current.data?.items[0].sizeleft).toBe(0);
+    expect(api).toHaveBeenCalledTimes(8);
+    await act(() => advanceTime(120_000));
+    expect(api).toHaveBeenCalledTimes(8);
   });
 
   it("retains queue rows through a total outage and replaces them on recovery", async () => {

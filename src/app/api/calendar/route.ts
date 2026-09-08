@@ -1,12 +1,16 @@
-import { calendar } from "../../../lib/server/calendar";
 import { api } from "../../../lib/server/http";
+import { readRealtimeSnapshot } from "../../../lib/server/realtime-snapshots";
 
 export const runtime = "nodejs";
 
 export function GET(request: Request) {
   return api(async () => {
     const params = new URL(request.url).searchParams;
-    const result = await calendar(params.get("start"), params.get("end"));
+    const result = await readRealtimeSnapshot([
+      "calendar",
+      params.get("start") ?? "",
+      params.get("end") ?? "",
+    ]);
     const failed =
       result.instanceCount > 0 && result.errors.length === result.instanceCount;
     return Response.json(

@@ -7,14 +7,18 @@ import {
   GearSixIcon,
   HouseIcon,
   TelevisionSimpleIcon,
+  WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { css } from "@styled-system/css";
+import { useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
-import { useQueue } from "@/lib/collections";
+import { type ReactNode, useState } from "react";
+import { useInstances, useQueue, useSyncData } from "@/lib/collections";
+import { useLibraryActions } from "./library-provider";
 import { LibraryUtilities } from "./page-header";
+import { Button } from "./ui";
 
 const navigation = [
   { href: "/", label: "Home", icon: HouseIcon },
@@ -23,6 +27,110 @@ const navigation = [
   { href: "/queue", label: "Downloads", icon: DownloadSimpleIcon },
   { href: "/calendar", label: "Calendar", icon: CalendarBlankIcon },
 ];
+
+function RealtimeWarning() {
+  const { realtime, notify } = useLibraryActions();
+  const instances = useInstances();
+  const sync = useSyncData();
+  const client = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
+  const disconnected = realtime.instances.filter(
+    (instance) => instance.status === "disconnected",
+  );
+  const streamDisconnected = realtime.connection === "disconnected";
+  if (!streamDisconnected && !disconnected.length) return null;
+
+  const names = disconnected.map(
+    (instance) =>
+      instances.data?.instances.find(
+        (configured) => configured.id === instance.instanceId,
+      )?.name ?? "An instance",
+  );
+
+  async function refresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await sync("all");
+      const failed = client.getQueryCache().findAll({
+        type: "active",
+        predicate: (query) => query.state.status === "error",
+      });
+      if (failed.length) {
+        notify("Some data could not be refreshed. Please try again.", true);
+      }
+    } catch {
+      notify("Could not refresh data. Please try again.", true);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  return (
+    <div
+      role="alert"
+      className={css({
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: "12px",
+        mb: "20px",
+        p: "12px 14px",
+        border: "1px solid #633a35",
+        bg: "#30211f",
+        color: "negative",
+        borderRadius: "7px",
+        fontSize: "12px",
+        lineHeight: "1.6",
+      })}
+    >
+      <WarningCircleIcon size={20} aria-hidden="true" />
+      <div className={css({ flex: "1 1 240px", minWidth: 0 })}>
+        <p className={css({ fontWeight: "600" })}>Live updates disconnected</p>
+        {streamDisconnected && (
+          <p>The browser's live connection is unavailable.</p>
+        )}
+        {!!names.length && (
+          <p className={css({ overflowWrap: "anywhere" })}>
+            Affected instances: {names.join(", ")}.
+          </p>
+        )}
+        <p>Displayed data may be outdated.</p>
+      </div>
+      <div
+        className={css({
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: "8px",
+        })}
+      >
+        <Button
+          disabled={refreshing}
+          onClick={() => void refresh()}
+          className={css({ minHeight: "44px" })}
+        >
+          {refreshing ? "Refreshing..." : "Refresh data"}
+        </Button>
+        <Link
+          href="/settings/connections"
+          className={css({
+            display: "inline-flex",
+            alignItems: "center",
+            minHeight: "44px",
+            px: "8px",
+            color: "inherit",
+            textDecoration: "underline",
+            textUnderlineOffset: "3px",
+            _hover: { color: "ink" },
+          })}
+        >
+          Check instances
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 export function LibraryShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -245,6 +353,7 @@ export function LibraryShell({ children }: { children: ReactNode }) {
           minWidth: 0,
         })}
       >
+        <RealtimeWarning />
         {children}
       </main>
       <nav

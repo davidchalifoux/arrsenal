@@ -3,7 +3,7 @@ import "server-only";
 import { z } from "zod";
 import type { Episode, EpisodesResponse, ServiceError } from "../types";
 import { arrRequest, num, queueRecords, type Row, row, rows, str } from "./arr";
-import { getInstance, type InstanceConfig } from "./config";
+import type { InstanceConfig } from "./config";
 import { ApiError, errorMessage } from "./http";
 import { qualityName } from "./media";
 
@@ -50,11 +50,12 @@ export async function verifyEpisode(
   }
 }
 
-export async function episodes(
-  instanceId: string,
+export async function instanceEpisodes(
+  instance: InstanceConfig,
   remoteId: number,
+  loadQueue: () => Promise<Row[]> = () => queueRecords(instance),
 ): Promise<EpisodesResponse> {
-  const instance = await getInstance(instanceId);
+  const instanceId = instance.id;
   if (instance.kind !== "sonarr")
     throw new ApiError(400, "Episodes require a Sonarr instance.");
   const signal = AbortSignal.timeout(20000);
@@ -69,7 +70,7 @@ export async function episodes(
         signal,
         query: { seriesId: remoteId },
       }).then(rows),
-      queueRecords(instance, signal),
+      loadQueue(),
     ]);
   if (seriesResult.status === "rejected") throw seriesResult.reason;
   if (episodeResult.status === "rejected") throw episodeResult.reason;
