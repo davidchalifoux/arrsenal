@@ -19,7 +19,7 @@ import {
   str,
 } from "./arr";
 import { getInstance, type InstanceConfig, readInstances } from "./config";
-import { verifyEpisode } from "./episodes";
+import { episodeFilesForRemoval, verifyEpisode } from "./episodes";
 import { ApiError, errorMessage, parseInput } from "./http";
 import {
   mergeMedia,
@@ -27,9 +27,12 @@ import {
   normalizeRelease,
   qualityName,
 } from "./media";
+import { updateSnapshots } from "./realtime-snapshots";
 import {
   addMediaSchema,
   grabReleaseSchema,
+  removeEpisodeFilesSchema,
+  removeMediaSchema,
   removeQueueSchema,
   retryQueueSchema,
   searchSchema,
@@ -388,6 +391,74 @@ export async function addMedia(input: unknown): Promise<Response> {
     },
     errors.length ? (added ? 207 : results[0].status) : 200,
   );
+}
+
+export async function removeMedia(input: unknown): Promise<Response> {
+  const { instanceId, remoteId, kind, deleteFiles } = parseInput(
+    removeMediaSchema,
+    input,
+  );
+  const instance = await getInstance(instanceId);
+  requireKind(instance, kind);
+  return runAction(instance, async () => {
+    const media = row(await arrRequest(instance, `${kind}/${remoteId}`));
+    if (media.id !== remoteId)
+      throw new ApiError(502, "Instance returned an invalid media identity.");
+    try {
+      await arrRequest(instance, `${kind}/${remoteId}`, {
+        method: "DELETE",
+        query: { deleteFiles },
+      });
+    } finally {
+      // Failed requests may still have changed upstream state.
+      updateSnapshots(
+        instance,
+        null,
+        ["library", "instances", "calendar", "episodes"],
+        remoteId,
+      );
+    }
+    return `Removed from ${instance.name}.${deleteFiles ? " Files were deleted from disk." : " Files were kept on disk."}`;
+  });
+}
+
+export async function removeEpisodeFiles(input: unknown): Promise<Response> {
+  const { instanceId, remoteId, episodeId, seasonNumber } = parseInput(
+    removeEpisodeFilesSchema,
+    input,
+  );
+  const instance = await getInstance(instanceId);
+  requireKind(instance, "series");
+  return runAction(instance, async () => {
+    const fileIds = await episodeFilesForRemoval(
+      instance,
+      remoteId,
+      episodeId,
+      seasonNumber,
+    );
+    let deleted = 0;
+    try {
+      for (const fileId of fileIds) {
+        await arrRequest(instance, `episodefile/${fileId}`, {
+          method: "DELETE",
+        });
+        deleted++;
+      }
+    } catch (error) {
+      throw new ApiError(
+        error instanceof ApiError ? error.status : 500,
+        `${deleted} of ${fileIds.length} file deletions confirmed. ${errorMessage(error)} Refresh before retrying; the failed deletion may have been accepted.`,
+      );
+    } finally {
+      updateSnapshots(
+        instance,
+        null,
+        ["library", "instances", "calendar", "episodes"],
+        remoteId,
+      );
+    }
+    return `Deleted ${deleted} file${deleted === 1 ? "" : "s"} from disk. Monitoring was not changed; monitored episodes may download again.`;
+  });
 }
 
 export async function automaticSearch(input: unknown): Promise<Response> {

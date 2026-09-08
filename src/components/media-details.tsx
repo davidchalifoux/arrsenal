@@ -12,11 +12,13 @@ import {
   PlusIcon,
   StarIcon,
   TargetIcon,
+  TrashIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { api, sizeLabel } from "@/lib/client";
 import type {
@@ -28,7 +30,15 @@ import type {
 import { Poster, QualityBadge } from "./media-card";
 import { PageToolbar } from "./page-header";
 import { SeriesEpisodes } from "./series-episodes";
-import { Button, Modal, mutedStyle, Notice, SelectField, Spinner } from "./ui";
+import {
+  Button,
+  CheckField,
+  Modal,
+  mutedStyle,
+  Notice,
+  SelectField,
+  Spinner,
+} from "./ui";
 
 const targetGridStyle = css({
   display: "grid",
@@ -63,6 +73,12 @@ export function MediaDetails({
   notify: (message: string, error?: boolean) => void;
   onChanged: () => void;
 }) {
+  const router = useRouter();
+  const [removeTarget, setRemoveTarget] = useState<MediaTarget | null>(null);
+  const [deleteFiles, setDeleteFiles] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState("");
+  const removeLock = useRef(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [releaseTarget, setReleaseTarget] = useState<MediaTarget | null>(null);
   const [searchScope, setSearchScope] = useState<{
@@ -96,17 +112,79 @@ export function MediaDetails({
       setBusy(null);
     }
   }
+  async function remove() {
+    if (!removeTarget || removeLock.current) return;
+    if (
+      !media.targets.some(
+        (target) =>
+          target.instanceId === removeTarget.instanceId &&
+          target.remoteId === removeTarget.remoteId,
+      )
+    ) {
+      setRemoveError(
+        "This target is no longer available. Close and try again.",
+      );
+      return;
+    }
+    removeLock.current = true;
+    setRemoving(true);
+    setRemoveError("");
+    try {
+      const result = await api<ActionResponse>("/api/media", {
+        method: "DELETE",
+        body: JSON.stringify({
+          instanceId: removeTarget.instanceId,
+          remoteId: removeTarget.remoteId,
+          kind: media.kind,
+          deleteFiles,
+        }),
+      });
+      if (!result.success) throw new Error(result.message);
+      notify(result.message);
+      if (media.targets.length === 1) {
+        // Leave the detail route before refreshing its now-removed library row.
+        router.replace(media.kind === "movie" ? "/movies" : "/shows");
+        onChanged();
+        return;
+      }
+      setRemoveTarget(null);
+      onChanged();
+    } catch (cause) {
+      setRemoveError(
+        cause instanceof Error ? cause.message : "Removal failed.",
+      );
+    }
+    removeLock.current = false;
+    setRemoving(false);
+  }
   return (
     <>
       <article className={css({ minWidth: 0, width: "100%" })}>
         <PageToolbar
           actions={
-            media.kind === "movie" && (
-              <Button onClick={() => onAddTarget(media)}>
-                <PlusIcon size={15} />
-                Add target
-              </Button>
-            )
+            <>
+              {media.targets.length > 0 && (
+                <Button
+                  variant="danger"
+                  disabled={removing}
+                  onClick={() => {
+                    if (removeLock.current) return;
+                    setRemoveTarget(media.targets[0]);
+                    setDeleteFiles(false);
+                    setRemoveError("");
+                  }}
+                >
+                  <TrashIcon size={15} />
+                  Remove {media.kind === "movie" ? "movie" : "show"}
+                </Button>
+              )}
+              {media.kind === "movie" && (
+                <Button onClick={() => onAddTarget(media)}>
+                  <PlusIcon size={15} />
+                  Add target
+                </Button>
+              )}
+            </>
           }
         >
           <Link
@@ -827,6 +905,101 @@ export function MediaDetails({
           />
         )}
       </article>
+      <Modal
+        open={removeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !removeLock.current) setRemoveTarget(null);
+        }}
+        title={`Remove ${media.kind === "movie" ? "movie" : "show"}?`}
+        description={`Remove ${media.title} from one library target. Other targets will not be removed.`}
+      >
+        <div className={css({ display: "grid", gap: "18px", minWidth: 0 })}>
+          <SelectField
+            label="Instance target to remove"
+            disabled={removing}
+            value={
+              removeTarget
+                ? `${removeTarget.instanceId}:${removeTarget.remoteId}`
+                : ""
+            }
+            options={media.targets.map((target) => ({
+              value: `${target.instanceId}:${target.remoteId}`,
+              label: `${target.instanceName} · ${target.qualityProfile} · ID ${target.remoteId}`,
+            }))}
+            onChange={(value) => {
+              if (removeLock.current) return;
+              const target = media.targets.find(
+                (item) => `${item.instanceId}:${item.remoteId}` === value,
+              );
+              if (target) {
+                setRemoveTarget(target);
+                setDeleteFiles(false);
+                setRemoveError("");
+              }
+            }}
+          />
+          <p className={mutedStyle}>
+            {media.targets.length === 1
+              ? "This is the last target. After removal, you will return to the library."
+              : `Remaining library targets: ${media.targets
+                  .filter(
+                    (target) =>
+                      target.instanceId !== removeTarget?.instanceId ||
+                      target.remoteId !== removeTarget?.remoteId,
+                  )
+                  .map(
+                    (target) =>
+                      `${target.instanceName} (${target.qualityProfile})`,
+                  )
+                  .join(", ")}. These targets will not be removed.`}
+          </p>
+          <CheckField
+            checked={deleteFiles}
+            disabled={removing}
+            onChange={(value) => {
+              if (!removeLock.current) setDeleteFiles(value);
+            }}
+          >
+            Also delete {media.kind === "movie" ? "movie" : "all show"} files
+            from disk on {removeTarget?.instanceName}
+          </CheckField>
+          <Notice error={deleteFiles}>
+            {deleteFiles
+              ? `Permanently deletes ${media.kind === "movie" ? "the movie files" : "all downloaded episode files for this show"} managed by ${removeTarget?.instanceName}. This cannot be undone.`
+              : "Files will be kept on disk. Only the selected instance's library entry will be removed."}
+          </Notice>
+          {removeError && <Notice error>{removeError}</Notice>}
+          <div
+            className={css({
+              display: "flex",
+              flexWrap: "wrap",
+              justifyContent: "flex-end",
+              gap: "10px",
+            })}
+          >
+            <Button
+              disabled={removing}
+              onClick={() => {
+                if (!removeLock.current) setRemoveTarget(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={removing || !removeTarget}
+              onClick={() => void remove()}
+            >
+              {removing ? <Spinner size={15} /> : <TrashIcon size={15} />}
+              {removing
+                ? "Removing..."
+                : deleteFiles
+                  ? "Remove and delete files"
+                  : "Remove from library"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
       {releaseTarget && (
         <ReleaseSearch
           key={searchScope ? `${searchScope.kind}:${searchScope.id}` : "all"}

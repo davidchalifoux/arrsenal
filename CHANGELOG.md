@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+* Remove movies and shows from individual library targets, optionally deleting files.
+* Delete specific episode files or season files with scoped confirmations and ownership validation.
+
 ## [0.4.1](https://github.com/davidchalifoux/arrsenal/compare/v0.4.0...v0.4.1) (2026-09-08)
 
 
