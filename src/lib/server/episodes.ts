@@ -50,6 +50,96 @@ export async function verifyEpisode(
   }
 }
 
+const deletionEpisodeSchema = episodeSchema.extend({
+  episodeFileId: numberSchema,
+});
+const deletionFileSchema = identitySchema.extend({
+  seasonNumber: numberSchema,
+});
+
+export async function episodeFilesForRemoval(
+  instance: InstanceConfig,
+  remoteId: number,
+  episodeId?: number,
+  seasonNumber?: number,
+): Promise<number[]> {
+  if (instance.kind !== "sonarr")
+    throw new ApiError(400, "Episodes require a Sonarr instance.");
+  const [seriesValue, episodeValue, fileValue] = await Promise.all([
+    arrRequest(instance, `series/${remoteId}`),
+    arrRequest(instance, "episode", { query: { seriesId: remoteId } }),
+    arrRequest(instance, "episodefile", { query: { seriesId: remoteId } }),
+  ]);
+  const series = seriesSchema.safeParse(seriesValue);
+  const episodes = z.array(deletionEpisodeSchema).safeParse(episodeValue);
+  const files = z.array(deletionFileSchema).safeParse(fileValue);
+  if (
+    !series.success ||
+    series.data.id !== remoteId ||
+    new Set(series.data.seasons.map((season) => season.seasonNumber)).size !==
+      series.data.seasons.length ||
+    !episodes.success ||
+    episodes.data.some((episode) => episode.seriesId !== remoteId) ||
+    new Set(episodes.data.map((episode) => episode.id)).size !==
+      episodes.data.length ||
+    !files.success ||
+    files.data.some((file) => file.seriesId !== remoteId) ||
+    new Set(files.data.map((file) => file.id)).size !== files.data.length
+  ) {
+    throw new ApiError(
+      502,
+      "Instance returned invalid, ambiguous, or mismatched series/episode/file records. No files were deleted.",
+    );
+  }
+  const seasons = new Set(
+    series.data.seasons.map((season) => season.seasonNumber),
+  );
+  const fileMap = new Map(files.data.map((file) => [file.id, file]));
+  // Validate the complete response before deleting anything, including shared
+  // file references outside the selected episode or season.
+  for (const episode of episodes.data) {
+    const file = fileMap.get(episode.episodeFileId);
+    if (
+      !seasons.has(episode.seasonNumber) ||
+      (episode.hasFile
+        ? !file || file.seasonNumber !== episode.seasonNumber
+        : episode.episodeFileId !== 0)
+    ) {
+      throw new ApiError(
+        502,
+        "Instance returned inconsistent episode file ownership. No files were deleted.",
+      );
+    }
+  }
+  const selected = episodes.data.filter((episode) =>
+    episodeId !== undefined
+      ? episode.id === episodeId
+      : episode.seasonNumber === seasonNumber,
+  );
+  if (
+    (episodeId !== undefined && selected.length !== 1) ||
+    (seasonNumber !== undefined && !seasons.has(seasonNumber))
+  ) {
+    throw new ApiError(
+      400,
+      "The selected episode or season does not belong to the requested series on this instance.",
+    );
+  }
+  const ids = [
+    ...new Set(
+      selected
+        .filter((episode) => episode.hasFile)
+        .map((episode) => episode.episodeFileId),
+    ),
+  ];
+  if (!ids.length)
+    throw new ApiError(
+      409,
+      "The selected episode or season has no files to delete.",
+    );
+  return ids;
+}
+
 export async function instanceEpisodes(
   instance: InstanceConfig,
   remoteId: number,

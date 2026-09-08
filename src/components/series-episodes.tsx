@@ -8,6 +8,7 @@ import {
   CircleDashedIcon,
   DotsThreeIcon,
   MagnifyingGlassIcon,
+  TrashIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { css, cva } from "@styled-system/css";
@@ -167,7 +168,12 @@ export function SeriesEpisodes({
   onSeasonManualSearch: (target: MediaTarget, seasonNumber: number) => void;
 }) {
   const [pending, setPending] = useState<string | null>(null);
-  const searchLock = useRef(false);
+  const actionLock = useRef(false);
+  const [removing, setRemoving] = useState<{
+    target: MediaTarget;
+    scope: Episode | number;
+  } | null>(null);
+  const [removeError, setRemoveError] = useState("");
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [selected, setSelected] = useState<{
     season: number;
@@ -228,9 +234,100 @@ export function SeriesEpisodes({
     ? seasons.get(selected.season)?.get(selected.episode)
     : undefined;
 
+  function canDeleteFiles(target: MediaTarget, scope: Episode | number) {
+    const index = media.targets.findIndex(
+      (candidate) =>
+        candidate.instanceId === target.instanceId &&
+        candidate.remoteId === target.remoteId,
+    );
+    const query = queries[index];
+    if (
+      !query?.data ||
+      query.isError ||
+      query.isFetching ||
+      query.data.errors.length
+    )
+      return false;
+    const episodes = query.data.episodes.filter((episode) =>
+      typeof scope === "number"
+        ? episode.seasonNumber === scope
+        : episode.id === scope.id,
+    );
+    if (
+      episodes.length === 0 ||
+      episodes.some(
+        (episode) =>
+          episode.seriesId !== target.remoteId || episode.status === "unknown",
+      )
+    )
+      return false;
+    if (typeof scope !== "number") {
+      const episode = episodes[0];
+      return (
+        episodes.length === 1 &&
+        episode.seasonNumber === scope.seasonNumber &&
+        episode.episodeNumber === scope.episodeNumber &&
+        episode.hasFile
+      );
+    }
+    return episodes.some((episode) => episode.hasFile);
+  }
+
+  function confirmDeleteFiles(target: MediaTarget, scope: Episode | number) {
+    if (actionLock.current || !canDeleteFiles(target, scope)) return;
+    setRemoveError("");
+    setRemoving({ target, scope });
+  }
+
+  async function deleteFiles() {
+    if (
+      !removing ||
+      actionLock.current ||
+      !canDeleteFiles(removing.target, removing.scope)
+    )
+      return;
+    const { target, scope } = removing;
+    actionLock.current = true;
+    setPending("delete-files");
+    setRemoveError("");
+    try {
+      const result = await api<ActionResponse>("/api/episodes", {
+        method: "DELETE",
+        body: JSON.stringify({
+          instanceId: target.instanceId,
+          remoteId: target.remoteId,
+          ...(typeof scope === "number"
+            ? { seasonNumber: scope }
+            : { episodeId: scope.id }),
+        }),
+      });
+      if (!result.success) throw new Error(result.message);
+      notify(result.message);
+      setRemoving(null);
+    } catch (cause) {
+      setRemoveError(
+        cause instanceof Error ? cause.message : "File deletion failed.",
+      );
+    } finally {
+      // A failed season deletion may still have removed some files.
+      await Promise.allSettled(queries.map((query) => query.refetch()));
+      actionLock.current = false;
+      setPending(null);
+      onChanged();
+    }
+  }
+
+  const removalScope = removing
+    ? typeof removing.scope === "number"
+      ? removing.scope === 0
+        ? "Specials (season 0)"
+        : `Season ${removing.scope}`
+      : `${episodeCode(removing.scope)} · ${removing.scope.title || "Untitled episode"}`
+    : "";
+
   async function search(target: MediaTarget, scope: Episode | number) {
-    if (searchLock.current) return;
-    searchLock.current = true;
+    if (actionLock.current) return;
+    actionLock.current = true;
     setPending(
       `${target.instanceId}:${typeof scope === "number" ? `season:${scope}` : scope.id}`,
     );
@@ -252,7 +349,7 @@ export function SeriesEpisodes({
     } catch (cause) {
       notify(cause instanceof Error ? cause.message : "Search failed.", true);
     } finally {
-      searchLock.current = false;
+      actionLock.current = false;
       setPending(null);
     }
   }
@@ -290,7 +387,9 @@ export function SeriesEpisodes({
         {media.targets.length > 0 && (
           <Button
             size="sm"
-            disabled={queries.some((query) => query.isFetching)}
+            disabled={
+              pending !== null || queries.some((query) => query.isFetching)
+            }
             onClick={() => {
               for (const query of queries) void query.refetch();
             }}
@@ -557,6 +656,23 @@ export function SeriesEpisodes({
                         >
                           Manual search
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`Delete files for ${seasonLabel} on ${target.instanceName}`}
+                          disabled={
+                            pending !== null || !canDeleteFiles(target, number)
+                          }
+                          title="Requires current episode data and downloaded files. Refresh episodes if unavailable."
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            confirmDeleteFiles(target, number);
+                          }}
+                        >
+                          <TrashIcon size={12} />
+                          Delete files
+                        </Button>
                       </span>
                     );
                   })}
@@ -800,6 +916,23 @@ export function SeriesEpisodes({
                                               >
                                                 Manual search
                                               </Menu.Item>
+                                              <Menu.Item
+                                                className={menuItemStyle}
+                                                aria-label={`Delete file for ${code} on ${target.instanceName}`}
+                                                disabled={
+                                                  pending !== null ||
+                                                  !canDeleteFiles(target, local)
+                                                }
+                                                onClick={() =>
+                                                  confirmDeleteFiles(
+                                                    target,
+                                                    local,
+                                                  )
+                                                }
+                                              >
+                                                <TrashIcon size={14} />
+                                                Delete file
+                                              </Menu.Item>
                                             </Menu.Popup>
                                           </Menu.Positioner>
                                         </Menu.Portal>
@@ -821,17 +954,101 @@ export function SeriesEpisodes({
         })}
       </div>
       <Modal
-        open={Boolean(detail)}
+        open={Boolean(detail || removing)}
         onOpenChange={(open) => {
-          if (!open) setSelected(null);
+          if (!open && !actionLock.current) {
+            setRemoving(null);
+            setRemoveError("");
+            setSelected(null);
+          }
         }}
-        title={detail?.episode.title || "Episode details"}
+        title={
+          removing
+            ? typeof removing.scope === "number"
+              ? "Delete season files?"
+              : "Delete episode file?"
+            : detail?.episode.title || "Episode details"
+        }
         description={
-          detail ? `${media.title} · ${episodeCode(detail.episode)}` : undefined
+          removing
+            ? `${media.title} · ${removalScope} · ${removing.target.instanceName}`
+            : detail
+              ? `${media.title} · ${episodeCode(detail.episode)}`
+              : undefined
         }
         wide
       >
-        {detail && (
+        {removing ? (
+          <div className={css({ display: "grid", gap: "16px" })}>
+            <p className={mutedStyle}>
+              Permanently delete{" "}
+              {typeof removing.scope === "number"
+                ? "all downloaded files for"
+                : "the downloaded file for"}{" "}
+              <strong>
+                {media.title} · {removalScope}
+              </strong>{" "}
+              from disk on <strong>{removing.target.instanceName}</strong>? The
+              series stays in the library. Other instances are not changed.
+            </p>
+            <Notice>
+              This deletes actual files and cannot be undone. Monitoring is not
+              changed, so monitored episodes may download again. Deleting a
+              multi-episode file removes the file for every episode it contains,
+              including episodes outside the selected scope.
+            </Notice>
+            {removeError && <Notice error>{removeError}</Notice>}
+            {pending === null &&
+              !canDeleteFiles(removing.target, removing.scope) && (
+                <Notice>
+                  No current downloaded files are confirmed for this scope, or
+                  episode data is unavailable or out of date. Refresh before
+                  deleting.
+                </Notice>
+              )}
+            <div
+              className={css({
+                display: "flex",
+                justifyContent: "flex-end",
+                flexWrap: "wrap",
+                gap: "8px",
+              })}
+            >
+              <Button
+                disabled={pending !== null}
+                onClick={() => {
+                  setRemoving(null);
+                  setRemoveError("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={
+                  pending !== null || queries.some((query) => query.isFetching)
+                }
+                onClick={() => {
+                  for (const query of queries) void query.refetch();
+                }}
+              >
+                Refresh episodes
+              </Button>
+              <Button
+                variant="danger"
+                disabled={
+                  pending !== null ||
+                  !canDeleteFiles(removing.target, removing.scope)
+                }
+                onClick={() => void deleteFiles()}
+              >
+                {pending === "delete-files" && <Spinner size={13} />}
+                {typeof removing.scope === "number"
+                  ? "Delete season files"
+                  : "Delete episode file"}
+              </Button>
+            </div>
+          </div>
+        ) : detail ? (
           <>
             <div
               className={css({
@@ -967,6 +1184,18 @@ export function SeriesEpisodes({
                         >
                           Manual search
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          disabled={
+                            pending !== null || !canDeleteFiles(target, local)
+                          }
+                          title="Requires current episode data and a downloaded file. Refresh episodes if unavailable."
+                          onClick={() => confirmDeleteFiles(target, local)}
+                        >
+                          <TrashIcon size={13} />
+                          Delete file
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -974,7 +1203,7 @@ export function SeriesEpisodes({
               })}
             </div>
           </>
-        )}
+        ) : null}
       </Modal>
     </section>
   );

@@ -10,6 +10,8 @@ Arrsenal is a self-hosted Next.js client for Sonarr and Radarr's v3 APIs. It com
 - Unified titles with independent quality targets across HD and 4K instances.
 - Dedicated movie and show pages with bookmarkable URLs, metadata, and quality targets.
 - Expandable show seasons and episode availability per Sonarr instance, with automatic and manual episode searches.
+- Remove movies or shows from a selected instance, keeping files by default or explicitly deleting them from disk.
+- Delete individual episode files or a season's downloaded files without removing the show. Confirmations identify the instance and warn about shared episode files and automatic redownloads.
 - Catalog lookup and multi-instance adding with a quality profile and root folder per target.
 - Automatic search and manual release search, including rejection reasons and confirmed release grabs.
 - Combined download queues with progress, removal/blocklisting, pending-release grabs, and import retries.

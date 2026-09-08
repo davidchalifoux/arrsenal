@@ -265,6 +265,32 @@ export const searchSchema = z
     searchScopeError,
   );
 
+export const removeMediaSchema = z.strictObject(
+  {
+    instanceId: instanceIdSchema,
+    remoteId: integerSchema("remoteId"),
+    kind: mediaKindSchema,
+    deleteFiles: z.boolean({ error: "deleteFiles must be a boolean." }),
+  },
+  objectError,
+);
+
+export const removeEpisodeFilesSchema = z
+  .strictObject(
+    {
+      instanceId: instanceIdSchema,
+      remoteId: integerSchema("remoteId"),
+      episodeId: integerSchema("episodeId").optional(),
+      seasonNumber: integerSchema("seasonNumber", 0).optional(),
+    },
+    objectError,
+  )
+  .refine(
+    (value) =>
+      (value.episodeId === undefined) !== (value.seasonNumber === undefined),
+    { error: "Select exactly one episodeId or seasonNumber." },
+  );
+
 export const grabReleaseSchema = z.object(
   {
     guid: textSchema("guid", 4096),

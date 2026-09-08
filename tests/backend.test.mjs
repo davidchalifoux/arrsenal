@@ -218,6 +218,29 @@ async function setup(definitions = {}) {
           records: node.queue.slice((page - 1) * pageSize, page * pageSize),
         });
       }
+      if (
+        req.method === "DELETE" &&
+        /^(movie|series|episodefile)\/\d+$/.test(endpoint)
+      ) {
+        if (node.deleteFailures?.includes(endpoint))
+          return send({ error: "Disk is unavailable" }, 503);
+        const id = Number(parts[5]);
+        if (endpoint.startsWith("episodefile/")) {
+          node.files = (node.files ?? []).filter((file) => file.id !== id);
+          node.episodes = (node.episodes ?? []).map((episode) =>
+            episode.episodeFileId === id
+              ? { ...episode, hasFile: false, episodeFileId: 0 }
+              : episode,
+          );
+        } else {
+          node.media = node.media.filter((item) => item.id !== id);
+          if (url.searchParams.get("deleteFiles") === "true")
+            node.files = (node.files ?? []).filter(
+              (file) => (file.seriesId ?? file.movieId) !== id,
+            );
+        }
+        return new Response(null, { status: 200 });
+      }
       if (endpoint === "episodefile")
         return send(
           node.files ?? [
@@ -237,7 +260,9 @@ async function setup(definitions = {}) {
         return send(node.media);
       if (/^(movie|series)\/\d+$/.test(endpoint))
         return send(
-          node.media.find((item) => item.id === Number(parts[5])) ?? {},
+          node.mediaResponse ??
+            node.media.find((item) => item.id === Number(parts[5])) ??
+            {},
           node.media.some((item) => item.id === Number(parts[5])) ? 200 : 404,
         );
       if (endpoint === "release" && req.method === "GET")
@@ -458,6 +483,412 @@ test("episode searches and releases use local episode IDs and reject wrong-serie
   expect(
     env.calls.filter((call) => ["command", "release"].includes(call.endpoint)),
   ).toHaveLength(actions);
+});
+
+test("library removal keeps files only when requested and isolates equal IDs on other instances", async () => {
+  const env = await setup({
+    radarr: { media: [movie], files: [{ id: 90, movieId: 11 }] },
+    other: { media: [movie], files: [{ id: 91, movieId: 11 }] },
+    sonarr: {
+      kind: "sonarr",
+      media: [series],
+      files: [{ id: 70, seriesId: 22 }],
+    },
+  });
+  const radarr = await env.connect("radarr");
+  await env.connect("other");
+  const sonarr = await env.connect("sonarr");
+  const kept = await mediaRoute.DELETE(
+    request("/api/media", "DELETE", {
+      instanceId: radarr.id,
+      remoteId: 11,
+      kind: "movie",
+      deleteFiles: false,
+    }),
+  );
+  expect(kept.status).toBe(200);
+  expect((await kept.json()).success).toBe(true);
+  expect(env.nodes.radarr.media).toEqual([]);
+  expect(env.nodes.radarr.files).toEqual([{ id: 90, movieId: 11 }]);
+  expect(env.nodes.other.media).toEqual([movie]);
+  expect(env.nodes.other.files).toEqual([{ id: 91, movieId: 11 }]);
+  const removed = await mediaRoute.DELETE(
+    request("/api/media", "DELETE", {
+      instanceId: sonarr.id,
+      remoteId: 22,
+      kind: "series",
+      deleteFiles: true,
+    }),
+  );
+  expect(removed.status).toBe(200);
+  expect(env.nodes.sonarr.media).toEqual([]);
+  expect(env.nodes.sonarr.files).toEqual([]);
+  expect(
+    env.calls
+      .filter((call) => call.method === "DELETE")
+      .map(({ node, endpoint, query }) => ({ node, endpoint, query })),
+  ).toEqual([
+    { node: "radarr", endpoint: "movie/11", query: { deleteFiles: "false" } },
+    { node: "sonarr", endpoint: "series/22", query: { deleteFiles: "true" } },
+  ]);
+});
+
+test("removal rejects unsafe bodies, foreign origins, wrong instance kinds, and mismatched media identities", async () => {
+  const env = await setup({ radarr: { media: [movie] } });
+  const instance = await env.connect("radarr");
+  const payload = {
+    instanceId: instance.id,
+    remoteId: 11,
+    kind: "movie",
+    deleteFiles: false,
+  };
+  const before = env.calls.length;
+  for (const body of [
+    { ...payload, deleteFiles: undefined },
+    { ...payload, deleteFiles: "false" },
+    { ...payload, deleteFiles: null },
+    { ...payload, remoteId: "11" },
+    { ...payload, kind: "series" },
+  ]) {
+    expect(
+      (await mediaRoute.DELETE(request("/api/media", "DELETE", body))).status,
+    ).toBe(400);
+  }
+  expect(
+    (
+      await mediaRoute.DELETE(
+        request("/api/media", "DELETE", payload, {
+          Origin: "https://foreign.example",
+        }),
+      )
+    ).status,
+  ).toBe(403);
+  for (const scope of [
+    {},
+    { episodeId: 1, seasonNumber: 0 },
+    { episodeId: 1, episodeFileId: 90 },
+    { seasonNumber: -1 },
+    { seasonNumber: "0" },
+    { episodeId: null },
+    { episodeId: 1 },
+  ]) {
+    expect(
+      (
+        await episodesRoute.DELETE(
+          request("/api/episodes", "DELETE", {
+            instanceId: instance.id,
+            remoteId: 11,
+            ...scope,
+          }),
+        )
+      ).status,
+    ).toBe(400);
+  }
+  expect(env.calls).toHaveLength(before);
+  env.nodes.radarr.mediaResponse = { ...movie, id: 12 };
+  expect(
+    (await mediaRoute.DELETE(request("/api/media", "DELETE", payload))).status,
+  ).toBe(502);
+  expect(env.nodes.radarr.media).toEqual([movie]);
+  expect(env.calls.filter((call) => call.method === "DELETE")).toEqual([]);
+});
+
+test("episode file removal resolves current instance-local files and removes all episodes sharing that file", async () => {
+  const episodes = [
+    {
+      id: 901,
+      seriesId: 22,
+      seasonNumber: 1,
+      episodeNumber: 1,
+      monitored: true,
+      hasFile: true,
+      episodeFileId: 70,
+    },
+    {
+      id: 902,
+      seriesId: 22,
+      seasonNumber: 1,
+      episodeNumber: 2,
+      monitored: true,
+      hasFile: true,
+      episodeFileId: 70,
+    },
+  ];
+  const env = await setup({
+    sonarr: {
+      kind: "sonarr",
+      media: [series],
+      episodes,
+      files: [{ id: 70, seriesId: 22, seasonNumber: 1 }],
+    },
+    other: {
+      kind: "sonarr",
+      media: [series],
+      episodes,
+      files: [{ id: 70, seriesId: 22, seasonNumber: 1 }],
+    },
+  });
+  const instance = await env.connect("sonarr");
+  await env.connect("other");
+  // A replacement arrived after the client rendered the original file.
+  env.nodes.sonarr.episodes = episodes.map((episode) => ({
+    ...episode,
+    episodeFileId: 80,
+  }));
+  env.nodes.sonarr.files = [{ id: 80, seriesId: 22, seasonNumber: 1 }];
+  const response = await episodesRoute.DELETE(
+    request("/api/episodes", "DELETE", {
+      instanceId: instance.id,
+      remoteId: 22,
+      episodeId: 901,
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(env.nodes.sonarr.files).toEqual([]);
+  expect(
+    env.nodes.sonarr.episodes.map(({ hasFile, monitored }) => ({
+      hasFile,
+      monitored,
+    })),
+  ).toEqual([
+    { hasFile: false, monitored: true },
+    { hasFile: false, monitored: true },
+  ]);
+  expect(env.nodes.sonarr.media).toEqual([series]);
+  expect(env.nodes.other.episodes).toEqual(episodes);
+  expect(env.nodes.other.files).toEqual([
+    { id: 70, seriesId: 22, seasonNumber: 1 },
+  ]);
+  expect(
+    env.calls
+      .filter((call) => call.method === "DELETE")
+      .map(({ node, endpoint }) => ({ node, endpoint })),
+  ).toEqual([{ node: "sonarr", endpoint: "episodefile/80" }]);
+});
+
+test("season file removal deduplicates shared files and leaves other seasons and monitoring untouched", async () => {
+  const episodes = [
+    {
+      id: 900,
+      seriesId: 22,
+      seasonNumber: 0,
+      episodeNumber: 1,
+      monitored: false,
+      hasFile: true,
+      episodeFileId: 60,
+    },
+    {
+      id: 901,
+      seriesId: 22,
+      seasonNumber: 1,
+      episodeNumber: 1,
+      monitored: true,
+      hasFile: true,
+      episodeFileId: 70,
+    },
+    {
+      id: 902,
+      seriesId: 22,
+      seasonNumber: 1,
+      episodeNumber: 2,
+      monitored: true,
+      hasFile: true,
+      episodeFileId: 70,
+    },
+    {
+      id: 903,
+      seriesId: 22,
+      seasonNumber: 1,
+      episodeNumber: 3,
+      monitored: false,
+      hasFile: false,
+      episodeFileId: 0,
+    },
+  ];
+  const env = await setup({
+    sonarr: {
+      kind: "sonarr",
+      media: [series],
+      episodes,
+      files: [
+        { id: 60, seriesId: 22, seasonNumber: 0 },
+        { id: 70, seriesId: 22, seasonNumber: 1 },
+      ],
+    },
+  });
+  const instance = await env.connect("sonarr");
+  const remove = (seasonNumber) =>
+    episodesRoute.DELETE(
+      request("/api/episodes", "DELETE", {
+        instanceId: instance.id,
+        remoteId: 22,
+        seasonNumber,
+      }),
+    );
+  expect((await remove(1)).status).toBe(200);
+  expect(env.nodes.sonarr.files).toEqual([
+    { id: 60, seriesId: 22, seasonNumber: 0 },
+  ]);
+  expect(env.nodes.sonarr.episodes[0]).toEqual(episodes[0]);
+  expect(env.nodes.sonarr.episodes.map((episode) => episode.monitored)).toEqual(
+    [false, true, true, false],
+  );
+  expect((await remove(0)).status).toBe(200);
+  expect(env.nodes.sonarr.files).toEqual([]);
+  expect((await remove(0)).status).toBe(409);
+  expect(
+    env.calls
+      .filter((call) => call.method === "DELETE")
+      .map((call) => call.endpoint),
+  ).toEqual(["episodefile/70", "episodefile/60"]);
+});
+
+test("episode and season removal validate every identity before any deletion", async () => {
+  const first = {
+    id: 901,
+    seriesId: 22,
+    seasonNumber: 1,
+    episodeNumber: 1,
+    monitored: true,
+    hasFile: true,
+    episodeFileId: 70,
+  };
+  const second = { ...first, id: 902, episodeNumber: 2, episodeFileId: 71 };
+  const file = { id: 70, seriesId: 22, seasonNumber: 1 };
+  const otherFile = { ...file, id: 71 };
+  const env = await setup({ sonarr: { kind: "sonarr", media: [series] } });
+  const instance = await env.connect("sonarr");
+  for (const invalid of [
+    { episodes: [first, { ...second, seriesId: 33 }] },
+    { episodes: [first, { ...second, id: 901 }] },
+    { episodes: [first, { ...second, episodeFileId: "71" }] },
+    { episodes: [first, { ...second, hasFile: false }] },
+    { episodes: [first, { ...second, seasonNumber: 0, episodeFileId: 70 }] },
+    { episodes: [first, { ...second, seasonNumber: 2 }] },
+    { files: [file] },
+    { files: [file, { ...otherFile, seriesId: 33 }] },
+    { files: [file, { ...otherFile, seasonNumber: 0 }] },
+    { files: [file, otherFile, otherFile] },
+    { files: {} },
+    { mediaResponse: { ...series, id: 33 } },
+    {
+      mediaResponse: {
+        ...series,
+        seasons: [{ seasonNumber: 1 }, { seasonNumber: 1 }],
+      },
+    },
+  ]) {
+    Object.assign(
+      env.nodes.sonarr,
+      {
+        episodes: [first, second],
+        files: [file, otherFile],
+        mediaResponse: undefined,
+      },
+      invalid,
+    );
+    for (const scope of [{ seasonNumber: 1 }, { episodeId: 901 }]) {
+      const response = await episodesRoute.DELETE(
+        request("/api/episodes", "DELETE", {
+          instanceId: instance.id,
+          remoteId: 22,
+          ...scope,
+        }),
+      );
+      expect(response.status).toBe(502);
+      expect((await response.json()).success).toBe(false);
+    }
+  }
+  Object.assign(env.nodes.sonarr, {
+    episodes: [first, second],
+    files: [file, otherFile],
+    mediaResponse: undefined,
+  });
+  for (const scope of [{ episodeId: 999 }, { seasonNumber: 2 }]) {
+    expect(
+      (
+        await episodesRoute.DELETE(
+          request("/api/episodes", "DELETE", {
+            instanceId: instance.id,
+            remoteId: 22,
+            ...scope,
+          }),
+        )
+      ).status,
+    ).toBe(400);
+  }
+  expect(env.calls.filter((call) => call.method === "DELETE")).toEqual([]);
+});
+
+test("season removal reports partial writes and retries only remaining current files", async () => {
+  const env = await setup({
+    sonarr: {
+      kind: "sonarr",
+      media: [series],
+      episodes: [
+        {
+          id: 901,
+          seriesId: 22,
+          seasonNumber: 1,
+          episodeNumber: 1,
+          monitored: true,
+          hasFile: true,
+          episodeFileId: 70,
+        },
+        {
+          id: 902,
+          seriesId: 22,
+          seasonNumber: 1,
+          episodeNumber: 2,
+          monitored: true,
+          hasFile: true,
+          episodeFileId: 71,
+        },
+      ],
+      files: [
+        { id: 70, seriesId: 22, seasonNumber: 1 },
+        { id: 71, seriesId: 22, seasonNumber: 1 },
+      ],
+      deleteFailures: ["episodefile/71"],
+    },
+  });
+  const instance = await env.connect("sonarr");
+  const remove = () =>
+    episodesRoute.DELETE(
+      request("/api/episodes", "DELETE", {
+        instanceId: instance.id,
+        remoteId: 22,
+        seasonNumber: 1,
+      }),
+    );
+  const readEpisodes = async () => {
+    const response = await episodesRoute.GET(
+      request(`/api/episodes?instanceId=${instance.id}&remoteId=22`),
+    );
+    expect(response.status).toBe(200);
+    return (await response.json()).episodes.map((episode) => episode.hasFile);
+  };
+  expect(await readEpisodes()).toEqual([true, true]);
+  const response = await remove();
+  expect(response.status).toBe(502);
+  const body = await response.json();
+  expect(body.success).toBe(false);
+  expect(body.message).toMatch(/1 of 2/);
+  expect(body.errors[0]).toMatchObject({ instanceId: instance.id });
+  expect(body.errors[0].message).toMatch(/HTTP 503/);
+  expect(env.nodes.sonarr.files).toEqual([
+    { id: 71, seriesId: 22, seasonNumber: 1 },
+  ]);
+  expect(await readEpisodes()).toEqual([false, true]);
+  env.nodes.sonarr.deleteFailures = [];
+  expect((await remove()).status).toBe(200);
+  expect(env.nodes.sonarr.files).toEqual([]);
+  expect(await readEpisodes()).toEqual([false, false]);
+  expect(
+    env.calls
+      .filter((call) => call.method === "DELETE")
+      .map((call) => call.endpoint),
+  ).toEqual(["episodefile/70", "episodefile/71", "episodefile/71"]);
 });
 
 test("season searches and releases target the selected series and include specials", async () => {
