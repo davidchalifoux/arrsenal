@@ -7,15 +7,29 @@ import {
   LogLevel,
 } from "@microsoft/signalr";
 import WebSocket from "ws";
-import {
-  type RealtimeEvent,
-  type RealtimeTopic,
-  realtimeTopics,
+import type {
+  RealtimeEvent,
+  RealtimeSnapshot,
+  RealtimeStatus,
+  RealtimeTopic,
 } from "../realtime-events";
 import { row } from "./arr";
-import { type InstanceConfig, readInstances } from "./config";
+import {
+  type InstanceConfig,
+  readInstances,
+  subscribeInstanceChanges,
+} from "./config";
+import {
+  reconcileSnapshots,
+  refreshSnapshots,
+  subscribeSnapshots,
+  updateSnapshots,
+} from "./realtime-snapshots";
 
-type Listener = (event: RealtimeEvent) => void;
+type Listener = {
+  onStatus: (status: RealtimeStatus) => void;
+  onInvalidate: (event: RealtimeEvent) => void;
+};
 type Timer = NodeJS.Timeout;
 type RealtimeManager = { subscribe(listener: Listener): () => void };
 type Attempt = {
@@ -29,21 +43,22 @@ type InstanceConnection = {
   attempt?: Attempt;
   retry?: Timer;
   failures: number;
+  status: RealtimeStatus["instances"][number]["status"];
 };
 
-const refreshInterval = 5_000;
 const openingTimeout = 10_000;
 const closeTimeout = 1_000;
-const coalesceInterval = 100;
 const mediaTopics: RealtimeTopic[] = ["library", "episodes", "calendar"];
 const importTopics: RealtimeTopic[] = ["queue", ...mediaTopics];
-const queueTopics: RealtimeTopic[] = ["queue", "episodes"];
+const queueTopics: RealtimeTopic[] = ["queue", "library", "episodes"];
 const instanceTopics: RealtimeTopic[] = ["instances"];
-const optionTopics: RealtimeTopic[] = ["options"];
+const optionTopics: RealtimeTopic[] = ["options", "library"];
+const pageTopics: RealtimeTopic[] = ["episodes", "calendar", "options"];
+const maxPendingHints = 64;
 
 function messageTopics(message: unknown): readonly RealtimeTopic[] | undefined {
   const value = row(message);
-  // Read only the allowlisted discriminator/status; never retain upstream bodies.
+  // Only known resource categories may update the normalized snapshot store.
   switch (value.name) {
     case "queue":
     case "queue/details":
@@ -83,49 +98,77 @@ function messageTopics(message: unknown): readonly RealtimeTopic[] | undefined {
 function createManager() {
   const listeners = new Set<Listener>();
   const connections = new Map<string, InstanceConnection>();
-  const pending = new Map<string | undefined, Set<RealtimeTopic>>();
-  let flushTimer: Timer | undefined;
-  let refreshTimer: Timer | undefined;
+  let unsubscribeConfig: (() => void) | undefined;
   let reconciling = false;
   let reconcileRequested = false;
   let generation = 0;
+  const hints = new Map<string, RealtimeEvent>();
+  let hintTimer: Timer | undefined;
+
+  function invalidate(event: RealtimeEvent) {
+    if (!listeners.size || hints.has("*")) return;
+    const key = event.instanceId
+      ? JSON.stringify([event.instanceId, event.remoteId])
+      : "*";
+    if (key === "*" || (!hints.has(key) && hints.size >= maxPendingHints)) {
+      hints.clear();
+      hints.set("*", { topics: [...pageTopics] });
+    } else {
+      const pending = hints.get(key);
+      if (pending) {
+        for (const topic of event.topics)
+          if (!pending.topics.includes(topic)) pending.topics.push(topic);
+      } else hints.set(key, event);
+    }
+    if (hintTimer) return;
+    hintTimer = setTimeout(() => {
+      hintTimer = undefined;
+      const batch = [...hints.values()];
+      hints.clear();
+      for (const event of batch) {
+        for (const listener of listeners) {
+          try {
+            listener.onInvalidate(event);
+          } catch {
+            // One closed stream must not interrupt page recovery for peers.
+          }
+        }
+      }
+    }, 100);
+    hintTimer.unref();
+  }
 
   function current(entry: InstanceConnection) {
     return listeners.size > 0 && connections.get(entry.instance.id) === entry;
   }
 
-  function enqueue(
-    instanceId: string | undefined,
-    topics: readonly RealtimeTopic[],
-  ) {
-    if (!listeners.size) return;
-    let accumulated = pending.get(instanceId);
-    if (!accumulated) {
-      accumulated = new Set();
-      pending.set(instanceId, accumulated);
-    }
-    for (const topic of topics) accumulated.add(topic);
-    if (flushTimer) return;
-    flushTimer = setTimeout(() => {
-      flushTimer = undefined;
-      const events = [...pending];
-      pending.clear();
-      for (const [id, topics] of events) {
-        if (id !== undefined && !connections.has(id)) continue;
-        const event: RealtimeEvent = {
-          ...(id === undefined ? {} : { instanceId: id }),
-          topics: [...topics],
-        };
-        for (const listener of listeners) {
-          try {
-            listener(event);
-          } catch {
-            // One closed browser stream must not interrupt other subscribers.
-          }
-        }
+  function snapshot(): RealtimeStatus {
+    return {
+      instances: [...connections.values()].map(({ instance, status }) => ({
+        instanceId: instance.id,
+        status,
+      })),
+    };
+  }
+
+  function publishStatus() {
+    const status = snapshot();
+    for (const listener of listeners) {
+      try {
+        listener.onStatus(status);
+      } catch {
+        // One closed browser stream must not interrupt other subscribers.
       }
-    }, coalesceInterval);
-    flushTimer.unref();
+    }
+  }
+
+  function setStatus(
+    entry: InstanceConnection,
+    status: InstanceConnection["status"],
+  ) {
+    if (entry.status === status) return;
+    entry.status = status;
+    publishStatus();
   }
 
   function stopAttempt(attempt: Attempt) {
@@ -141,7 +184,6 @@ function createManager() {
 
   function remove(entry: InstanceConnection) {
     connections.delete(entry.instance.id);
-    pending.delete(entry.instance.id);
     clearTimeout(entry.retry);
     if (entry.attempt) stopAttempt(entry.attempt);
   }
@@ -157,6 +199,7 @@ function createManager() {
       if (current(entry)) connect(entry);
     }, delay);
     entry.retry.unref();
+    setStatus(entry, "disconnected");
   }
 
   function connect(entry: InstanceConnection) {
@@ -216,7 +259,32 @@ function createManager() {
       connection.on("receiveMessage", (message: unknown) => {
         if (!attempt.active || !current(entry)) return;
         const topics = messageTopics(message);
-        if (topics) enqueue(entry.instance.id, topics);
+        if (!topics) return;
+        const value = row(message);
+        const resource = row(row(value.body).resource);
+        const candidate =
+          entry.instance.kind !== "sonarr"
+            ? undefined
+            : value.name === "series"
+              ? resource.id
+              : value.name === "episode" || value.name === "episodefile"
+                ? resource.seriesId
+                : undefined;
+        const remoteId =
+          typeof candidate === "number" &&
+          Number.isInteger(candidate) &&
+          candidate > 0 &&
+          candidate <= 2147483647
+            ? candidate
+            : undefined;
+        updateSnapshots(entry.instance, message, topics, remoteId);
+        const affected = topics.filter((topic) => pageTopics.includes(topic));
+        if (affected.length)
+          invalidate({
+            instanceId: entry.instance.id,
+            ...(remoteId === undefined ? {} : { remoteId }),
+            topics: affected,
+          });
       });
       attempt.deadline = setTimeout(
         () => failed(entry, attempt),
@@ -228,8 +296,13 @@ function createManager() {
           if (!attempt.active || !current(entry)) return;
           clearTimeout(attempt.deadline);
           entry.failures = 0;
+          setStatus(entry, "connected");
           // Include initial opens: REST reads may have raced the connection.
-          enqueue(entry.instance.id, realtimeTopics);
+          refreshSnapshots(entry.instance.id);
+          invalidate({
+            instanceId: entry.instance.id,
+            topics: [...pageTopics],
+          });
         },
         () => failed(entry, attempt),
       );
@@ -250,10 +323,14 @@ function createManager() {
     try {
       const instances = await readInstances();
       if (!listeners.size || generation !== startedGeneration) return;
+      reconcileSnapshots(instances);
+      // Discovery also covers removals and metadata-only configuration changes.
+      invalidate({ topics: [...pageTopics] });
       const configured = new Map(
         instances.map((instance) => [instance.id, instance]),
       );
-      let changed = false;
+      let statusChanged = false;
+      const added: InstanceConnection[] = [];
       for (const entry of connections.values()) {
         const instance = configured.get(entry.instance.id);
         if (
@@ -263,56 +340,61 @@ function createManager() {
           instance.kind !== entry.instance.kind
         ) {
           remove(entry);
-          changed = true;
+          statusChanged = true;
         } else {
-          if (entry.instance.name !== instance.name) changed = true;
           entry.instance = instance;
         }
       }
       for (const instance of instances) {
         if (connections.has(instance.id)) continue;
-        const entry: InstanceConnection = { instance, failures: 0 };
+        const entry: InstanceConnection = {
+          instance,
+          failures: 0,
+          status: "connecting",
+        };
         connections.set(instance.id, entry);
-        connect(entry);
-        changed = true;
+        added.push(entry);
+        statusChanged = true;
       }
-      if (changed) enqueue(undefined, realtimeTopics);
+      if (statusChanged) publishStatus();
+      for (const entry of added) {
+        if (current(entry)) connect(entry);
+      }
     } catch {
-      // A transient config read failure must not kill existing connections or
-      // permanently disable discovery. Keep the last validated configuration.
+      // Keep the last validated configuration if a read fails. A subsequent
+      // configuration write or a new subscription lifecycle retries discovery.
     } finally {
       reconciling = false;
-      if (listeners.size) {
-        refreshTimer = setTimeout(
-          () => {
-            refreshTimer = undefined;
-            void reconcile();
-          },
-          reconcileRequested ? 0 : refreshInterval,
-        );
-        refreshTimer.unref();
-      }
+      if (listeners.size && reconcileRequested) void reconcile();
     }
   }
 
   return {
     subscribe(listener: Listener) {
-      // A wrapper makes duplicate subscriptions of the same callback independent.
-      const subscription: Listener = (event) => listener(event);
+      // A separate object makes repeated callbacks independent subscriptions.
+      const subscription = { ...listener };
       listeners.add(subscription);
+      try {
+        subscription.onStatus(snapshot());
+      } catch {
+        // A subscriber may already have closed while joining the manager.
+      }
       if (listeners.size === 1) {
         generation++;
+        unsubscribeConfig = subscribeInstanceChanges(() => {
+          void reconcile();
+        });
         void reconcile();
       }
       return () => {
         if (!listeners.delete(subscription) || listeners.size) return;
         generation++;
-        clearTimeout(refreshTimer);
-        clearTimeout(flushTimer);
-        refreshTimer = undefined;
-        flushTimer = undefined;
+        unsubscribeConfig?.();
+        unsubscribeConfig = undefined;
         reconcileRequested = false;
-        pending.clear();
+        clearTimeout(hintTimer);
+        hintTimer = undefined;
+        hints.clear();
         for (const entry of connections.values()) remove(entry);
       };
     },
@@ -320,11 +402,29 @@ function createManager() {
 }
 
 const state = globalThis as typeof globalThis & {
-  __arrsenalRealtime?: RealtimeManager;
+  __arrsenalRealtimeSnapshotsTransport?: RealtimeManager;
 };
-state.__arrsenalRealtime ??= createManager();
-const manager = state.__arrsenalRealtime;
+state.__arrsenalRealtimeSnapshotsTransport ??= createManager();
+const manager = state.__arrsenalRealtimeSnapshotsTransport;
 
-export function subscribeRealtime(listener: Listener): () => void {
-  return manager.subscribe(listener);
+export function subscribeRealtime(
+  onStatus: Listener["onStatus"],
+  onSnapshot: (snapshot: RealtimeSnapshot) => void,
+  onInvalidate: Listener["onInvalidate"],
+): () => void {
+  const unsubscribeSnapshots = subscribeSnapshots(onSnapshot);
+  let unsubscribeTransport: () => void;
+  try {
+    unsubscribeTransport = manager.subscribe({ onStatus, onInvalidate });
+  } catch (error) {
+    unsubscribeSnapshots();
+    throw error;
+  }
+  let closed = false;
+  return () => {
+    if (closed) return;
+    closed = true;
+    unsubscribeSnapshots();
+    unsubscribeTransport();
+  };
 }

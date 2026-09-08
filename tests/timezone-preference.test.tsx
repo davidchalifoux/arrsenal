@@ -4,10 +4,15 @@ import {
   describe,
   expect,
   it,
+  jest,
   mock,
   spyOn,
 } from "bun:test";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  focusManager,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import {
   act,
   cleanup,
@@ -17,6 +22,7 @@ import {
 } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { renderToString } from "react-dom/server";
+import { advanceTime } from "./timers";
 
 const { useTimezonePreference } = await import("@/lib/timezone-preference");
 
@@ -46,7 +52,8 @@ afterEach(() => {
   cleanup();
   client.clear();
   mock.restore();
-  mock.restore();
+  jest.useRealTimers();
+  focusManager.setFocused(undefined);
 });
 
 describe("server config timezone preference", () => {
@@ -157,20 +164,35 @@ describe("server config timezone preference", () => {
     expect(result.current.error).toBeNull();
   });
 
-  it("refreshes choices saved by other viewers and retains cached data on refetch errors", async () => {
+  it("ignores focus while stale and discovers other viewers' changes only on refresh", async () => {
+    jest.useFakeTimers();
+    focusManager.setFocused(true);
     savedZone = "Europe/Paris";
     const { result } = renderHook(useTimezonePreference, { wrapper });
-    await waitFor(() => expect(result.current.override).toBe("Europe/Paris"));
+    await act(() => advanceTime(1));
+    expect(result.current.override).toBe("Europe/Paris");
     savedZone = "Asia/Tokyo";
-    await act(() => client.invalidateQueries({ queryKey: ["preferences"] }));
-    await waitFor(() => expect(result.current.override).toBe("Asia/Tokyo"));
+    await act(() => advanceTime(120_000));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.current.override).toBe("Europe/Paris");
+    await act(async () => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+      await advanceTime(1);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.current.override).toBe("Europe/Paris");
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["preferences"] });
+      await advanceTime(1);
+    });
+    expect(result.current.override).toBe("Asia/Tokyo");
     fetchMock.mockRejectedValueOnce(new Error("Offline"));
-    await act(() => client.invalidateQueries({ queryKey: ["preferences"] }));
-    await waitFor(() =>
-      expect(result.current.error).toContain(
-        "Using the last loaded preference",
-      ),
-    );
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["preferences"] });
+      await advanceTime(1);
+    });
+    expect(result.current.error).toContain("Using the last loaded preference");
     expect(result.current.timeZone).toBe("Asia/Tokyo");
   });
 });

@@ -39,8 +39,7 @@ export function useTimezonePreference(): {
     enabled: browserZone !== null,
     retry: false,
     staleTime: 60_000,
-    refetchInterval: 60_000,
-    refetchOnWindowFocus: "always",
+    refetchOnWindowFocus: false,
   });
   const mutation = useMutation({
     scope: { id: "preferences" },

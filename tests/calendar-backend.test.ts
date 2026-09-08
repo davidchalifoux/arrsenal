@@ -13,6 +13,7 @@ import {
 mock.module("server-only", () => ({}));
 mock.module("../src/lib/server/config", () => ({
   readInstances: mock(),
+  getInstance: mock(),
   readAccount: async () => undefined,
   replaceAccount: mock(),
 }));
@@ -286,7 +287,7 @@ describe("calendar API", () => {
 
   it("succeeds with no configured instances, and with an empty successful provider alongside a failure", async () => {
     (readInstances as Mock<typeof readInstances>).mockResolvedValue([]);
-    expect(await (await request()).json()).toEqual({
+    expect(await (await request()).json()).toMatchObject({
       items: [],
       errors: [],
       instanceCount: 0,

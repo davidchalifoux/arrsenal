@@ -1,6 +1,5 @@
-import { instanceOptions } from "../../../../../lib/server/arr";
-import { getInstance } from "../../../../../lib/server/config";
 import { api, parseInput } from "../../../../../lib/server/http";
+import { readRealtimeSnapshot } from "../../../../../lib/server/realtime-snapshots";
 import { instanceParamsSchema } from "../../../../../lib/server/schemas";
 
 export const runtime = "nodejs";
@@ -11,6 +10,6 @@ export function GET(
 ) {
   return api(async () => {
     const { id } = parseInput(instanceParamsSchema, await context.params);
-    return instanceOptions(await getInstance(id));
+    return readRealtimeSnapshot(["instance-options", id]);
   }, request);
 }

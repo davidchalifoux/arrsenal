@@ -38,7 +38,7 @@ export function strings(value: unknown): string[] {
     : [];
 }
 
-function redact(value: unknown, apiKey: string): unknown {
+export function redact(value: unknown, apiKey: string): unknown {
   if (typeof value === "string") {
     return value
       .split(apiKey)

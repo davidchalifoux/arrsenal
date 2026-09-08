@@ -1,37 +1,38 @@
 import { queryOptions } from "@tanstack/react-query";
-import { api } from "./client";
-import type { InstanceSummary, LibraryResponse, QueueResponse } from "./types";
+import { realtimeQuery } from "./realtime-query";
+import type {
+  CalendarResponse,
+  InstanceSummary,
+  LibraryResponse,
+  QueueResponse,
+} from "./types";
 
 export const libraryQuery = queryOptions({
   queryKey: ["library"],
-  queryFn: ({ signal }) => api<LibraryResponse>("/api/library", { signal }),
+  queryFn: (context) => realtimeQuery<LibraryResponse>(context, "/api/library"),
   staleTime: 60_000,
-  refetchInterval: 60_000,
 });
 
 export const instancesQuery = queryOptions({
   queryKey: ["instances"],
-  queryFn: ({ signal }) =>
-    api<{ instances: InstanceSummary[] }>("/api/instances", { signal }),
+  queryFn: (context) =>
+    realtimeQuery<{ instances: InstanceSummary[] }>(context, "/api/instances"),
   staleTime: 60_000,
-  refetchInterval: 60_000,
 });
 
 export const queueQuery = queryOptions({
   queryKey: ["queue"],
-  queryFn: ({ signal }) => api<QueueResponse>("/api/queue", { signal }),
+  queryFn: (context) => realtimeQuery<QueueResponse>(context, "/api/queue"),
   staleTime: 10_000,
-  refetchInterval: 60_000,
 });
 
 export const calendarQuery = (start: string, end: string) =>
   queryOptions({
     queryKey: ["calendar", start, end],
-    queryFn: ({ signal }) =>
-      api<import("./types").CalendarResponse>(
+    queryFn: (context) =>
+      realtimeQuery<CalendarResponse>(
+        context,
         `/api/calendar?${new URLSearchParams({ start, end })}`,
-        { signal },
       ),
     staleTime: 60_000,
-    refetchInterval: 60_000,
   });

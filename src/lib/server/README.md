@@ -99,7 +99,7 @@ option checks, and per-target action errors retain their existing behavior.
 | `GET /api/releases` | Accepts `instanceId`, `remoteId`, `kind`, and an optional series-only `episodeId` or `seasonNumber`; uses the selected scope on the release endpoint. Returns safe release DTOs, including rejection reasons. |
 | `POST /api/releases` | Sends only `{guid, indexerId}` to the selected instance's release POST. |
 | `GET /api/queue` | Reads every queue page with `includeMovie`/`includeSeries`, includes unknown media downloads, preserves signed queue IDs, progress fields and warnings, and reports instance errors. |
-| `GET /api/events` | Authenticated SSE invalidation hints for queue, library, episodes, calendar, instances, and instance options. Never forwards upstream payloads or credentials. |
+| `GET /api/events` | Fixed authenticated SSE: normalized library/queue/instance snapshots, connection status, scoped calendar/episode/option invalidation hints, and recovery hints. No page-interest controls. |
 | `DELETE /api/queue` | Requires `{instanceId, id, blocklist, removeFromClient}` with real booleans; forwards both deletion flags. Blocklisting can cause the instance to search for a replacement. |
 | `POST /api/queue` | Re-reads the queue, then selects the safe action described below. |
 | `GET /api/image` | Proxies raster filenames under `/MediaCover/<id>/` or `/api/v3/MediaCover/<id>/`, with an optional configured application base prefix. An optional `fallback` accepts only an allowed TMDB/TVDB CDN URL and is fetched if the local cover fails. Local paths still reject traversal, query parameters, encoded paths, SVG, and arbitrary API endpoints. |
@@ -165,10 +165,23 @@ search behavior is unchanged when both `episodeId` and `seasonNumber` are omitte
 `realtime.ts` maintains one SignalR WebSocket connection per configured instance
 while at least one browser is subscribed. Connections are shared process-wide,
 including across development reloads, and stopped when the final browser leaves.
-Configuration is reconciled every five seconds; removals and URL/key changes stop
-obsolete connections. Failed starts and disconnects retry independently with
-backoff from one to thirty seconds. Each successful connection emits a full
-invalidation for that instance to recover events missed during the gap.
+Configuration is read when the first browser subscribes and reconciled immediately
+after successful instance additions, edits, or removals in this process. Changes
+arriving during a read request another reconciliation; no discovery interval runs.
+Removals and URL/key/type changes stop obsolete connections; renames relabel
+cached data without reconnecting. Preference/account writes do not notify the
+connection manager. The final browser leaving removes the configuration listener.
+External file edits or writes from another server process do not notify an active
+manager: restart Arrsenal after those changes. Failed starts and disconnects retry
+independently with backoff from one to thirty seconds. Each successful connection
+refreshes that instance's core snapshots and broadcasts page-specific recovery hints.
+
+The `status` event contains a full `{instances: [{instanceId, status}]}` snapshot
+with `connecting`, `connected`, or `disconnected` states. New subscribers receive
+the current snapshot even if an instance failed before they connected. Failed
+retries remain disconnected until the handshake succeeds; removed instances
+disappear from the snapshot. Status changes come from the SignalR lifecycle,
+not separate upstream health checks.
 
 The Microsoft SignalR client connects directly to `/signalr/messages`, preserving
 configured base paths, with server-side `X-Api-Key` headers. WebSocket redirects
@@ -176,19 +189,49 @@ are disabled. Opening, including the SignalR handshake, is limited to ten second
 socket payloads to 4 MiB. SignalR and `ws` remain external server packages so their
 Node transport dependencies resolve correctly in Next's standalone output.
 
-Only allowlisted event names and command completion states become topic hints;
-raw resource bodies, filenames, URLs, credentials, and transport errors are not
-broadcast. Hints are coalesced over 100ms upstream and 250ms in the browser.
-Episode and options queries are scoped to the source instance. In-flight requests
-are not canceled by events; a trailing refresh prevents missed changes. Hidden
-tabs retain stale caches without starting event-driven fetches, then resync on
-return. Existing polling remains enabled as a fallback.
+`realtime-snapshots.ts` owns shared, per-instance backing data and query snapshots.
+Complete movie/series events are validated, sanitized, and normalized using cached
+profile/download/episode-quality enrichment. Deletions remove only that instance's
+contribution to a merged title. Missing or insufficient fields/enrichment cause a
+targeted fetch instead of guessed data. Queue notifications fetch the affected queue
+once, shared by library download-state and episode enrichment as well as all tabs.
+Only library, queue, and instance summaries have persistent snapshot subscriptions.
+Calendar, episode, and option events invalidate server backing data and broadcast
+small hints; they do not fetch idle parameterized data. Browsers refresh matching
+active queries through REST, and overlapping reads share upstream work. Episode
+hints include a validated series ID when known; ambiguous events use instance scope.
+Calendar hints cover cached ranges because events can move between dates.
+
+Event bursts are coalesced over 100ms. Generation fences discard stale work after
+upstream/configuration changes; changes during a fetch get a trailing pass.
+Each snapshot has `{queryKey, version: {epoch, revision}, data}` or a safe `error`.
+REST uses the same store and returns `_realtime` metadata alongside its usual DTO.
+Concurrent reads share in-flight work; manual REST refresh still forces fresh data.
+Only explicit DTO fields cross SSE, never raw resources or arbitrary upstream fields.
+Partial failures preserve last-known instance contributions with diagnostics; total
+failures produce query errors rather than fabricated empty datasets.
+
+The browser cancels an older matching HTTP request before applying a pushed snapshot,
+rejects older revisions, and resyncs via REST after reconnecting or returning to a tab.
+Hidden tabs may receive snapshots but do not issue event-driven HTTP fetches.
+Realtime-covered queries have no interval polling or fallback polling.
+Disconnections show a persistent browser warning identifying affected instances,
+while cached data and manual refresh remain available. Preferences load on demand
+and update after saving, without interval polling or window-focus refreshes.
 
 `GET /api/events` uses the normal API authorization check, rechecks authorization
 before each event batch and every fifteen seconds while idle, and closes revoked
 sessions with an `auth-required` event. Cancellation releases subscriptions.
-Slow consumers are disconnected instead of allowing unbounded buffering; the
-next stream starts with a full invalidation. No event replay history is retained.
+The stream has no capability registry, control POSTs, or per-tab page interests.
+Page hints coalesce by instance/series; bounded hint queues collapse overflow to a
+broad page-specific invalidation rather than losing updates. Configuration changes
+invalidate page caches as well as reconciling core snapshots and connections.
+Pending frames are coalesced per query and bounded to 32 MiB, with a separate
+32 MiB stream queue. Slow consumers are disconnected; reconnect restores data
+through snapshots and a recovery invalidation. No event replay history is retained.
+The shared store holds at most 256 query entries. Unobserved entries expire after
+thirty seconds and release backing data when no remaining query needs it. These
+are memory cleanup timers, not polling.
 Reverse proxies must pass through SSE without buffering (`X-Accel-Buffering: no`)
 and permit long-lived HTTP responses. The browser-facing transport needs no
 WebSocket upgrade or separate server port.

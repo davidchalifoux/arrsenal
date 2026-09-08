@@ -2,9 +2,9 @@ import "server-only";
 
 import type {
   ActionResponse,
+  InstanceOptions,
   LibraryResponse,
   MediaKind,
-  QueueResponse,
   ServiceError,
 } from "../types";
 import {
@@ -24,7 +24,6 @@ import { ApiError, errorMessage, parseInput } from "./http";
 import {
   mergeMedia,
   normalizeMedia,
-  normalizeQueue,
   normalizeRelease,
   qualityName,
 } from "./media";
@@ -56,9 +55,22 @@ function requireKind(instance: InstanceConfig, kind: MediaKind): void {
   }
 }
 
-async function instanceMedia(
+export type MediaEnrichment = {
+  profiles: InstanceOptions["profiles"];
+  downloading: Set<number>;
+  episodeQualities: Map<number, string[]>;
+  complete: boolean;
+};
+
+export type MediaDependencies = {
+  queue?: () => Promise<Row[]>;
+  enrichment?: (value: MediaEnrichment) => void;
+};
+
+export async function instanceMedia(
   instance: InstanceConfig,
   term?: string,
+  dependencies: MediaDependencies = {},
 ): Promise<LibraryResponse & { primarySucceeded: boolean }> {
   const errors: ServiceError[] = [];
   const signal = AbortSignal.timeout(20000);
@@ -82,7 +94,7 @@ async function instanceMedia(
       return items;
     }),
     profiles(instance, signal),
-    queueRecords(instance, signal),
+    dependencies.queue ? dependencies.queue() : queueRecords(instance, signal),
   ]);
   if (mediaResult.status === "rejected")
     return {
@@ -171,6 +183,14 @@ async function instanceMedia(
         ),
       );
   }
+  dependencies.enrichment?.({
+    profiles: qualityProfiles,
+    downloading,
+    episodeQualities,
+    complete:
+      profileResult.status === "fulfilled" &&
+      queueResult.status === "fulfilled",
+  });
   return {
     primarySucceeded: true,
     items: media.map((item) =>
@@ -183,22 +203,6 @@ async function instanceMedia(
       ),
     ),
     errors,
-  };
-}
-
-export async function library(): Promise<LibraryResponse> {
-  const instances = await readInstances();
-  const results = await Promise.all(
-    instances.map((instance) => instanceMedia(instance)),
-  );
-  if (results.length && !results.some((result) => result.primarySucceeded))
-    throw new ApiError(
-      502,
-      "Unable to load the library from any configured instance. Check instance connections and retry.",
-    );
-  return {
-    items: mergeMedia(results.flatMap((result) => result.items)),
-    errors: results.flatMap((result) => result.errors),
   };
 }
 
@@ -228,38 +232,6 @@ export async function lookup(
   );
   return {
     items: mergeMedia(results.flatMap((result) => result.items)),
-    errors: results.flatMap((result) => result.errors),
-  };
-}
-
-export async function queue(): Promise<QueueResponse> {
-  const instances = await readInstances();
-  const results = await Promise.all(
-    instances.map(async (instance) => {
-      try {
-        return {
-          primarySucceeded: true,
-          items: (await queueRecords(instance)).map((item) =>
-            normalizeQueue(item, instance),
-          ),
-          errors: [] as ServiceError[],
-        };
-      } catch (error) {
-        return {
-          primarySucceeded: false,
-          items: [],
-          errors: [serviceError(instance, error)],
-        };
-      }
-    }),
-  );
-  if (results.length && !results.some((result) => result.primarySucceeded))
-    throw new ApiError(
-      502,
-      "Unable to load the queue from any configured instance. Check instance connections and retry.",
-    );
-  return {
-    items: results.flatMap((result) => result.items),
     errors: results.flatMap((result) => result.errors),
   };
 }

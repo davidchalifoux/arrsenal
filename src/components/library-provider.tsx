@@ -25,7 +25,7 @@ import {
 import { mediaHref } from "@/lib/client";
 import { useInstances, useLibrary, useSyncData } from "@/lib/collections";
 import type { MediaItem } from "@/lib/types";
-import { useRealtime } from "@/lib/use-realtime";
+import { type RealtimeConnection, useRealtime } from "@/lib/use-realtime";
 import { AddMedia } from "./add-media";
 import { Poster } from "./media-card";
 import { Button, inputStyle, Modal, Notice } from "./ui";
@@ -36,6 +36,7 @@ interface LibraryActions {
   searchLibrary: () => void;
   notify: (message: string, error?: boolean) => void;
   refresh: () => void;
+  realtime: RealtimeConnection;
 }
 
 const LibraryContext = createContext<LibraryActions | null>(null);
@@ -47,7 +48,7 @@ export function useLibraryActions() {
 }
 
 export function LibraryProvider({ children }: { children: ReactNode }) {
-  useRealtime();
+  const realtime = useRealtime();
   const sync = useSyncData();
   const router = useRouter();
   const library = useLibrary();
@@ -123,6 +124,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         searchLibrary: openSearch,
         notify,
         refresh,
+        realtime,
       }}
     >
       {children}

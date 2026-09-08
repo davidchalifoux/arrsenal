@@ -44,12 +44,23 @@ Query client. The library categories share a cached library query; episode
 details, queue activity, and instance options load independently. Library and
 connection data remain fresh for one minute, queue data for ten seconds, and
 inactive queries remain cached for thirty minutes. Shared server-side SignalR
-connections receive Sonarr/Radarr updates and forward invalidation hints through
-an authenticated `/api/events` stream. The browser refreshes affected queries,
-coalesces bursts, and resyncs after reconnecting or returning to the tab.
-Existing polling remains a fallback when streaming is unavailable. Background
+connections receive Sonarr/Radarr updates. Complete movie/series resources update
+normalized server snapshots directly; other notifications trigger shared,
+affected-instance fetches. An authenticated `/api/events` stream pushes core
+library, queue, and instance snapshots without a follow-up browser request.
+Each tab keeps one fixed SSE connection in the shared library layout across page
+changes, with no subscription-control requests. Calendar, episode, and option
+changes arrive as scoped invalidation hints: matching active queries refresh
+through REST, while inactive caches become stale without background requests.
+Versioned snapshots prevent older REST responses from overwriting newer updates.
+REST remains available for loading, manual refresh, and reconnect/tab-return recovery.
+Realtime-covered data does not poll on an interval. A disconnected stream or
+instance shows a persistent warning with manual refresh and connection settings;
+automatic reconnect continues while cached data stays visible. Background
 refetches retain existing content; mutations invalidate affected queries rather
 than refreshing the entire Next.js route.
+Preferences load on demand and update after saving. They do not poll or refresh
+on window focus.
 
 Media data loads after JavaScript initializes on a cold visit; it is not embedded
 in server-rendered HTML. Detail routes validate URL encoding on the server and
@@ -78,8 +89,9 @@ The multi-stage image runs as a non-root user and persists configuration in the 
 - For Sonarr/Radarr on the host machine, use `http://host.docker.internal:8989` or `http://host.docker.internal:7878`, not `localhost`.
 - For services on a shared Docker network, use their service names and internal ports, and attach Arrsenal to that network.
 - Reverse-proxy base paths are supported, for example `http://media-server:8989/sonarr`.
-- Realtime updates require WebSocket upgrades to each instance's `/signalr/messages` endpoint. Browser updates use SSE on Arrsenal's `/api/events`: disable proxy buffering for this route and allow long-lived responses. No additional port is needed; polling still works if streaming is blocked.
+- Realtime updates require WebSocket upgrades to each instance's `/signalr/messages` endpoint. Browser updates use SSE on Arrsenal's `/api/events`: disable proxy buffering for this route and allow long-lived responses. No additional port is needed. If streaming is blocked, use Refresh data or fix the connection; there is no fallback interval polling.
 - A bind mount can replace the named volume. Ensure its directory is writable by UID/GID `1000:1000`.
+- Instance changes saved through Arrsenal immediately update its live connections. Configuration discovery does not poll; restart Arrsenal after editing the configuration file externally or through another server process.
 - Building requires network access to the package registry and Google Fonts. The built application serves Geist locally.
 
 ## Configuration

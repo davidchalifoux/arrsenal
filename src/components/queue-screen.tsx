@@ -8,7 +8,7 @@ import { Notice } from "./ui";
 
 export function QueueScreen() {
   const sync = useSyncData();
-  const queue = useQueue(true);
+  const queue = useQueue();
   const { notify } = useLibraryActions();
   return (
     <>
