@@ -25,6 +25,7 @@ import {
 import { mediaHref } from "@/lib/client";
 import { useInstances, useLibrary, useSyncData } from "@/lib/collections";
 import type { MediaItem } from "@/lib/types";
+import { useRealtime } from "@/lib/use-realtime";
 import { AddMedia } from "./add-media";
 import { Poster } from "./media-card";
 import { Button, inputStyle, Modal, Notice } from "./ui";
@@ -46,6 +47,7 @@ export function useLibraryActions() {
 }
 
 export function LibraryProvider({ children }: { children: ReactNode }) {
+  useRealtime();
   const sync = useSyncData();
   const router = useRouter();
   const library = useLibrary();

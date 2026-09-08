@@ -99,6 +99,7 @@ option checks, and per-target action errors retain their existing behavior.
 | `GET /api/releases` | Accepts `instanceId`, `remoteId`, `kind`, and an optional series-only `episodeId` or `seasonNumber`; uses the selected scope on the release endpoint. Returns safe release DTOs, including rejection reasons. |
 | `POST /api/releases` | Sends only `{guid, indexerId}` to the selected instance's release POST. |
 | `GET /api/queue` | Reads every queue page with `includeMovie`/`includeSeries`, includes unknown media downloads, preserves signed queue IDs, progress fields and warnings, and reports instance errors. |
+| `GET /api/events` | Authenticated SSE invalidation hints for queue, library, episodes, calendar, instances, and instance options. Never forwards upstream payloads or credentials. |
 | `DELETE /api/queue` | Requires `{instanceId, id, blocklist, removeFromClient}` with real booleans; forwards both deletion flags. Blocklisting can cause the instance to search for a replacement. |
 | `POST /api/queue` | Re-reads the queue, then selects the safe action described below. |
 | `GET /api/image` | Proxies raster filenames under `/MediaCover/<id>/` or `/api/v3/MediaCover/<id>/`, with an optional configured application base prefix. An optional `fallback` accepts only an allowed TMDB/TVDB CDN URL and is fetched if the local cover fails. Local paths still reject traversal, query parameters, encoded paths, SVG, and arbitrary API endpoints. |
@@ -158,6 +159,39 @@ search behavior is unchanged when both `episodeId` and `seasonNumber` are omitte
   for one hour. Next Image optimization is allowed for `/api/image` only among local
   paths; its optimized cache lifetime is at least the upstream max-age and may be longer.
   Public artwork URLs and cached responses are not revoked by logout or library removal.
+
+## Realtime Updates
+
+`realtime.ts` maintains one SignalR WebSocket connection per configured instance
+while at least one browser is subscribed. Connections are shared process-wide,
+including across development reloads, and stopped when the final browser leaves.
+Configuration is reconciled every five seconds; removals and URL/key changes stop
+obsolete connections. Failed starts and disconnects retry independently with
+backoff from one to thirty seconds. Each successful connection emits a full
+invalidation for that instance to recover events missed during the gap.
+
+The Microsoft SignalR client connects directly to `/signalr/messages`, preserving
+configured base paths, with server-side `X-Api-Key` headers. WebSocket redirects
+are disabled. Opening, including the SignalR handshake, is limited to ten seconds;
+socket payloads to 4 MiB. SignalR and `ws` remain external server packages so their
+Node transport dependencies resolve correctly in Next's standalone output.
+
+Only allowlisted event names and command completion states become topic hints;
+raw resource bodies, filenames, URLs, credentials, and transport errors are not
+broadcast. Hints are coalesced over 100ms upstream and 250ms in the browser.
+Episode and options queries are scoped to the source instance. In-flight requests
+are not canceled by events; a trailing refresh prevents missed changes. Hidden
+tabs retain stale caches without starting event-driven fetches, then resync on
+return. Existing polling remains enabled as a fallback.
+
+`GET /api/events` uses the normal API authorization check, rechecks authorization
+before each event batch and every fifteen seconds while idle, and closes revoked
+sessions with an `auth-required` event. Cancellation releases subscriptions.
+Slow consumers are disconnected instead of allowing unbounded buffering; the
+next stream starts with a full invalidation. No event replay history is retained.
+Reverse proxies must pass through SSE without buffering (`X-Accel-Buffering: no`)
+and permit long-lived HTTP responses. The browser-facing transport needs no
+WebSocket upgrade or separate server port.
 
 ## Bounds
 

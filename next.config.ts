@@ -4,6 +4,8 @@ import { posterSources } from "./src/lib/image-sources";
 const nextConfig: NextConfig = {
   reactCompiler: true,
   output: "standalone",
+  // SignalR loads its Node transports dynamically; preserve package-local resolution.
+  serverExternalPackages: ["@microsoft/signalr", "ws"],
   devIndicators: false,
   images: {
     remotePatterns: posterSources.map(({ hostname, pathname }) => ({
