@@ -404,6 +404,7 @@ export function DownloadQueue({
               const key = queueKey(item);
               const status = item.status.toLowerCase();
               const warning = hasWarning(item);
+              const warnings = Array.from(new Set(item.warnings));
               const size = Number.isFinite(item.size)
                 ? Math.max(0, item.size)
                 : 0;
@@ -730,42 +731,82 @@ export function DownloadQueue({
                         <TrashIcon size={16} />
                       </Button>
                     </div>
-                    {item.warnings.length > 0 && (
-                      <div
+                    {warnings.length > 0 && (
+                      <details
                         className={css({
                           gridColumn: "1 / -1",
-                          display: "flex",
-                          alignItems: "flex-start",
-                          gap: "8px",
                           borderTop: "1px solid token(colors.line)",
-                          pt: "12px",
+                          pt: "10px",
                           color: "warning",
                           fontSize: "11px",
                           lineHeight: "1.7",
                           minWidth: 0,
                         })}
                       >
-                        <WarningCircleIcon
-                          size={15}
-                          className={css({ flexShrink: 0, mt: "2px" })}
-                        />
+                        <summary
+                          aria-label={`Warning details for ${item.mediaTitle}`}
+                          className={css({
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            cursor: "pointer",
+                            listStyle: "none",
+                            "&::-webkit-details-marker": { display: "none" },
+                            _focusVisible: {
+                              outline: "2px solid token(colors.accent)",
+                              outlineOffset: "3px",
+                              borderRadius: "3px",
+                            },
+                          })}
+                        >
+                          <WarningCircleIcon
+                            size={15}
+                            className={css({ flexShrink: 0 })}
+                          />
+                          <span
+                            title={warnings[0]}
+                            className={css({
+                              minWidth: 0,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            })}
+                          >
+                            {warnings[0]}
+                          </span>
+                          <span
+                            className={css({
+                              flexShrink: 0,
+                              ml: "auto",
+                              color: "muted",
+                            })}
+                          >
+                            Details
+                            {warnings.length > 1 ? ` (${warnings.length})` : ""}
+                          </span>
+                        </summary>
                         <ul
                           aria-label={`Warnings for ${item.mediaTitle}`}
                           className={css({
                             minWidth: 0,
+                            maxHeight: "180px",
+                            overflowY: "auto",
                             overflowWrap: "anywhere",
                             display: "grid",
                             gap: "3px",
                             listStyle: "none",
-                            p: 0,
-                            m: 0,
+                            pl: "23px",
+                            pr: "8px",
+                            py: 0,
+                            mt: "8px",
+                            mb: 0,
                           })}
                         >
-                          {Array.from(new Set(item.warnings)).map((message) => (
+                          {warnings.map((message) => (
                             <li key={message}>{message}</li>
                           ))}
                         </ul>
-                      </div>
+                      </details>
                     )}
                     {status === "completed" && !item.downloadId && (
                       <p

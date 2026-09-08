@@ -419,7 +419,7 @@ export async function addMedia(input: unknown): Promise<Response> {
 }
 
 export async function automaticSearch(input: unknown): Promise<Response> {
-  const { kind, remoteId, instanceId, episodeId } = parseInput(
+  const { kind, remoteId, instanceId, episodeId, seasonNumber } = parseInput(
     searchSchema,
     input,
   );
@@ -434,11 +434,13 @@ export async function automaticSearch(input: unknown): Promise<Response> {
       body:
         episodeId !== undefined
           ? { name: "EpisodeSearch", episodeIds: [episodeId] }
-          : kind === "movie"
-            ? { name: "MoviesSearch", movieIds: [remoteId] }
-            : { name: "SeriesSearch", seriesId: remoteId },
+          : seasonNumber !== undefined
+            ? { name: "SeasonSearch", seriesId: remoteId, seasonNumber }
+            : kind === "movie"
+              ? { name: "MoviesSearch", movieIds: [remoteId] }
+              : { name: "SeriesSearch", seriesId: remoteId },
     });
-    return "Automatic search was queued on the instance. A matching download is not guaranteed.";
+    return "Automatic search was queued on the instance.";
   });
 }
 
@@ -447,6 +449,7 @@ export async function releases(
   remoteId: number,
   kind: MediaKind,
   episodeId?: number,
+  seasonNumber?: number,
 ) {
   const instance = await getInstance(instanceId);
   requireKind(instance, kind);
@@ -457,9 +460,11 @@ export async function releases(
     query:
       episodeId !== undefined
         ? { episodeId }
-        : kind === "movie"
-          ? { movieId: remoteId }
-          : { seriesId: remoteId },
+        : seasonNumber !== undefined
+          ? { seriesId: remoteId, seasonNumber }
+          : kind === "movie"
+            ? { movieId: remoteId }
+            : { seriesId: remoteId },
   });
   return { items: rows(result).map(normalizeRelease) };
 }

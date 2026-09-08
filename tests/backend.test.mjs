@@ -460,6 +460,155 @@ test("episode searches and releases use local episode IDs and reject wrong-serie
   ).toHaveLength(actions);
 });
 
+test("season searches and releases target the selected series and include specials", async () => {
+  const env = await setup({
+    sonarr: { kind: "sonarr", media: [{ ...series, id: 44 }] },
+  });
+  const instance = await env.connect("sonarr");
+
+  for (const seasonNumber of [2, 0]) {
+    expect(
+      (
+        await searchRoute.POST(
+          request("/api/search", "POST", {
+            instanceId: instance.id,
+            remoteId: 44,
+            kind: "series",
+            seasonNumber,
+          }),
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await releasesRoute.GET(
+          request(
+            `/api/releases?instanceId=${instance.id}&remoteId=44&kind=series&seasonNumber=${seasonNumber}`,
+          ),
+        )
+      ).status,
+    ).toBe(200);
+  }
+
+  expect(
+    env.calls
+      .filter((call) => call.endpoint === "command")
+      .map(({ node, method, body }) => ({ node, method, body })),
+  ).toEqual([
+    {
+      node: "sonarr",
+      method: "POST",
+      body: { name: "SeasonSearch", seriesId: 44, seasonNumber: 2 },
+    },
+    {
+      node: "sonarr",
+      method: "POST",
+      body: { name: "SeasonSearch", seriesId: 44, seasonNumber: 0 },
+    },
+  ]);
+  expect(
+    env.calls
+      .filter((call) => call.endpoint === "release")
+      .map(({ node, method, query }) => ({ node, method, query })),
+  ).toEqual([
+    {
+      node: "sonarr",
+      method: "GET",
+      query: { seriesId: "44", seasonNumber: "2" },
+    },
+    {
+      node: "sonarr",
+      method: "GET",
+      query: { seriesId: "44", seasonNumber: "0" },
+    },
+  ]);
+});
+
+test("season searches reject movies and combined episode scopes before upstream requests", async () => {
+  const env = await setup({
+    sonarr: { kind: "sonarr", episodes: [{ id: 901, seriesId: 44 }] },
+    radarr: {},
+  });
+  const sonarr = await env.connect("sonarr");
+  const radarr = await env.connect("radarr");
+  const callsBefore = env.calls.length;
+
+  for (const payload of [
+    { instanceId: radarr.id, remoteId: 11, kind: "movie", seasonNumber: 0 },
+    {
+      instanceId: sonarr.id,
+      remoteId: 44,
+      kind: "series",
+      episodeId: 901,
+      seasonNumber: 0,
+    },
+  ]) {
+    expect(
+      (await searchRoute.POST(request("/api/search", "POST", payload))).status,
+    ).toBe(400);
+    expect(
+      (
+        await releasesRoute.GET(
+          request(`/api/releases?${new URLSearchParams(payload)}`),
+        )
+      ).status,
+    ).toBe(400);
+  }
+
+  expect(env.calls).toHaveLength(callsBefore);
+});
+
+test("season searches reject invalid body and query numbers before upstream requests", async () => {
+  const env = await setup({ sonarr: { kind: "sonarr" } });
+  const instance = await env.connect("sonarr");
+  const callsBefore = env.calls.length;
+
+  for (const seasonNumber of [
+    -1,
+    1.5,
+    "1",
+    null,
+    true,
+    [],
+    {},
+    Number.MAX_SAFE_INTEGER + 1,
+  ]) {
+    const response = await searchRoute.POST(
+      request("/api/search", "POST", {
+        instanceId: instance.id,
+        remoteId: 44,
+        kind: "series",
+        seasonNumber,
+      }),
+    );
+    assert.equal(response.status, 400, JSON.stringify(seasonNumber));
+  }
+
+  for (const seasonNumber of [
+    "",
+    "-1",
+    "1.5",
+    "true",
+    "1e3",
+    "0x1",
+    "9007199254740992",
+  ]) {
+    const response = await releasesRoute.GET(
+      request(
+        `/api/releases?${new URLSearchParams({
+          instanceId: instance.id,
+          remoteId: "44",
+          kind: "series",
+          seasonNumber,
+        })}`,
+      ),
+    );
+    assert.equal(response.status, 400, JSON.stringify(seasonNumber));
+  }
+
+  expect(env.calls).toHaveLength(callsBefore);
+});
+
 test("unconfigured reads return empty collections without network access or persistence", async () => {
   const { directory, calls } = await setup();
   for (const response of [

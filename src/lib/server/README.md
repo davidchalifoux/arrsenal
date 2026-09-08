@@ -95,8 +95,8 @@ option checks, and per-target action errors retain their existing behavior.
 | `GET /api/library` | Merges movies by TMDB ID and series by TVDB ID. Missing provider IDs use instance-scoped remote identities. Preserves all targets, actual file qualities, sizes, profiles, monitoring, statuses, and series episode counts. |
 | `GET /api/lookup?term=...&kind=movie\|series` | Looks up and merges results from matching instances. One instance's failure does not hide another's results. As a convenience, omitting `kind` searches both kinds. Empty live searches return `[]`, never live trending claims. |
 | `POST /api/media` | Accepts `AddMediaRequest`. Only kind and TMDB/TVDB identity are consumed from client metadata. Each target freshly resolves metadata by `tmdb:<id>` or `tvdb:<id>` and validates the selected profile and root path against its own options. |
-| `POST /api/search` | Verifies the media ID, then submits `MoviesSearch` with `movieIds`, or `SeriesSearch` with `seriesId`. |
-| `GET /api/releases` | Accepts `instanceId`, `remoteId`, `kind`; uses `movieId` or `seriesId` on the release endpoint. Returns safe release DTOs, including rejection reasons. |
+| `POST /api/search` | Verifies the media ID, then submits `MoviesSearch` with `movieIds`, `SeriesSearch` with `seriesId`, or an episode/season-scoped Sonarr command. |
+| `GET /api/releases` | Accepts `instanceId`, `remoteId`, `kind`, and an optional series-only `episodeId` or `seasonNumber`; uses the selected scope on the release endpoint. Returns safe release DTOs, including rejection reasons. |
 | `POST /api/releases` | Sends only `{guid, indexerId}` to the selected instance's release POST. |
 | `GET /api/queue` | Reads every queue page with `includeMovie`/`includeSeries`, includes unknown media downloads, preserves signed queue IDs, progress fields and warnings, and reports instance errors. |
 | `DELETE /api/queue` | Requires `{instanceId, id, blocklist, removeFromClient}` with real booleans; forwards both deletion flags. Blocklisting can cause the instance to search for a replacement. |
@@ -110,11 +110,17 @@ episodes, file metadata, and episode-specific queue status. Episode lists are on
 fetched on detail pages. File/queue enrichment failures retain useful episode
 data with explicit errors; failed episode or series reads fail the request.
 
-Search POST bodies and release GET queries accept an optional `episodeId` for
-shows only. The backend verifies that this episode belongs to `remoteId` on the
-selected instance before issuing `EpisodeSearch` or `release?episodeId=...`.
-Episode IDs are never interchangeable between instances. Whole-title search
-behavior is unchanged when `episodeId` is omitted.
+Search POST bodies and release GET queries accept an optional `episodeId` or
+`seasonNumber` for shows only; combining them is rejected. Episode IDs must be
+positive integers. The backend verifies that an episode belongs to `remoteId` on
+the selected instance before issuing `EpisodeSearch` or `release?episodeId=...`.
+Episode IDs are never interchangeable between instances.
+
+Season numbers must be nonnegative integers, with `0` selecting specials.
+Automatic season searches issue `SeasonSearch` with `seriesId: remoteId` and
+`seasonNumber`; manual searches use `release?seriesId=...&seasonNumber=...`.
+Both scopes reject movie requests and invalid values with `400`. Whole-title
+search behavior is unchanged when both `episodeId` and `seasonNumber` are omitted.
 
 - Adds always monitor the media. Movies use `minimumAvailability: released` and
   `searchForMovie: request.search`. Series use season folders, monitor non-special

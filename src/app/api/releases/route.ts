@@ -7,16 +7,17 @@ export const runtime = "nodejs";
 export function GET(request: Request) {
   return api(async () => {
     const query = new URL(request.url).searchParams;
-    const { instanceId, remoteId, kind, episodeId } = parseInput(
+    const { instanceId, remoteId, kind, episodeId, seasonNumber } = parseInput(
       releasesQuerySchema,
       {
         instanceId: query.get("instanceId"),
         remoteId: query.get("remoteId"),
         kind: query.get("kind"),
         episodeId: query.get("episodeId") ?? undefined,
+        seasonNumber: query.get("seasonNumber") ?? undefined,
       },
     );
-    return releases(instanceId, remoteId, kind, episodeId);
+    return releases(instanceId, remoteId, kind, episodeId, seasonNumber);
   }, request);
 }
 
