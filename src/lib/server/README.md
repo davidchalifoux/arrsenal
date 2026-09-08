@@ -186,8 +186,14 @@ not separate upstream health checks.
 The Microsoft SignalR client connects directly to `/signalr/messages`, preserving
 configured base paths, with server-side `X-Api-Key` headers. WebSocket redirects
 are disabled. Opening, including the SignalR handshake, is limited to ten seconds;
-socket payloads to 4 MiB. SignalR and `ws` remain external server packages so their
-Node transport dependencies resolve correctly in Next's standalone output.
+socket payloads to 4 MiB. SignalR and `ws` remain external server packages.
+`next.config.ts` uses route-scoped `outputFileTracingIncludes` for SignalR's
+dynamically loaded `eventsource`, `fetch-cookie`, and `tough-cookie` packages,
+plus their transitive dependencies. WebSocket-only mode still loads these
+packages. The Docker image keeps Next's pruned standalone dependencies without
+a second install or custom dependency walker. Recheck these includes after
+dependency upgrades, and verify the built Docker image so development
+dependencies cannot mask missing files.
 
 `realtime-snapshots.ts` owns shared, per-instance backing data and query snapshots.
 Complete movie/series events are validated, sanitized, and normalized using cached
