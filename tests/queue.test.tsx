@@ -140,7 +140,10 @@ describe("DownloadQueue", () => {
       screen.queryByRole("article", { name: "Severance download" }),
     ).toBeNull();
     expect(screen.getByRole("article", { name: "Silo download" })).toBeTruthy();
-    expect(screen.getByText("Import requires manual review.")).toBeTruthy();
+    expect(
+      screen.getByLabelText("Warning details for Silo").closest("details")
+        ?.open,
+    ).toBe(false);
     expect(
       screen.getByText("Active downloads").parentElement?.textContent,
     ).toContain("1");

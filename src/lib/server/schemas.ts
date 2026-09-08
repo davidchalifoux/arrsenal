@@ -34,13 +34,13 @@ function integerSchema(name: string, min = 1) {
     .max(2147483647, { error });
 }
 
-function queryIntegerSchema(name: string) {
-  const error = `${name} must be a positive integer.`;
+function queryIntegerSchema(name: string, min = 1) {
+  const error = `${name} must be a ${min === 0 ? "nonnegative" : "positive"} integer.`;
   return z
     .string({ error })
     .regex(/^\d+$/, { error })
     .transform(Number)
-    .pipe(integerSchema(name));
+    .pipe(integerSchema(name, min));
 }
 
 function seriesEpisodeOnly(value: { kind: string; episodeId?: number }) {
@@ -50,6 +50,16 @@ function seriesEpisodeOnly(value: { kind: string; episodeId?: number }) {
 const episodeKindError = {
   error: "episodeId is only valid for series.",
   path: ["episodeId"],
+};
+
+const seasonKindError = {
+  error: "seasonNumber is only valid for series.",
+  path: ["seasonNumber"],
+};
+
+const searchScopeError = {
+  error: "episodeId and seasonNumber cannot be combined.",
+  path: ["seasonNumber"],
 };
 
 const instanceIdSchema = textSchema("instanceId", 100);
@@ -240,10 +250,20 @@ export const searchSchema = z
       remoteId: integerSchema("remoteId"),
       instanceId: instanceIdSchema,
       episodeId: integerSchema("episodeId").optional(),
+      seasonNumber: integerSchema("seasonNumber", 0).optional(),
     },
     objectError,
   )
-  .refine(seriesEpisodeOnly, episodeKindError);
+  .refine(seriesEpisodeOnly, episodeKindError)
+  .refine(
+    (value) => value.seasonNumber === undefined || value.kind === "series",
+    seasonKindError,
+  )
+  .refine(
+    (value) =>
+      value.episodeId === undefined || value.seasonNumber === undefined,
+    searchScopeError,
+  );
 
 export const grabReleaseSchema = z.object(
   {
@@ -288,8 +308,18 @@ export const releasesQuerySchema = z
     kind: mediaKindSchema,
     // Do not coerce arbitrary strings, booleans, hex, or exponent notation into IDs.
     episodeId: queryIntegerSchema("episodeId").optional(),
+    seasonNumber: queryIntegerSchema("seasonNumber", 0).optional(),
   })
-  .refine(seriesEpisodeOnly, episodeKindError);
+  .refine(seriesEpisodeOnly, episodeKindError)
+  .refine(
+    (value) => value.seasonNumber === undefined || value.kind === "series",
+    seasonKindError,
+  )
+  .refine(
+    (value) =>
+      value.episodeId === undefined || value.seasonNumber === undefined,
+    searchScopeError,
+  );
 
 export const imageQuerySchema = z.object({
   instanceId: instanceIdSchema,

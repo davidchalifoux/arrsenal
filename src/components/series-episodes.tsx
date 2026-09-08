@@ -157,11 +157,13 @@ export function SeriesEpisodes({
   notify,
   onChanged,
   onManualSearch,
+  onSeasonManualSearch,
 }: {
   media: MediaItem;
   notify: (message: string, error?: boolean) => void;
   onChanged: () => void;
   onManualSearch: (target: MediaTarget, episode: Episode, code: string) => void;
+  onSeasonManualSearch: (target: MediaTarget, seasonNumber: number) => void;
 }) {
   const [pending, setPending] = useState<string | null>(null);
   const searchLock = useRef(false);
@@ -226,10 +228,12 @@ export function SeriesEpisodes({
     ? seasons.get(selected.season)?.get(selected.episode)
     : undefined;
 
-  async function search(target: MediaTarget, episode: Episode) {
+  async function search(target: MediaTarget, scope: Episode | number) {
     if (searchLock.current) return;
     searchLock.current = true;
-    setPending(`${target.instanceId}:${episode.id}`);
+    setPending(
+      `${target.instanceId}:${typeof scope === "number" ? `season:${scope}` : scope.id}`,
+    );
     try {
       const result = await api<ActionResponse>("/api/search", {
         method: "POST",
@@ -237,17 +241,16 @@ export function SeriesEpisodes({
           instanceId: target.instanceId,
           remoteId: target.remoteId,
           kind: "series",
-          episodeId: episode.id,
+          ...(typeof scope === "number"
+            ? { seasonNumber: scope }
+            : { episodeId: scope.id }),
         }),
       });
       if (!result.success) throw new Error(result.message);
       notify(result.message);
       onChanged();
     } catch (cause) {
-      notify(
-        cause instanceof Error ? cause.message : "Episode search failed.",
-        true,
-      );
+      notify(cause instanceof Error ? cause.message : "Search failed.", true);
     } finally {
       searchLock.current = false;
       setPending(null);
@@ -433,12 +436,22 @@ export function SeriesEpisodes({
                       .join(", ");
                     const stale =
                       query.isError || Boolean(query.data?.errors.length);
+                    const hasSeason =
+                      episodes.length > 0 ||
+                      Boolean(
+                        query.data?.seasons.some(
+                          (season) => season.seasonNumber === number,
+                        ),
+                      );
+                    const seasonLabel =
+                      number === 0 ? "Specials" : `Season ${number}`;
                     return (
                       <span
                         key={target.instanceId}
                         title={`${target.instanceName} season ${number} status`}
                         className={css({
                           display: "inline-flex",
+                          flexWrap: "wrap",
                           alignItems: "center",
                           gap: "8px",
                           fontSize: "10px",
@@ -512,6 +525,38 @@ export function SeriesEpisodes({
                             )}
                           </>
                         )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`Auto search ${seasonLabel} on ${target.instanceName}`}
+                          disabled={!hasSeason || pending !== null}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void search(target, number);
+                          }}
+                        >
+                          {pending ===
+                          `${target.instanceId}:season:${number}` ? (
+                            <Spinner size={12} />
+                          ) : (
+                            <MagnifyingGlassIcon size={12} />
+                          )}
+                          Auto search
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`Manual search ${seasonLabel} on ${target.instanceName}`}
+                          disabled={!hasSeason || pending !== null}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onSeasonManualSearch(target, number);
+                          }}
+                        >
+                          Manual search
+                        </Button>
                       </span>
                     );
                   })}

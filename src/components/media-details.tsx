@@ -65,7 +65,8 @@ export function MediaDetails({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [releaseTarget, setReleaseTarget] = useState<MediaTarget | null>(null);
-  const [episodeScope, setEpisodeScope] = useState<{
+  const [searchScope, setSearchScope] = useState<{
+    kind: "episode" | "season";
     id: number;
     code: string;
   } | null>(null);
@@ -615,7 +616,7 @@ export function MediaDetails({
                         title={`Manually search ${target.instanceName}`}
                         disabled={busy !== null}
                         onClick={() => {
-                          setEpisodeScope(null);
+                          setSearchScope(null);
                           setReleaseTarget(target);
                         }}
                         className={targetActionStyle}
@@ -781,7 +782,7 @@ export function MediaDetails({
                         size="sm"
                         variant="ghost"
                         onClick={() => {
-                          setEpisodeScope(null);
+                          setSearchScope(null);
                           setReleaseTarget(target);
                         }}
                       >
@@ -811,7 +812,16 @@ export function MediaDetails({
             notify={notify}
             onChanged={onChanged}
             onManualSearch={(target, episode, code) => {
-              setEpisodeScope({ id: episode.id, code });
+              setSearchScope({ kind: "episode", id: episode.id, code });
+              setReleaseTarget(target);
+            }}
+            onSeasonManualSearch={(target, seasonNumber) => {
+              setSearchScope({
+                kind: "season",
+                id: seasonNumber,
+                code:
+                  seasonNumber === 0 ? "Specials" : `Season ${seasonNumber}`,
+              });
               setReleaseTarget(target);
             }}
           />
@@ -819,7 +829,7 @@ export function MediaDetails({
       </article>
       {releaseTarget && (
         <ReleaseSearch
-          key={episodeScope?.id ?? "all"}
+          key={searchScope ? `${searchScope.kind}:${searchScope.id}` : "all"}
           media={media}
           target={releaseTarget}
           targets={media.targets}
@@ -827,7 +837,7 @@ export function MediaDetails({
           onTarget={setReleaseTarget}
           notify={notify}
           onChanged={onChanged}
-          episodeScope={episodeScope}
+          searchScope={searchScope}
         />
       )}
     </>
@@ -842,7 +852,7 @@ function ReleaseSearch({
   onTarget,
   notify,
   onChanged,
-  episodeScope,
+  searchScope,
 }: {
   media: MediaItem;
   target: MediaTarget;
@@ -851,7 +861,11 @@ function ReleaseSearch({
   onTarget: (target: MediaTarget) => void;
   notify: (message: string, error?: boolean) => void;
   onChanged: () => void;
-  episodeScope?: { id: number; code: string } | null;
+  searchScope?: {
+    kind: "episode" | "season";
+    id: number;
+    code: string;
+  } | null;
 }) {
   const grabLock = useRef(false);
   const [grabbing, setGrabbing] = useState<string | null>(null);
@@ -862,11 +876,11 @@ function ReleaseSearch({
       target.instanceId,
       target.remoteId,
       media.kind,
-      ...(episodeScope ? [episodeScope.id] : []),
+      ...(searchScope ? [searchScope.kind, searchScope.id] : []),
     ],
     queryFn: ({ signal }) =>
       api<{ items: Release[] }>(
-        `/api/releases?instanceId=${encodeURIComponent(target.instanceId)}&remoteId=${target.remoteId}&kind=${media.kind}${episodeScope ? `&episodeId=${episodeScope.id}` : ""}`,
+        `/api/releases?instanceId=${encodeURIComponent(target.instanceId)}&remoteId=${target.remoteId}&kind=${media.kind}${searchScope ? `&${searchScope.kind === "episode" ? "episodeId" : "seasonNumber"}=${searchScope.id}` : ""}`,
         { signal },
       ),
     retry: false,
@@ -905,7 +919,7 @@ function ReleaseSearch({
         if (!open) onClose();
       }}
       title="Manual search"
-      description={`Find a release for ${media.title}${episodeScope ? ` · ${episodeScope.code}` : ""}. Your instance's indexers and quality rules are used.`}
+      description={`Find a release for ${media.title}${searchScope ? ` · ${searchScope.code}` : ""}. Your instance's indexers and quality rules are used.`}
       wide
     >
       <div
@@ -918,7 +932,7 @@ function ReleaseSearch({
         })}
       >
         <SelectField
-          disabled={Boolean(episodeScope) || grabbing !== null}
+          disabled={Boolean(searchScope) || grabbing !== null}
           value={target.instanceId}
           onChange={(id) => {
             const next = targets.find((item) => item.instanceId === id);
