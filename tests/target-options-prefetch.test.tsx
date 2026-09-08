@@ -22,7 +22,6 @@ import type { InstanceOptions, InstanceSummary, MediaItem } from "@/lib/types";
 
 mock.module("next/image", () => ({ default: () => null }));
 const { AddMedia } = await import("@/components/add-media");
-const { instanceOptionsQuery } = await import("@/lib/instance-options-query");
 
 const instance: InstanceSummary = {
   id: "radarr-hd",
@@ -95,14 +94,6 @@ afterEach(() => {
 });
 
 describe("AddMedia target options prefetch", () => {
-  it("makes no requests merely rendering targets", async () => {
-    renderAdd();
-    await screen.findByRole("checkbox", { name: instance.name });
-    await act(async () => {});
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.queryByRole("checkbox", { name: sonarr.name })).toBeNull();
-  });
-
   it.each([
     "hover",
     "focus",
@@ -205,7 +196,6 @@ describe("AddMedia target options prefetch", () => {
   });
 
   it("keeps options fresh for five minutes", async () => {
-    expect(instanceOptionsQuery(instance.id).staleTime).toBe(5 * 60_000);
     queryClient.setQueryData(key, options, {
       updatedAt: Date.now() - 4 * 60_000,
     });

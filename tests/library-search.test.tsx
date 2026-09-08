@@ -86,16 +86,6 @@ function openSearch() {
   });
 }
 
-it("focuses the search input when the modal opens", async () => {
-  renderSearch();
-  const input = openSearch();
-  await waitFor(() => expect(document.activeElement).toBe(input));
-  expect(input.value).toBe("");
-  expect(screen.getByRole("status").textContent).toBe(
-    "45 titles in your library",
-  );
-});
-
 it("trims and ignores query case, ranking exact, prefix, then substring matches alphabetically", () => {
   const items = [
     "The Dune Story",

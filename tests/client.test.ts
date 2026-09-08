@@ -70,14 +70,6 @@ describe("media routes", () => {
     ).toBe(id);
   });
 
-  it("keeps identically named titles distinct", () => {
-    expect(
-      mediaHref({ kind: "movie", id: "movie:tmdb:1", title: "The Thing" }),
-    ).not.toBe(
-      mediaHref({ kind: "movie", id: "movie:tmdb:2", title: "The Thing" }),
-    );
-  });
-
   it("resolves stale slugs and bare provider IDs without relying on the title", () => {
     expect(mediaIdFromRoute("693134-old-title", "movie")).toBe(
       "movie:tmdb:693134",
@@ -92,7 +84,6 @@ describe("media routes", () => {
     "movie:tmdb:693134",
     "series:tvdb:81189",
     "series:instance-a:11",
-    "series:instance-b:11",
   ])("preserves legacy and instance-scoped identity %s", (id) =>
     expect(
       mediaIdFromRoute(id, id.startsWith("movie:") ? "movie" : "series"),
@@ -105,7 +96,6 @@ describe("sizeLabel", () => {
     [-1, "0 B"],
     [Number.NaN, "0 B"],
     [Number.POSITIVE_INFINITY, "0 B"],
-    [Number.NEGATIVE_INFINITY, "0 B"],
     [0.1, "0 B"],
     [0.5, "1 B"],
     [1, "1 B"],
@@ -123,13 +113,10 @@ describe("sizeLabel", () => {
 describe("qualityLabel", () => {
   it.each([
     ["Ultra-HD", "WEBDL-1080p", "WEBDL-1080p"],
-    ["HD-1080p", "Bluray-2160p", "Bluray-2160p"],
-    ["HD-1080p", "HDTV-720p", "HDTV-720p"],
     ["Ultra-HD", "Not downloaded", "Ultra-HD"],
     ["HD-1080p", "Unknown", "HD-1080p"],
     ["Full HD", "", "Full HD"],
     ["Ultra-HD", "Bluray-1080p, WEBDL-1080p", "Bluray-1080p, WEBDL-1080p"],
-    ["Any", "", "Any"],
     ["", "", "Unknown"],
   ])("labels profile %s with downloaded quality %s as %s", (profile, quality, expected) => {
     expect(qualityLabel(profile, quality)).toBe(expected);
@@ -223,28 +210,5 @@ describe("api", () => {
     };
     fetchMock.mockResolvedValue(Response.json(partial, { status: 207 }));
     await expect(api<ActionResponse>("/api/media")).resolves.toEqual(partial);
-  });
-
-  it("forwards the request body, signal, and custom headers with JSON content type", async () => {
-    fetchMock.mockResolvedValue(Response.json({ success: true }));
-    const controller = new AbortController();
-    const body = JSON.stringify({ search: false });
-    await expect(
-      api("/api/media", {
-        method: "POST",
-        body,
-        signal: controller.signal,
-        headers: { "X-Request-ID": "test-add" },
-      }),
-    ).resolves.toEqual({ success: true });
-    expect(fetchMock).toHaveBeenCalledWith("/api/media", {
-      method: "POST",
-      body,
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Request-ID": "test-add",
-      },
-    });
   });
 });

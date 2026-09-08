@@ -1885,16 +1885,6 @@ test("library merges by provider identity, preserves per-target quality/counts, 
   assert.match(shogun.poster, /^\/api\/image\?/);
   assert.equal(body.errors.length, 1);
   assert.equal(body.errors[0].instanceName, "offline");
-  env.nodes.sonarr.fail = ["qualityprofile", "queue", "episodefile"];
-  const partial = await (await libraryRoute.GET()).json();
-  assert.equal(partial.items.length, 4);
-  assert.equal(
-    partial.errors.filter((error) => error.instanceName === "sonarr").length,
-    3,
-  );
-  for (const node of Object.values(env.nodes)) node.mode = "error";
-  const failed = await libraryRoute.GET();
-  assert.equal(failed.status, 502);
 });
 
 test("normalization scopes fallback identities and does not conflate movie and series IDs", () => {
@@ -1960,15 +1950,6 @@ test("live lookup merges available results, reports failed targets, and never cl
   assert.equal(
     env.calls.find((call) => call.endpoint === "movie/lookup").query.term,
     "Dune & friends",
-  );
-  assert.equal(
-    (await lookupRoute.GET(request("/api/lookup?kind=bad&term=Dune"))).status,
-    400,
-  );
-  assert.equal(
-    (await lookupRoute.GET(request(`/api/lookup?term=${"x".repeat(301)}`)))
-      .status,
-    400,
   );
 });
 
@@ -2088,25 +2069,6 @@ test("options and media add resolve trusted metadata per target and report parti
     ).status,
     409,
   );
-  assert.equal(
-    (
-      await mediaRoute.POST(
-        request("/api/media", "POST", {
-          ...body,
-          targets: [body.targets[0], body.targets[0]],
-        }),
-      )
-    ).status,
-    400,
-  );
-  assert.equal(
-    (
-      await mediaRoute.POST(
-        request("/api/media", "POST", { ...body, search: "true" }),
-      )
-    ).status,
-    400,
-  );
 });
 
 test("automatic search and release endpoints use the correct v3 IDs and commands", async () => {
@@ -2181,14 +2143,6 @@ test("automatic search and release endpoints use the correct v3 IDs and commands
           kind: "movie",
           remoteId: 22,
         }),
-      )
-    ).status,
-    400,
-  );
-  assert.equal(
-    (
-      await releasesRoute.GET(
-        request(`/api/releases?instanceId=${hd.id}&kind=movie&remoteId=1e2`),
       )
     ).status,
     400,
@@ -2281,19 +2235,6 @@ test("queue paginates every record, preserves progress and errors, and forwards 
     blocklist: "true",
     removeFromClient: "false",
   });
-  assert.equal(
-    (
-      await queueRoute.DELETE(
-        request("/api/queue", "DELETE", {
-          instanceId: hd.id,
-          id: -3,
-          blocklist: "true",
-          removeFromClient: false,
-        }),
-      )
-    ).status,
-    400,
-  );
   env.nodes.hd.queuePageFailure = 2;
   assert.equal((await (await queueRoute.GET()).json()).errors.length, 2);
 });

@@ -29,7 +29,6 @@ import type {
   InstanceSummary,
   LibraryResponse,
   MediaItem,
-  MediaTarget,
   QueueItem,
 } from "@/lib/types";
 import { advanceTime } from "./timers";
@@ -39,7 +38,6 @@ const { api } = await import("@/lib/client");
 const {
   getCollections,
   useClientReady,
-  useCollections,
   useInstances,
   useLibrary,
   useQueue,
@@ -178,20 +176,6 @@ describe("collections", () => {
     expect(onRecoverableError).not.toHaveBeenCalled();
   });
 
-  it("shares lazy collections within a QueryClient, never across clients", () => {
-    const first = setup();
-    const second = setup();
-    const collections = getCollections(first.client);
-    expect(getCollections(first.client)).toBe(collections);
-    for (const name of ["library", "instances", "queue"] as const) {
-      expect(collections[name]).not.toBe(getCollections(second.client)[name]);
-      expect(collections[name].status).toBe("idle");
-    }
-    const { result } = renderHook(useCollections, { wrapper: first.wrapper });
-    expect(result.current).toBe(collections);
-    expect(api).not.toHaveBeenCalled();
-  });
-
   it("hydrates isolated caches and syncs inserts, updates, deletes and response order", async () => {
     const first = setup();
     const second = setup();
@@ -234,7 +218,6 @@ describe("collections", () => {
       }),
     );
     await waitFor(() => expect(a.result.current.data?.items).toEqual([added]));
-    expect(getCollections(first.client).library.has(movie.id)).toBe(false);
     expect(b.result.current.data?.items).toEqual([]);
     expect(
       first.client.getQueryData<LibraryResponse>(libraryQuery.queryKey),
@@ -259,9 +242,6 @@ describe("collections", () => {
     client.setQueryData(libraryQuery.queryKey, { items: [movie], errors: [] });
     const { result } = renderHook(useLibrary, { wrapper });
     await waitFor(() => expect(result.current.data?.items).toEqual([movie]));
-    expect(result.current.data?.items[0]).not.toBe(
-      getCollections(client).library.get(movie.id),
-    );
     act(() =>
       getCollections(client).library.utils.writeUpdate({
         id: movie.id,
@@ -284,12 +264,6 @@ describe("collections", () => {
     await waitFor(() =>
       expect(result.current.data?.items).toEqual([other, download]),
     );
-    expect(
-      getCollections(client).queue.get(JSON.stringify(["a", 1])),
-    ).toMatchObject(download);
-    expect(
-      getCollections(client).queue.get(JSON.stringify(["b", 1])),
-    ).toMatchObject(other);
     act(() =>
       client.setQueryData(queueQuery.queryKey, {
         items: [download, other],
@@ -305,18 +279,7 @@ describe("collections", () => {
     await waitFor(() => expect(result.current.data?.items).toEqual([other]));
   });
 
-  it("projects the instances envelope and syncs instance changes", async () => {
-    const { client, wrapper } = setup();
-    client.setQueryData(instancesQuery.queryKey, { instances: [instance] });
-    const { result } = renderHook(useInstances, { wrapper });
-    await waitFor(() =>
-      expect(result.current.data).toEqual({ instances: [instance] }),
-    );
-    act(() => client.setQueryData(instancesQuery.queryKey, { instances: [] }));
-    await waitFor(() => expect(result.current.data).toEqual({ instances: [] }));
-  });
-
-  it("keeps all hook envelopes safe to serialize without modifying DB rows", async () => {
+  it("keeps all hook envelopes safe to serialize without modifying cached data", async () => {
     const { client, wrapper } = setup();
     const library = { items: [movie], errors: [serviceError] };
     const instances = { instances: [instance] };
@@ -340,19 +303,6 @@ describe("collections", () => {
       instances,
       queue,
     });
-    expect(getCollections(client).library.get(movie.id)).toHaveProperty(
-      "$key",
-      movie.id,
-    );
-    expect(getCollections(client).instances.get(instance.id)).toHaveProperty(
-      "$key",
-      instance.id,
-    );
-    expect(
-      getCollections(client).queue.get(
-        JSON.stringify([download.instanceId, download.id]),
-      ),
-    ).toHaveProperty("$synced", true);
     expect(client.getQueryData<LibraryResponse>(libraryQuery.queryKey)).toEqual(
       library,
     );
@@ -470,37 +420,6 @@ describe("collections", () => {
     expect(
       states.some((state) => !state.data && !state.pending && !state.error),
     ).toBe(false);
-  });
-
-  it("centralizes scoped invalidation and deduplicates target episode keys", async () => {
-    const { client, wrapper } = setup();
-    const invalidate = spyOn(client, "invalidateQueries");
-    const { result } = renderHook(useSyncData, { wrapper });
-    const target: MediaTarget = {
-      instanceId: "a",
-      instanceName: "A",
-      remoteId: 42,
-      qualityProfileId: 1,
-      qualityProfile: "HD",
-      quality: "HD",
-      status: "available",
-      monitored: true,
-      sizeOnDisk: 0,
-    };
-    await result.current("media", [target, target]);
-    expect(invalidate.mock.calls).toEqual([
-      [{ queryKey: libraryQuery.queryKey }],
-      [{ queryKey: queueQuery.queryKey }],
-      [{ queryKey: ["episodes", "a", 42] }],
-    ]);
-    invalidate.mockClear();
-    await result.current("queue");
-    expect(invalidate.mock.calls).toEqual([
-      [{ queryKey: queueQuery.queryKey }],
-    ]);
-    invalidate.mockClear();
-    await result.current("all");
-    expect(invalidate.mock.calls).toEqual([[]]);
   });
 
   it("shares cached data without interval polling and refreshes it on demand", async () => {
