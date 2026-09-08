@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { ZodType } from "zod";
+import { authorize } from "./auth";
 import { jsonObjectSchema } from "./schemas";
 
 export class ApiError extends Error {
@@ -19,7 +20,24 @@ export function errorMessage(error: unknown): string {
     : "An unexpected server error occurred.";
 }
 
-export async function api(action: () => Promise<unknown>): Promise<Response> {
+export async function api(
+  action: () => Promise<unknown>,
+  request?: Request,
+): Promise<Response> {
+  const response = await publicApi(async () => {
+    if (!(await authorize(request?.headers.get("cookie") ?? null))) {
+      throw new ApiError(401, "Authentication required.");
+    }
+    return action();
+  });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Vary", "Cookie");
+  return response;
+}
+
+export async function publicApi(
+  action: () => Promise<unknown>,
+): Promise<Response> {
   try {
     const result = await action();
     if (result instanceof Response) return result;

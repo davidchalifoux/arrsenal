@@ -17,6 +17,7 @@ import {
 
 export type InstanceConfig = z.output<typeof storedInstanceSchema>;
 type Config = z.output<typeof configSchema>;
+export type AccountConfig = NonNullable<Config["account"]>;
 
 export function instanceInput(value: unknown): Omit<InstanceConfig, "id"> {
   return parseInput(instanceInputSchema, value);
@@ -66,6 +67,26 @@ export async function readInstances(): Promise<InstanceConfig[]> {
 
 export async function readPreferences(): Promise<Config["preferences"]> {
   return (await readAt(configDirectory())).preferences;
+}
+
+export async function readAccount(): Promise<AccountConfig | undefined> {
+  return (await readAt(configDirectory())).account;
+}
+
+export function replaceAccount(
+  expected: AccountConfig | undefined,
+  account: AccountConfig | undefined,
+): Promise<void> {
+  return mutateConfig((config) => {
+    if (
+      config.account?.generation !== expected?.generation ||
+      config.account?.username !== expected?.username ||
+      config.account?.passwordHash !== expected?.passwordHash
+    ) {
+      throw new ApiError(409, "Account changed. Reload and retry.");
+    }
+    config.account = account;
+  });
 }
 
 export function savePreferences(

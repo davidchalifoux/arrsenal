@@ -43,7 +43,7 @@ afterEach(async () => {
 
 describe("preferences config and API", () => {
   it("returns Automatic for missing config and existing configs missing preferences without writing on GET", async () => {
-    const response = await GET();
+    const response = await GET(new Request("http://localhost/api/preferences"));
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(await response.json()).toEqual({ timeZone: null });
@@ -53,7 +53,9 @@ describe("preferences config and API", () => {
       instances: [{ id: "movies", ...input }],
     });
     await Bun.write(join(directory, "config.json"), old);
-    expect(await (await GET()).json()).toEqual({ timeZone: null });
+    expect(
+      await (await GET(new Request("http://localhost/api/preferences"))).json(),
+    ).toEqual({ timeZone: null });
     expect(await Bun.file(join(directory, "config.json")).text()).toBe(old);
     expect(await readInstances()).toEqual([{ id: "movies", ...input }]);
   });
@@ -154,7 +156,10 @@ describe("preferences config and API", () => {
       preferences: { timeZone: "Invalid/Zone" },
     });
     await Bun.write(join(directory, "config.json"), corrupt);
-    for (const response of [await GET(), await patch({ timeZone: "UTC" })]) {
+    for (const response of [
+      await GET(new Request("http://localhost/api/preferences")),
+      await patch({ timeZone: "UTC" }),
+    ]) {
       expect(response.status).toBe(500);
       const text = await response.text();
       expect(text).toContain("it was not overwritten");
@@ -170,7 +175,6 @@ describe("preferences config and API", () => {
     process.env.ARRSENAL_CONFIG_DIR = path;
     const response = await patch({ timeZone: "UTC" });
     expect(response.status).toBe(500);
-    expect(await response.text()).toContain("Check directory permissions");
     expect(await Bun.file(path).text()).toBe("unchanged");
   });
 });

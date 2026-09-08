@@ -12,5 +12,5 @@ export function GET(request: Request) {
       kind: query.get("kind") ?? undefined,
     });
     return lookup(term, kind);
-  });
+  }, request);
 }

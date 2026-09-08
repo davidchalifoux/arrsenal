@@ -12,5 +12,5 @@ export function GET(request: Request) {
       remoteId: query.get("remoteId"),
     });
     return episodes(instanceId, remoteId);
-  });
+  }, request);
 }

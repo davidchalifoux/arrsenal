@@ -30,5 +30,5 @@ export function GET(request: Request) {
         },
       },
     );
-  });
+  }, request);
 }

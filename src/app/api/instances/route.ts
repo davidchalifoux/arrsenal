@@ -8,10 +8,15 @@ import { api, jsonBody } from "../../../lib/server/http";
 
 export const runtime = "nodejs";
 
-export function GET() {
-  return api(async () => ({
-    instances: await Promise.all((await readInstances()).map(instanceSummary)),
-  }));
+export function GET(request: Request) {
+  return api(
+    async () => ({
+      instances: await Promise.all(
+        (await readInstances()).map(instanceSummary),
+      ),
+    }),
+    request,
+  );
 }
 
 export function POST(request: Request) {
@@ -30,5 +35,5 @@ export function POST(request: Request) {
         version,
       },
     };
-  });
+  }, request);
 }
