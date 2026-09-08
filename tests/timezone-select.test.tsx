@@ -25,6 +25,7 @@ function Picker({ saved = "" }: { saved?: string }) {
     <TimezoneSelect
       value={value}
       savedValue={saved}
+      disabled={false}
       onChange={(zone) => {
         changed(zone);
         setValue(zone);
