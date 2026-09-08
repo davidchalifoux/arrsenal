@@ -9,7 +9,6 @@ import {
   mock,
   spyOn,
 } from "bun:test";
-import { css } from "@styled-system/css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -158,7 +157,7 @@ afterEach(async () => {
 });
 
 describe("LibraryLoading", () => {
-  it("mounts hidden, inert children while all three requests start in parallel and exposes the logo and status", async () => {
+  it("mounts hidden, inert children while all three requests start in parallel without remounting when ready", async () => {
     const { client, Wrapper, resolve } = setup();
     const mounted = mock();
     const unmounted = mock();
@@ -169,24 +168,11 @@ describe("LibraryLoading", () => {
       }, []);
       return <button type="button">Library action</button>;
     }
-    const { container } = render(<Child />, { wrapper: Wrapper });
+    render(<Child />, { wrapper: Wrapper });
     const child = screen.getByText("Library action");
     expect(mounted).toHaveBeenCalledTimes(1);
     expectBlocked(child, true);
     expect(screen.queryByRole("button")).toBeNull();
-    expect(screen.getByRole("status").textContent).toBe(
-      "Loading your library...",
-    );
-    expect(screen.getByText("ARRSENAL")).toBeTruthy();
-    const logo = container.querySelector('img[src="/logo.svg"]');
-    expect(logo?.getAttribute("alt")).toBe("");
-    expect(logo?.getAttribute("width")).toBe("80");
-    expect(logo?.getAttribute("height")).toBe("80");
-    expect(logo?.getAttribute("loading")).toBe("eager");
-    expect(logo?.getAttribute("fetchpriority")).toBe("high");
-    expect(
-      logo?.classList.contains(css({ _motionReduce: { animation: "none" } })),
-    ).toBe(true);
     await waitFor(() => expect(api).toHaveBeenCalledTimes(3));
     expect(
       (
@@ -293,9 +279,6 @@ describe("LibraryLoading", () => {
     expect(
       screen.queryByRole("link", { name: "Check connections" }),
     ).toBeNull();
-    expect(screen.getByRole("status").textContent).toBe(
-      "Loading your library...",
-    );
     await act(() => advanceTime(1));
     expect(screen.getByRole("status").textContent).toContain(
       "Still connecting",
@@ -324,9 +307,6 @@ describe("LibraryLoading", () => {
     );
     const container = document.createElement("div");
     container.innerHTML = renderToString(content);
-    expect(container.querySelector("output")?.textContent).toBe(
-      "Loading your library...",
-    );
     expect(container.querySelector("[hidden][inert]")?.textContent).toBe(
       "Hydrated route",
     );

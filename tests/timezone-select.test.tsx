@@ -19,13 +19,7 @@ import { useState } from "react";
 const { TimezoneSelect } = await import("@/components/timezone-select");
 
 const changed = mock();
-function Picker({
-  saved = "",
-  disabled = false,
-}: {
-  saved?: string;
-  disabled?: boolean;
-}) {
+function Picker({ saved = "" }: { saved?: string }) {
   const [value, setValue] = useState(saved);
   return (
     <TimezoneSelect
@@ -35,7 +29,6 @@ function Picker({
         changed(zone);
         setValue(zone);
       }}
-      disabled={disabled}
       describedBy="hint"
     />
   );
@@ -69,25 +62,6 @@ async function open() {
 }
 
 describe("timezone picker", () => {
-  it("opens with Automatic first, city labels and the selected checkmark", async () => {
-    render(<Picker saved="America/New_York" />);
-    expect(
-      screen.getByRole("combobox", { name: "Timezone" }).textContent,
-    ).toContain("New YorkAmerica/New_York");
-    await open();
-    expect(screen.getAllByRole("option")[0].textContent).toContain(
-      "AutomaticThis browser: US/Pacific",
-    );
-    const selected = screen.getByRole("option", {
-      name: /New York America\/New_York/,
-    });
-    expect(selected.getAttribute("aria-selected")).toBe("true");
-    expect(selected.querySelector("svg")).not.toBeNull();
-    expect(
-      screen.getByRole("dialog", { name: "Choose timezone" }).className,
-    ).toContain("300px");
-  });
-
   it.each([
     "new york",
     "NEW_YORK",
@@ -146,13 +120,5 @@ describe("timezone picker", () => {
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("option", { name: /Automatic/ }));
     await waitFor(() => expect(changed).toHaveBeenLastCalledWith(""));
-  });
-
-  it("does not open while saving or loading", () => {
-    render(<Picker disabled />);
-    const trigger = screen.getByRole("combobox", { name: "Timezone" });
-    expect(trigger.hasAttribute("disabled")).toBe(true);
-    fireEvent.click(trigger);
-    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

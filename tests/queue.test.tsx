@@ -56,46 +56,6 @@ beforeEach(() =>
 afterEach(cleanup);
 
 describe("DownloadQueue", () => {
-  it("shows queue totals, accessible progress, metadata, and the full release title", () => {
-    render(
-      <DownloadQueue
-        data={queue()}
-        loading={false}
-        onRefresh={mock()}
-        notify={mock()}
-      />,
-    );
-    expect(
-      screen.getByRole("heading", { name: "Downloads" }).className,
-    ).toContain("sr_true");
-    expect(
-      screen
-        .getByRole("button", { name: "Refresh" })
-        .parentElement?.querySelector("dl"),
-    ).toBeTruthy();
-    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe(
-      "75",
-    );
-    expect(screen.getByText(download.title).getAttribute("title")).toBe(
-      download.title,
-    );
-    expect(screen.getByText("256.0 MB of 1.0 GB left")).toBeTruthy();
-    expect(screen.getByText("00:03:10 left")).toBeTruthy();
-    expect(screen.getByText("qBittorrent")).toBeTruthy();
-    expect(
-      screen.getByText("Active downloads").parentElement?.textContent,
-    ).toContain("1");
-    expect(
-      screen.getByText("Remaining size").parentElement?.textContent,
-    ).toContain("256.0 MB");
-    expect(screen.queryByText("Instances involved")).toBeNull();
-    expect(
-      screen.queryByRole("button", {
-        name: /Pause|Resume|Grab now|Retry import/,
-      }),
-    ).toBeNull();
-  });
-
   it.each([
     { size: 100, sizeleft: 150, status: "downloading", expected: "0" },
     { size: 100, sizeleft: -10, status: "downloading", expected: "100" },

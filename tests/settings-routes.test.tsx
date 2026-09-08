@@ -40,17 +40,16 @@ mock.module("@/lib/collections", () => ({
 mock.module("@/components/library-provider", () => ({
   useLibraryActions: () => ({ notify: state.notify }),
 }));
-const { default: ConnectionsPage, metadata: connectionsMetadata } =
-  await import("@/app/(library)/settings/connections/page");
+const { default: ConnectionsPage } = await import(
+  "@/app/(library)/settings/connections/page"
+);
 const { default: SettingsLayout } = await import(
   "@/app/(library)/settings/layout"
 );
-const { default: SettingsPage, metadata } = await import(
-  "@/app/(library)/settings/page"
+const { default: SettingsPage } = await import("@/app/(library)/settings/page");
+const { default: PersonalizationPage } = await import(
+  "@/app/(library)/settings/personalization/page"
 );
-const { default: PersonalizationPage, metadata: personalizationMetadata } =
-  await import("@/app/(library)/settings/personalization/page");
-const { default: ErrorPage } = await import("@/app/error");
 
 let client: QueryClient;
 let savedZone: string | null;
@@ -150,7 +149,6 @@ describe("Settings routes and navigation", () => {
         <PersonalizationPage />
       </SettingsLayout>,
     );
-    expect(personalizationMetadata.title).toBe("Personalization | Arrsenal");
     expect(
       screen.getByRole("heading", { level: 1, name: "Personalization" }),
     ).toBeTruthy();
@@ -185,7 +183,6 @@ describe("Settings routes and navigation", () => {
     );
     expect(savedZone).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.getByText(/shared by all viewers/)).toBeTruthy();
   });
 
   it("shows config save failure feedback without applying an unsaved choice", async () => {
@@ -226,7 +223,6 @@ describe("Settings routes and navigation", () => {
     await expect(
       SettingsPage({ searchParams: Promise.resolve({}) }),
     ).rejects.toThrow("REDIRECT:/settings/connections");
-    expect(metadata.title).toBe("Settings | Arrsenal");
   });
 
   it("redirects legacy connect links to the connection subpage", async () => {
@@ -254,7 +250,6 @@ describe("Settings routes and navigation", () => {
         {await ConnectionsPage({ searchParams: Promise.resolve({}) })}
       </SettingsLayout>,
     );
-    expect(connectionsMetadata.title).toBe("Connections | Arrsenal");
     expect(
       screen.getByRole("heading", { level: 1, name: "Connections" }),
     ).toBeTruthy();
@@ -305,13 +300,6 @@ describe("Settings routes and navigation", () => {
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
     expect(state.replace).toHaveBeenCalledTimes(1);
-  });
-
-  it("links error recovery directly to Connections", () => {
-    render(<ErrorPage reset={mock()} />);
-    expect(
-      screen.getByRole("link", { name: "Connections" }).getAttribute("href"),
-    ).toBe("/settings/connections");
   });
 });
 

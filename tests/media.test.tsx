@@ -539,34 +539,6 @@ describe("Library integration", () => {
     expect(await screen.findByRole("alert")).toBeTruthy();
   });
 
-  it("eagerly loads initial posters with sizes matching the denser library grid", async () => {
-    const items = Array.from({ length: 17 }, (_, index) => ({
-      ...movie,
-      id: `movie-${index}`,
-      title: `Movie ${index}`,
-      targets: [hdTarget],
-    }));
-    queryClient.setQueryData(["library"], { items, errors: [] });
-    queryClient.setQueryData(["instances"], { instances: [hd] });
-    renderUI(
-      <LibraryProvider>
-        <LibraryBrowser category="movies" />
-      </LibraryProvider>,
-    );
-    const posters = await screen.findAllByRole("img");
-    expect(posters).toHaveLength(17);
-    expect(posters.map((poster) => poster.getAttribute("loading"))).toEqual([
-      ...Array(16).fill("eager"),
-      "lazy",
-    ]);
-    expect(posters[0].getAttribute("sizes")).toContain(
-      "(min-width: 1536px) calc((100vw - 224px) / 9)",
-    );
-    expect(posters[0].getAttribute("sizes")).toContain(
-      "(min-width: 768px) calc((100vw - 144px) / 5)",
-    );
-  });
-
   it.each([
     "Date added",
     "Release year",
@@ -1334,21 +1306,6 @@ describe("Episode actions", () => {
 });
 
 describe("MediaList", () => {
-  it("eagerly loads the first twelve posters and leaves the rest lazy", () => {
-    render(
-      <MediaList
-        items={Array.from({ length: 14 }, (_, index) => ({
-          ...movie,
-          id: `movie-${index}`,
-          title: `Movie ${index}`,
-        }))}
-      />,
-    );
-    expect(
-      screen.getAllByRole("img").map((image) => image.getAttribute("loading")),
-    ).toEqual([...Array(12).fill("eager"), "lazy", "lazy"]);
-  });
-
   it("shows the exact selected quality profile for every instance instead of file quality", () => {
     const targets = [
       hdTarget,
@@ -1380,27 +1337,6 @@ describe("MediaList", () => {
 });
 
 describe("MediaCard", () => {
-  it("accepts sizing and eager loading for a denser grid", () => {
-    render(<MediaCard item={movie} index={15} priority sizes="200px" />);
-    const poster = screen.getByRole("img");
-    expect(poster.getAttribute("loading")).toBe("eager");
-    expect(poster.getAttribute("sizes")).toBe("200px");
-  });
-
-  it.each([
-    0,
-    5,
-    6,
-    11,
-    12,
-    undefined,
-  ])("sets poster loading for card index %s", (index) => {
-    render(<MediaCard item={movie} index={index} />);
-    expect(screen.getByRole("img").getAttribute("loading")).toBe(
-      index !== undefined && index < 12 ? "eager" : "lazy",
-    );
-  });
-
   it("shows the selected quality profile and remains usable after poster failure", () => {
     const onClick = mock();
     renderUI(

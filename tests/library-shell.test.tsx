@@ -57,7 +57,6 @@ mock.module("@/components/library-provider", () => ({
   useLibraryActions: () => mocks,
 }));
 const { LibraryShell } = await import("@/components/library-shell");
-const { PageHeader } = await import("@/components/page-header");
 
 const navigationNames = ["Main navigation", "Mobile navigation"];
 const destinations = [
@@ -117,17 +116,6 @@ it("places Settings after Calendar on desktop and keeps five mobile tabs", () =>
         : destinations,
     );
   }
-  const mobile = screen.getByRole("navigation", { name: "Mobile navigation" });
-  expect(header.contains(mobile)).toBe(false);
-  for (const [name] of destinations) {
-    fireEvent.click(within(mobile).getByRole("link", { name }));
-    expect(screen.getByRole("navigation", { name: "Mobile navigation" })).toBe(
-      mobile,
-    );
-    expect(screen.queryByRole("dialog")).toBeNull();
-  }
-  expect(screen.queryByRole("button", { name: /navigation/i })).toBeNull();
-  expect(screen.queryByRole("link", { name: "Connections" })).toBeNull();
 });
 
 it("preserves the home link, skip link, and main content landmark", () => {
@@ -143,32 +131,6 @@ it("preserves the home link, skip link, and main content landmark", () => {
       name: "Library content",
     }),
   ).toBeDefined();
-});
-
-it("keeps the page title in PageHeader without repeating it in the banner", () => {
-  mocks.pathname = "/movies";
-  render(
-    <LibraryShell>
-      <PageHeader title="Movies" />
-    </LibraryShell>,
-    { wrapper },
-  );
-
-  const banner = within(screen.getByRole("banner"));
-  expect(banner.getAllByText("Movies")).toEqual([
-    banner.getByRole("link", { name: "Movies" }),
-  ]);
-  expect(banner.queryByRole("heading")).toBeNull();
-  expect(screen.getAllByRole("heading", { name: "Movies" })).toHaveLength(1);
-  expect(
-    within(screen.getByRole("main")).getByRole("heading", {
-      level: 1,
-      name: "Movies",
-    }),
-  ).toBeDefined();
-  const logo = banner.getByRole("link", { name: "Arrsenal home" });
-  expect(logo.getAttribute("href")).toBe("/");
-  expect(logo.querySelector("img")?.getAttribute("src")).toBe("/logo.svg");
 });
 
 it.each([

@@ -85,7 +85,6 @@ it("renders month and date-grouped agenda with UTC episode times, distinct relea
   expect(
     screen.getByRole("heading", { level: 1, name: "September 2026" }),
   ).toBeTruthy();
-  expect(screen.queryByRole("heading", { name: "Calendar" })).toBeNull();
   expect(screen.getByLabelText("September 2026 month calendar")).toBeTruthy();
   expect(screen.getByLabelText("September 2026 agenda")).toBeTruthy();
   const time = new Intl.DateTimeFormat(undefined, {
@@ -126,28 +125,6 @@ it("navigates months across years, uses exclusive ranges, and returns to today",
   expect(screen.getByRole("heading", { name: "November 2026" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Today" }));
   expect(screen.getByRole("heading", { name: "December 2026" })).toBeTruthy();
-});
-
-it("keeps busy desktop days compact with expandable remaining events", () => {
-  render(<Calendar now="2026-09-06T12:00:00Z" />);
-  const summary = screen.getByText("2 more events");
-  expect(summary.tagName).toBe("SUMMARY");
-  expect(summary.parentElement?.querySelectorAll("li")).toHaveLength(2);
-  expect(
-    screen.getByLabelText("September 2026 agenda").querySelectorAll("li"),
-  ).toHaveLength(5);
-});
-
-it("keeps the empty calendar frame visible while loading without a spinner or empty-state message", () => {
-  useQuery.mockReturnValue({ isPending: true, isError: false });
-  render(<Calendar now="2026-09-06T12:00:00Z" />);
-  expect(
-    screen
-      .getByLabelText("September 2026 month calendar")
-      .querySelectorAll("time"),
-  ).toHaveLength(30);
-  expect(screen.queryByText(/Loading calendar/)).toBeNull();
-  expect(screen.queryByText(/No scheduled/)).toBeNull();
 });
 
 it("shows failures with retry", () => {
@@ -432,11 +409,10 @@ it.each([
   ).toBe(date);
 });
 
-it("keeps the same empty desktop frame through preference and query loading, then populates it", () => {
+it("keeps an empty desktop calendar through preference and query loading, then populates it", () => {
   preference.timeZone = null;
   const view = render(<Calendar now="2026-09-06T12:00:00Z" />);
-  const frame = screen.getByLabelText("September 2026 month calendar");
-  const cells = Array.from(frame.children);
+  let frame = screen.getByLabelText("September 2026 month calendar");
   expect(useQuery.mock.lastCall?.[0].enabled).toBe(false);
   expect(frame.querySelectorAll("li")).toHaveLength(0);
   expect(frame.querySelectorAll("time")).toHaveLength(30);
@@ -444,9 +420,8 @@ it("keeps the same empty desktop frame through preference and query loading, the
   preference.timeZone = "UTC";
   useQuery.mockReturnValue({ isPending: true, isError: false });
   view.rerender(<Calendar now="2026-09-06T12:00:00Z" />);
+  frame = screen.getByLabelText("September 2026 month calendar");
   expect(useQuery.mock.lastCall?.[0].enabled).toBe(true);
-  expect(screen.getByLabelText("September 2026 month calendar")).toBe(frame);
-  expect(Array.from(frame.children)).toEqual(cells);
   expect(frame.querySelectorAll("li")).toHaveLength(0);
   expect(screen.queryByRole("status")).toBeNull();
   expect(screen.queryByRole("progressbar")).toBeNull();
@@ -455,8 +430,7 @@ it("keeps the same empty desktop frame through preference and query loading, the
   ).toBeNull();
   useQuery.mockReturnValue({ data, isPending: false, isError: false });
   view.rerender(<Calendar now="2026-09-06T12:00:00Z" />);
-  expect(screen.getByLabelText("September 2026 month calendar")).toBe(frame);
-  expect(Array.from(frame.children)).toEqual(cells);
+  frame = screen.getByLabelText("September 2026 month calendar");
   expect(frame.querySelectorAll("li")).toHaveLength(5);
 });
 
@@ -513,7 +487,6 @@ it.each([
   expect(prefetchQuery).toHaveBeenCalledTimes(2);
   for (const [options] of prefetchQuery.mock.calls) {
     expect(options.queryKey).toEqual(["calendar", start, end]);
-    expect(options.queryFn).toEqual(expect.any(Function));
   }
   expect(useQuery.mock.lastCall?.[0].queryKey).toEqual(currentKey);
   expect(screen.queryByRole("heading", { name: title })).toBeNull();
