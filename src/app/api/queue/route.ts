@@ -7,14 +7,14 @@ import {
 
 export const runtime = "nodejs";
 
-export function GET() {
-  return api(queue);
+export function GET(request: Request) {
+  return api(queue, request);
 }
 
 export function DELETE(request: Request) {
-  return api(async () => removeQueueItem(await jsonBody(request)));
+  return api(async () => removeQueueItem(await jsonBody(request)), request);
 }
 
 export function POST(request: Request) {
-  return api(async () => retryQueueItem(await jsonBody(request)));
+  return api(async () => retryQueueItem(await jsonBody(request)), request);
 }

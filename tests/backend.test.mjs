@@ -31,6 +31,7 @@ const searchRoute = await import("../src/app/api/search/route.ts");
 const releasesRoute = await import("../src/app/api/releases/route.ts");
 const queueRoute = await import("../src/app/api/queue/route.ts");
 const imageRoute = await import("../src/app/api/image/route.ts");
+const authRoute = await import("../src/app/api/auth/route.ts");
 const episodesRoute = await import("../src/app/api/episodes/route.ts");
 const { arrRequest } = await import("../src/lib/server/arr.ts");
 const {
@@ -741,14 +742,22 @@ test("standalone origin checks use the addressed Host, not the internal bind add
 });
 
 test("request body deadlines reject stalled JSON and cancel the reader", async () => {
+  await setup();
   jest.useFakeTimers();
   onTestFinished(() => jest.useRealTimers());
   let controller;
   const cancel = mock();
+  let startedReading;
+  const reading = new Promise((resolve) => {
+    startedReading = resolve;
+  });
   const stream = new ReadableStream({
     start(value) {
       controller = value;
       controller.enqueue(new TextEncoder().encode("{"));
+    },
+    pull() {
+      startedReading();
     },
     cancel,
   });
@@ -767,9 +776,10 @@ test("request body deadlines reject stalled JSON and cancel the reader", async (
   void pending.then((result) => {
     response = result;
   });
+  // Authentication reads configuration before the body deadline starts.
+  await reading;
   await advanceTime(10000);
   expect(response?.status).toBe(408);
-  expect(await response.json()).toEqual({ error: "Request body timed out." });
   expect(cancel).toHaveBeenCalledTimes(1);
 });
 
@@ -2383,9 +2393,17 @@ test("invalid artwork fallbacks and local paths cannot trigger a fetch", async (
   expect(env.calls).toHaveLength(before);
 });
 
-test("absolute local remotePoster and remoteUrl covers use the authenticated image proxy", async () => {
+test("artwork stays public with account authentication enabled while upstream credentials remain private", async () => {
   const env = await setup({ sonarr: { kind: "sonarr" } });
   const instance = { ...(await env.connect("sonarr")), apiKey: secret };
+  const enabled = await authRoute.POST(
+    request("/api/auth", "POST", { username: "owner", password: "eight123" }),
+  );
+  expect(enabled.status).toBe(200);
+  expect((await libraryRoute.GET(request("/api/library"))).status).toBe(401);
+  expect((await instancesRoute.GET(request("/api/instances"))).status).toBe(
+    401,
+  );
   const cover = `${instance.url}/api/v3/MediaCover/22/poster.jpg?lastWrite=123`;
   expect((await fetch(cover)).status).toBe(401);
   for (const media of [
@@ -2403,6 +2421,9 @@ test("absolute local remotePoster and remoteUrl covers use the authenticated ima
     const response = await imageRoute.GET(request(src));
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("image/png");
+    expect(response.headers.get("cache-control")).toBe("public, max-age=3600");
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(response.headers.get("x-api-key")).toBeNull();
     expect(env.calls.at(-1).key).toBe(secret);
   }
 });

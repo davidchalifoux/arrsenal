@@ -9,4 +9,9 @@ export const settingsSections = [
     title: "Personalization",
     description: "Choose the shared timezone preference for this library.",
   },
+  {
+    href: "/settings/security",
+    title: "Security",
+    description: "Manage optional sign-in protection for this server.",
+  },
 ];

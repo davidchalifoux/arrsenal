@@ -1,13 +1,13 @@
 import { arrRequest, imageResponse } from "../../../lib/server/arr";
 import { getInstance } from "../../../lib/server/config";
-import { ApiError, api, parseInput } from "../../../lib/server/http";
+import { ApiError, parseInput, publicApi } from "../../../lib/server/http";
 import { coverPath } from "../../../lib/server/media";
 import { imageQuerySchema } from "../../../lib/server/schemas";
 
 export const runtime = "nodejs";
 
 export function GET(request: Request) {
-  return api(async () => {
+  return publicApi(async () => {
     const query = new URL(request.url).searchParams;
     const { instanceId, path, fallback } = parseInput(imageQuerySchema, {
       instanceId: query.get("instanceId"),

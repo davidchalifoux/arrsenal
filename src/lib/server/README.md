@@ -8,8 +8,8 @@ the Node.js runtime and standard Request/Response APIs. Server modules are marke
 
 - Configuration is `config.json` in `ARRSENAL_CONFIG_DIR`, or
   `~/.config/arrsenal` when the environment variable is unset. Its schema is
-  `{ version: 1, instances: InstanceConfig[] }`. Each private record contains
-  `id`, `name`, `kind`, `url`, and `apiKey`.
+  `{ version: 1, instances: InstanceConfig[], preferences, account? }`. Each private
+  instance record contains `id`, `name`, `kind`, `url`, and `apiKey`.
 - The directory is created with mode `0700`. Writes use an exclusive temporary
   file with mode `0600`, fsync it, and atomically rename it over the configuration.
   A process-wide mutation queue survives development reloads. An exclusive
@@ -35,10 +35,38 @@ the Node.js runtime and standard Request/Response APIs. Server modules are marke
   bodies must be `application/json`, no larger than 128 KiB, and complete within
   ten seconds; stalled body reads are canceled and return `408`. The bodyless
   instance DELETE needs no content type; if it has a body, it must be a JSON object.
-- This is a single-user, trusted-network backend, not a login system. Origin
-  checks are browser CSRF protection, not authentication. Put authentication at
-  a reverse proxy or use a VPN before exposing Arrsenal outside a trusted network.
-  The proxy must preserve the application's request scheme and host correctly.
+- Authentication is optional: absent `account` means open access; malformed account
+  configuration fails closed. Settings > Security enables, changes, or disables the
+  single account. Stored fields are username, Argon2id hash, and random generation.
+  Account changes compare the prior record under the existing write lock.
+- Passwords use Bun Argon2id with 64 MiB memory and three iterations. Inputs preserve
+  whitespace, require at least 8 Unicode characters, and cap UTF-8 size at 1,024 bytes.
+  No password or hash is returned by the API. Current-password verification and a
+  valid session are required to change or disable an existing account.
+- Sessions are random 32-byte tokens with only SHA-256 token digests in process memory,
+  bound to the account generation, with seven-day absolute expiration and a 128-session
+  cap. Restart logs out all browsers; replicas are unsupported. Credential changes
+  invalidate old sessions. Cookies are HttpOnly, SameSite=Lax,
+  Path=/, and Secure on HTTPS; trusted-LAN HTTP remains supported.
+- The shared `api` wrapper authenticates data and mutation routes before executing them;
+  the library layout redirects unauthenticated visitors to `/login`. Auth endpoints
+  use their own checks with the shared error and mutation protections. These responses
+  are no-store. The read-only `/api/image` route deliberately uses `publicApi` instead:
+  artwork is public even with an account enabled, but other data routes are not.
+- Password work is limited to two simultaneous operations without a queue. A
+  process-wide budget permits ten attempts in a burst, refilling one per six seconds.
+  This cannot be bypassed using spoofed forwarding headers, but a login flood can
+  temporarily throttle legitimate logins too.
+- Forgotten credentials: restrict network access, stop Arrsenal, and back up
+  `config.json`. Remove the entire top-level `account` property (not `null`),
+  preserving valid JSON, instances, preferences, ownership, and mode `0600`.
+  Restart to restore open access, then configure a new account in Settings > Security.
+  Stopping the server prevents concurrent writes and clears in-memory sessions.
+  Docker users must edit `/config/config.json` in the persistent configuration volume,
+  not delete the volume. Invalid or unreadable configuration still fails closed.
+- Origin checks remain browser CSRF protection. Use HTTPS on untrusted networks;
+  reverse proxies must preserve the public host and scheme. Restrict direct access
+  when authentication is delegated to a proxy.
 
 ## Validation
 
@@ -120,7 +148,10 @@ behavior is unchanged when `episodeId` is omitted.
   fallback URL when present. CDN-only lookup results keep their remote URL. Covers at
   the configured instance origin use the server proxy even when supplied as
   absolute `remotePoster`/`remoteUrl` values. Proxy responses forward no upstream cookies,
-  auth headers, or redirect locations, and are private-cacheable for one hour.
+  auth headers, or redirect locations. Successful artwork responses are public-cacheable
+  for one hour. Next Image optimization is allowed for `/api/image` only among local
+  paths; its optimized cache lifetime is at least the upstream max-age and may be longer.
+  Public artwork URLs and cached responses are not revoked by logout or library removal.
 
 ## Bounds
 

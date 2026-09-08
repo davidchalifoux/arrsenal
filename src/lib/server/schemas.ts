@@ -129,9 +129,45 @@ export const preferencesSchema = z.strictObject({
     }),
 });
 
+export const usernameSchema = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/, {
+  error:
+    "Username must be 1–64 letters, numbers, dots, underscores, or hyphens.",
+});
+
+export const passwordSchema = z
+  .string()
+  .refine(
+    (value) =>
+      value.length <= 1024 &&
+      Buffer.byteLength(value, "utf8") <= 1024 &&
+      [...value].length >= 8,
+    {
+      error:
+        "Password must contain at least 8 characters and at most 1024 UTF-8 bytes.",
+    },
+  );
+
+export const accountSchema = z.strictObject({
+  username: usernameSchema,
+  passwordHash: z
+    .string()
+    .max(256)
+    .regex(
+      /^\$argon2id\$v=19\$m=65536,t=3,p=1\$[A-Za-z0-9+/]{22,86}\$[A-Za-z0-9+/]{43}$/,
+    ),
+  generation: z.uuid(),
+});
+
+export const accountInputSchema = z.strictObject({
+  username: usernameSchema,
+  password: passwordSchema,
+  currentPassword: z.string().max(1024).optional(),
+});
+
 export const configSchema = z.object({
   version: z.literal(1),
   preferences: preferencesSchema.default({ timeZone: null }),
+  account: accountSchema.optional(),
   instances: z
     .array(storedInstanceSchema)
     .max(32)

@@ -11,7 +11,11 @@ import {
 } from "bun:test";
 
 mock.module("server-only", () => ({}));
-mock.module("../src/lib/server/config", () => ({ readInstances: mock() }));
+mock.module("../src/lib/server/config", () => ({
+  readInstances: mock(),
+  readAccount: async () => undefined,
+  replaceAccount: mock(),
+}));
 const { GET } = await import("../src/app/api/calendar/route");
 const { readInstances } = await import("../src/lib/server/config");
 

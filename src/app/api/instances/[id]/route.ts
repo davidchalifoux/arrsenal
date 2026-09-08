@@ -39,7 +39,7 @@ export function PATCH(
         version,
       },
     };
-  });
+  }, request);
 }
 
 export function DELETE(
@@ -55,5 +55,5 @@ export function DELETE(
       success: true,
       message: "Instance disconnected. No remote media or files were deleted.",
     };
-  });
+  }, request);
 }

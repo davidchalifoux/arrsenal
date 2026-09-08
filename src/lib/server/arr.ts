@@ -184,7 +184,7 @@ export async function imageResponse(response: Response): Promise<Response> {
   return new Response(bytes, {
     headers: {
       "Content-Type": type,
-      "Cache-Control": "private, max-age=3600",
+      "Cache-Control": "public, max-age=3600",
       "X-Content-Type-Options": "nosniff",
       "Cross-Origin-Resource-Policy": "same-origin",
       "Content-Security-Policy": "default-src 'none'; sandbox",

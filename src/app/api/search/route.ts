@@ -4,5 +4,5 @@ import { automaticSearch } from "../../../lib/server/services";
 export const runtime = "nodejs";
 
 export function POST(request: Request) {
-  return api(async () => automaticSearch(await jsonBody(request)));
+  return api(async () => automaticSearch(await jsonBody(request)), request);
 }

@@ -32,6 +32,14 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
       ...init?.headers,
     },
   });
+  if (
+    response.status === 401 &&
+    !path.startsWith("/api/auth") &&
+    typeof window !== "undefined"
+  ) {
+    window.location.replace("/login");
+    throw new Error("Authentication required.");
+  }
   if (!response.headers.get("content-type")?.includes("application/json")) {
     throw new Error(
       `Arrsenal returned an unexpected response (${response.status}). Refresh and try again.`,

@@ -17,9 +17,9 @@ export function GET(request: Request) {
       },
     );
     return releases(instanceId, remoteId, kind, episodeId);
-  });
+  }, request);
 }
 
 export function POST(request: Request) {
-  return api(async () => grabRelease(await jsonBody(request)));
+  return api(async () => grabRelease(await jsonBody(request)), request);
 }

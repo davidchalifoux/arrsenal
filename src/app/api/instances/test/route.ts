@@ -13,5 +13,5 @@ export function POST(request: Request) {
       version,
       message: "Connection successful. The instance has not been saved.",
     };
-  });
+  }, request);
 }

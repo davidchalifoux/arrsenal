@@ -1,6 +1,10 @@
 "use client";
 
-import { PlugIcon, SlidersHorizontalIcon } from "@phosphor-icons/react";
+import {
+  PlugIcon,
+  ShieldCheckIcon,
+  SlidersHorizontalIcon,
+} from "@phosphor-icons/react";
 import { css } from "@styled-system/css";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -35,6 +39,7 @@ export function SettingsNavigation() {
         className={css({
           display: "flex",
           flexDirection: { base: "row", lg: "column" },
+          flexWrap: "wrap",
           gap: "4px",
         })}
       >
@@ -42,7 +47,9 @@ export function SettingsNavigation() {
           const Icon =
             section.href === "/settings/connections"
               ? PlugIcon
-              : SlidersHorizontalIcon;
+              : section.href === "/settings/security"
+                ? ShieldCheckIcon
+                : SlidersHorizontalIcon;
           const active = pathname === section.href;
           return (
             <Link
