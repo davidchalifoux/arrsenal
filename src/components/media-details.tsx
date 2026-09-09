@@ -11,7 +11,6 @@ import {
   MagnifyingGlassIcon,
   PlusIcon,
   StarIcon,
-  TargetIcon,
   TrashIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
@@ -368,7 +367,6 @@ export function MediaDetails({
                 fontWeight: "550",
               })}
             >
-              <TargetIcon size={18} className={css({ color: "accent" })} />
               Quality targets
               <span
                 className={css({
