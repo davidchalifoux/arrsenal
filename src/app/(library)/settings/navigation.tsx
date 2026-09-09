@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  InfoIcon,
   PlugIcon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
@@ -49,7 +50,9 @@ export function SettingsNavigation() {
               ? PlugIcon
               : section.href === "/settings/security"
                 ? ShieldCheckIcon
-                : SlidersHorizontalIcon;
+                : section.href === "/settings/about"
+                  ? InfoIcon
+                  : SlidersHorizontalIcon;
           const active = pathname === section.href;
           return (
             <Link

@@ -14,4 +14,9 @@ export const settingsSections = [
     title: "Security",
     description: "Manage optional sign-in protection for this server.",
   },
+  {
+    href: "/settings/about",
+    title: "About",
+    description: "View the Arrsenal version, updates, and project links.",
+  },
 ];
