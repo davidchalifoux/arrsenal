@@ -2,17 +2,14 @@
 
 import {
   ArrowLeftIcon,
-  ArrowRightIcon,
   CheckIcon,
   FilmSlateIcon,
-  MagnifyingGlassIcon,
   PlusIcon,
   TelevisionSimpleIcon,
-  XIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type RefObject, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "@/lib/client";
 import { instanceOptionsQuery } from "@/lib/instance-options-query";
 import type {
@@ -21,12 +18,10 @@ import type {
   InstanceSummary,
   MediaItem,
 } from "@/lib/types";
-import { useCatalogSearch } from "@/lib/use-catalog-search";
 import { Poster } from "./media-card";
 import {
   Button,
   CheckField,
-  inputStyle,
   labelStyle,
   Modal,
   mutedStyle,
@@ -50,8 +45,7 @@ export function AddMedia({
   onAdded,
   notify,
   onConnect,
-  initialTerm = "",
-  initialKind = "movie",
+  onBack,
 }: {
   open: boolean;
   onClose: () => void;
@@ -61,24 +55,21 @@ export function AddMedia({
   onAdded: () => void;
   notify: (message: string, error?: boolean) => void;
   onConnect: () => void;
-  initialTerm?: string;
-  initialKind?: "movie" | "series";
+  onBack?: () => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <Modal
-      initialFocus={seed ? undefined : inputRef}
-      open={open}
+      open={open && seed !== null}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
-      title={seed ? "Add a quality target" : "Find your next great watch"}
+      title="Add a quality target"
       description="One title. Your choice of instances and quality profiles."
       wide
     >
-      {open && (
+      {open && seed && (
         <AddMediaContent
-          key={seed?.id ?? "search"}
+          key={seed.id}
           seed={seed}
           instances={instances}
           library={library}
@@ -86,9 +77,7 @@ export function AddMedia({
           notify={notify}
           onClose={onClose}
           onConnect={onConnect}
-          initialTerm={initialTerm}
-          initialKind={initialKind}
-          inputRef={inputRef}
+          onBack={onBack}
         />
       )}
     </Modal>
@@ -96,40 +85,30 @@ export function AddMedia({
 }
 
 function AddMediaContent({
-  seed,
+  seed: selected,
   instances,
   library,
   onAdded,
   notify,
   onClose,
   onConnect,
-  initialTerm = "",
-  initialKind = "movie",
-  inputRef,
-}: Omit<Parameters<typeof AddMedia>[0], "open"> & {
-  inputRef: RefObject<HTMLInputElement | null>;
+  onBack,
+}: Omit<Parameters<typeof AddMedia>[0], "open" | "seed"> & {
+  seed: MediaItem;
 }) {
-  const [term, setTerm] = useState(initialTerm);
-  const [kind, setKind] = useState<string>(initialKind);
-  const [selected, setSelected] = useState<MediaItem | null>(seed);
   const [choices, setChoices] = useState<Record<string, TargetChoice>>({});
   const [confirmedIds, setConfirmedIds] = useState<string[]>([]);
   const [search, setSearch] = useState(true);
   const [saving, setSaving] = useState(false);
   const saveLock = useRef(false);
   const [error, setError] = useState("");
-  const hasInstance = instances.some(
-    (instance) => instance.kind === (kind === "movie" ? "radarr" : "sonarr"),
-  );
-  const lookup = useCatalogSearch(term, kind, !selected && hasInstance);
   const matching = instances.filter(
     (instance) =>
-      instance.kind === (selected?.kind === "series" ? "sonarr" : "radarr"),
+      instance.kind === (selected.kind === "series" ? "sonarr" : "radarr"),
   );
-  const existing = selected
-    ? (library.find((item) => item.id === selected.id)?.targets ??
-      selected.targets)
-    : [];
+  const existing =
+    library.find((item) => item.id === selected.id)?.targets ??
+    selected.targets;
   const existingIds = [
     ...existing.map((target) => target.instanceId),
     ...confirmedIds,
@@ -138,7 +117,7 @@ function AddMediaContent({
     ([id, choice]) => choice.enabled && !existingIds.includes(id),
   );
   async function add() {
-    if (!selected || targets.length === 0 || saveLock.current) return;
+    if (targets.length === 0 || saveLock.current) return;
     setError("");
     const requestTargets = targets.map(([instanceId, choice]) => ({
       instanceId,
@@ -194,378 +173,160 @@ function AddMediaContent({
   }
   return (
     <>
-      {!selected ? (
-        <>
-          <div
+      {onBack && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onBack}
+          disabled={saving}
+          className={css({ mb: "16px", ml: "-8px" })}
+        >
+          <ArrowLeftIcon size={14} />
+          Back to results
+        </Button>
+      )}
+      <div
+        className={css({
+          display: "flex",
+          gap: "16px",
+          alignItems: "center",
+          pb: "23px",
+          borderBottom: "1px solid token(colors.line)",
+          mb: "21px",
+        })}
+      >
+        <div
+          className={css({
+            width: "64px",
+            height: "94px",
+            position: "relative",
+            borderRadius: "5px",
+            overflow: "hidden",
+            flexShrink: 0,
+          })}
+        >
+          <Poster item={selected} sizes="64px" />
+        </div>
+        <div>
+          <h3
             className={css({
-              display: "flex",
-              gap: "10px",
-              alignItems: "center",
-              mb: "18px",
-              flexWrap: { base: "wrap", sm: "nowrap" },
+              fontSize: "19px",
+              fontWeight: "600",
+              letterSpacing: "-.4px",
             })}
           >
-            <div
-              className={css({
-                position: "relative",
-                flex: 1,
-                minWidth: "160px",
-              })}
-            >
-              <MagnifyingGlassIcon
-                size={18}
+            {selected.title}
+          </h3>
+          <p
+            className={css({
+              color: "muted",
+              fontSize: "12px",
+              mt: "7px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            })}
+          >
+            {selected.kind === "movie" ? (
+              <FilmSlateIcon size={14} />
+            ) : (
+              <TelevisionSimpleIcon size={14} />
+            )}
+            {selected.year} · {selected.genres.slice(0, 2).join(" / ")}
+          </p>
+        </div>
+      </div>
+      <h3 className={css({ fontSize: "13px", fontWeight: "550", mb: "6px" })}>
+        Where should this live?
+      </h3>
+      <p className={cx(mutedStyle, css({ fontSize: "12px", mb: "17px" }))}>
+        Select one or more instances, then choose a profile for each.
+      </p>
+      <div
+        className={css({
+          display: "flex",
+          flexDirection: "column",
+          gap: "10px",
+        })}
+      >
+        {matching.map((instance) => (
+          <TargetOption
+            key={instance.id}
+            instance={instance}
+            existing={existingIds.includes(instance.id)}
+            choice={choices[instance.id]}
+            onChange={(choice) =>
+              setChoices((current) => ({
+                ...current,
+                [instance.id]: choice,
+              }))
+            }
+            disabled={saving}
+          />
+        ))}
+      </div>
+      {matching.length === 0 && (
+        <Notice>
+          No {selected.kind === "movie" ? "Radarr" : "Sonarr"} instances are
+          connected.{" "}
+          <button
+            type="button"
+            onClick={onConnect}
+            className={css({ textDecoration: "underline" })}
+          >
+            Connect an instance
+          </button>{" "}
+          to add this title.
+        </Notice>
+      )}
+      {matching.length > 0 && (
+        <div className={css({ mt: "20px" })}>
+          <CheckField checked={search} onChange={setSearch} disabled={saving}>
+            <span>
+              Start searching after adding
+              <span
                 className={css({
-                  position: "absolute",
-                  left: "13px",
-                  top: "12px",
+                  display: "block",
+                  fontSize: "11px",
                   color: "subtle",
                 })}
-              />
-              <input
-                ref={inputRef}
-                autoComplete="off"
-                aria-label="Search movies and shows"
-                placeholder={
-                  kind === "movie"
-                    ? "Search for a movie..."
-                    : "Search for a show..."
-                }
-                value={term}
-                onChange={(event) => setTerm(event.target.value)}
-                className={cx(inputStyle, css({ pl: "39px", pr: "42px" }))}
-              />
-              {term && (
-                <button
-                  type="button"
-                  aria-label="Clear search"
-                  onClick={() => {
-                    setTerm("");
-                    inputRef.current?.focus();
-                  }}
-                  className={css({
-                    position: "absolute",
-                    right: "4px",
-                    top: "4px",
-                    p: "8px",
-                    color: "muted",
-                    borderRadius: "4px",
-                    _hover: { color: "ink", bg: "elevated" },
-                  })}
-                >
-                  <XIcon size={16} />
-                </button>
-              )}
-            </div>
-            <SelectField
-              value={kind}
-              onChange={setKind}
-              compact
-              label="Media type"
-              options={[
-                { value: "movie", label: "Movies" },
-                { value: "series", label: "Shows" },
-              ]}
-            />
-          </div>
-          {!hasInstance ? (
-            <Notice>
-              Connect{" "}
-              {kind === "movie" ? "Radarr for movies" : "Sonarr for shows"} to
-              start searching.{" "}
-              <button
-                type="button"
-                onClick={onConnect}
-                className={css({ textDecoration: "underline" })}
               >
-                Connect {kind === "movie" ? "Radarr" : "Sonarr"}
-              </button>
-            </Notice>
-          ) : term.trim().length < 2 ? (
-            <div
-              className={css({
-                py: "40px",
-                textAlign: "center",
-                color: "muted",
-                fontSize: "13px",
-              })}
-            >
-              <MagnifyingGlassIcon
-                size={30}
-                className={css({ mx: "auto", mb: "12px", color: "subtle" })}
-              />
-              Enter at least 2 characters of a title to search the catalog.
-            </div>
-          ) : lookup.isDebouncing || lookup.isPending ? (
-            <div
-              className={css({
-                py: "40px",
-                display: "flex",
-                justifyContent: "center",
-                gap: "10px",
-                color: "muted",
-              })}
-            >
-              <Spinner />
-              Searching the catalog...
-            </div>
-          ) : lookup.isError ? (
-            <Notice error>{lookup.error?.message}</Notice>
-          ) : (
-            <>
-              {lookup.data?.errors.map((serviceError) => (
-                <Notice error key={serviceError.instanceId}>
-                  {serviceError.instanceName}: {serviceError.message}
-                </Notice>
-              ))}
-              <div
-                className={css({
-                  maxHeight: "400px",
-                  overflowY: "auto",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "3px",
-                })}
-              >
-                {lookup.data?.items.map((item) => (
-                  <button
-                    type="button"
-                    key={item.id}
-                    onClick={() => {
-                      setSelected(item);
-                      setChoices({});
-                      setError("");
-                    }}
-                    className={css({
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "14px",
-                      p: "10px",
-                      borderRadius: "7px",
-                      textAlign: "left",
-                      _hover: { bg: "elevated" },
-                    })}
-                  >
-                    <span
-                      className={css({
-                        width: "42px",
-                        height: "62px",
-                        position: "relative",
-                        overflow: "hidden",
-                        borderRadius: "4px",
-                        flexShrink: 0,
-                      })}
-                    >
-                      <Poster item={item} sizes="42px" />
-                    </span>
-                    <span className={css({ minWidth: 0, flex: 1 })}>
-                      <span
-                        className={css({ fontSize: "13px", fontWeight: "550" })}
-                      >
-                        {item.title}
-                      </span>
-                      <span
-                        className={css({
-                          display: "block",
-                          fontSize: "11px",
-                          color: "subtle",
-                          mt: "5px",
-                        })}
-                      >
-                        {item.year || "TBA"} ·{" "}
-                        {item.kind === "movie" ? "Movie" : "Show"}
-                        {library.some((entry) => entry.id === item.id)
-                          ? " · In your library"
-                          : ""}
-                      </span>
-                    </span>
-                    <ArrowRightIcon
-                      size={17}
-                      className={css({ color: "subtle" })}
-                    />
-                  </button>
-                ))}
-                {lookup.data?.items.length === 0 && (
-                  <p
-                    className={cx(
-                      mutedStyle,
-                      css({ py: "30px", textAlign: "center" }),
-                    )}
-                  >
-                    No matches found. Try a different title.
-                  </p>
-                )}
-              </div>
-            </>
-          )}
-        </>
-      ) : (
-        <>
-          {!seed && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setSelected(null);
-                setError("");
-                setConfirmedIds([]);
-              }}
-              disabled={saving}
-              className={css({ mb: "16px", ml: "-8px" })}
-            >
-              <ArrowLeftIcon size={14} />
-              Back to results
-            </Button>
-          )}
-          <div
-            className={css({
-              display: "flex",
-              gap: "16px",
-              alignItems: "center",
-              pb: "23px",
-              borderBottom: "1px solid token(colors.line)",
-              mb: "21px",
-            })}
-          >
-            <div
-              className={css({
-                width: "64px",
-                height: "94px",
-                position: "relative",
-                borderRadius: "5px",
-                overflow: "hidden",
-                flexShrink: 0,
-              })}
-            >
-              <Poster item={selected} sizes="64px" />
-            </div>
-            <div>
-              <h3
-                className={css({
-                  fontSize: "19px",
-                  fontWeight: "600",
-                  letterSpacing: "-.4px",
-                })}
-              >
-                {selected.title}
-              </h3>
-              <p
-                className={css({
-                  color: "muted",
-                  fontSize: "12px",
-                  mt: "7px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                })}
-              >
-                {selected.kind === "movie" ? (
-                  <FilmSlateIcon size={14} />
-                ) : (
-                  <TelevisionSimpleIcon size={14} />
-                )}
-                {selected.year} · {selected.genres.slice(0, 2).join(" / ")}
-              </p>
-            </div>
-          </div>
-          <h3
-            className={css({ fontSize: "13px", fontWeight: "550", mb: "6px" })}
-          >
-            Where should this live?
-          </h3>
-          <p className={cx(mutedStyle, css({ fontSize: "12px", mb: "17px" }))}>
-            Select one or more instances, then choose a profile for each.
-          </p>
-          <div
-            className={css({
-              display: "flex",
-              flexDirection: "column",
-              gap: "10px",
-            })}
-          >
-            {matching.map((instance) => (
-              <TargetOption
-                key={instance.id}
-                instance={instance}
-                existing={existingIds.includes(instance.id)}
-                choice={choices[instance.id]}
-                onChange={(choice) =>
-                  setChoices((current) => ({
-                    ...current,
-                    [instance.id]: choice,
-                  }))
-                }
-                disabled={saving}
-              />
-            ))}
-          </div>
-          {matching.length === 0 && (
-            <Notice>
-              No {selected.kind === "movie" ? "Radarr" : "Sonarr"} instances are
-              connected.{" "}
-              <button
-                type="button"
-                onClick={onConnect}
-                className={css({ textDecoration: "underline" })}
-              >
-                Connect an instance
-              </button>{" "}
-              to add this title.
-            </Notice>
-          )}
-          {matching.length > 0 && (
-            <div className={css({ mt: "20px" })}>
-              <CheckField
-                checked={search}
-                onChange={setSearch}
-                disabled={saving}
-              >
-                <span>
-                  Start searching after adding
-                  <span
-                    className={css({
-                      display: "block",
-                      fontSize: "11px",
-                      color: "subtle",
-                    })}
-                  >
-                    Automatically find releases that match each quality profile.
-                  </span>
-                </span>
-              </CheckField>
-            </div>
-          )}
-          {error && (
-            <div className={css({ mt: "18px" })}>
-              <Notice error>{error}</Notice>
-            </div>
-          )}
-          <div
-            className={css({
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "12px",
-              pt: "21px",
-              mt: "21px",
-              borderTop: "1px solid token(colors.line)",
-            })}
-          >
-            <span className={css({ color: "subtle", fontSize: "11px" })}>
-              {`${targets.length} ${targets.length === 1 ? "target" : "targets"} selected`}
+                Automatically find releases that match each quality profile.
+              </span>
             </span>
-            <Button
-              variant="primary"
-              disabled={saving || targets.length === 0}
-              onClick={add}
-            >
-              {saving ? <Spinner /> : <PlusIcon size={15} />}
-              {saving
-                ? "Adding..."
-                : `Add to ${targets.length || ""} ${targets.length === 1 ? "target" : "targets"}`}
-            </Button>
-          </div>
-        </>
+          </CheckField>
+        </div>
       )}
+      {error && (
+        <div className={css({ mt: "18px" })}>
+          <Notice error>{error}</Notice>
+        </div>
+      )}
+      <div
+        className={css({
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
+          pt: "21px",
+          mt: "21px",
+          borderTop: "1px solid token(colors.line)",
+        })}
+      >
+        <span className={css({ color: "subtle", fontSize: "11px" })}>
+          {`${targets.length} ${targets.length === 1 ? "target" : "targets"} selected`}
+        </span>
+        <Button
+          variant="primary"
+          disabled={saving || targets.length === 0}
+          onClick={add}
+        >
+          {saving ? <Spinner /> : <PlusIcon size={15} />}
+          {saving
+            ? "Adding..."
+            : `Add to ${targets.length || ""} ${targets.length === 1 ? "target" : "targets"}`}
+        </Button>
+      </div>
     </>
   );
 }

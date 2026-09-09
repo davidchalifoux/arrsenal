@@ -312,9 +312,7 @@ export function LibraryShell({ children }: { children: ReactNode }) {
               ml: "auto",
             })}
           >
-            <LibraryUtilities
-              addKind={current?.href === "/shows" ? "series" : "movie"}
-            />
+            <LibraryUtilities />
             <Link
               href="/settings"
               aria-label="Settings"

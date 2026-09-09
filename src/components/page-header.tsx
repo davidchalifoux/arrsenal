@@ -10,11 +10,7 @@ import type { ReactNode } from "react";
 import { useLibraryActions } from "./library-provider";
 import { Button } from "./ui";
 
-export function LibraryUtilities({
-  addKind = "movie",
-}: {
-  addKind?: "movie" | "series";
-}) {
+export function LibraryUtilities() {
   const { add, searchLibrary } = useLibraryActions();
   return (
     <>
@@ -67,7 +63,7 @@ export function LibraryUtilities({
       >
         <Button
           variant="primary"
-          onClick={() => add(null, addKind)}
+          onClick={() => add()}
           className={css({ height: { base: "44px", lg: "32px" } })}
         >
           <PlusIcon size={15} weight="bold" />

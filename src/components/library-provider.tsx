@@ -9,29 +9,33 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import { matchSorter } from "match-sorter";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useDeferredValue,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { mediaHref } from "@/lib/client";
 import { useInstances, useLibrary, useSyncData } from "@/lib/collections";
 import type { MediaItem } from "@/lib/types";
+import { useCatalogSearch } from "@/lib/use-catalog-search";
 import { type RealtimeConnection, useRealtime } from "@/lib/use-realtime";
 import { AddMedia } from "./add-media";
 import { Poster } from "./media-card";
 import { Button, inputStyle, Modal, Notice } from "./ui";
 
 interface LibraryActions {
-  add: (media?: MediaItem | null, kind?: "movie" | "series") => void;
+  add: (media?: MediaItem | null) => void;
   connect: () => void;
   searchLibrary: () => void;
   notify: (message: string, error?: boolean) => void;
@@ -55,13 +59,20 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const instances = useInstances();
   const [addOpen, setAddOpen] = useState(false);
   const [seed, setSeed] = useState<MediaItem | null>(null);
-  const [initialTerm, setInitialTerm] = useState("");
-  const [initialKind, setInitialKind] = useState<"movie" | "series">("movie");
+  const [section, setSection] = useState<"library" | "catalog">("library");
+  const [returnToSearch, setReturnToSearch] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
+  const [resultsElement, setResultsElement] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const setResultsRef = useCallback((node: HTMLDivElement | null) => {
+    resultsRef.current = node;
+    setResultsElement(node);
+  }, []);
   const [term, setTerm] = useState("");
-  const [visibleCount, setVisibleCount] = useState(20);
+  const [focusedIndex, setFocusedIndex] = useState(-1);
   const deferredTerm = useDeferredValue(term);
   const [toast, setToast] = useState<{
     message: string;
@@ -69,27 +80,101 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   } | null>(null);
   const items = library.data?.items ?? [];
   const query = deferredTerm.trim();
-  const matches = matchSorter(items, query, { keys: ["title"] });
+  const catalog = useCatalogSearch(term, searchOpen && section === "catalog");
+  const source = section === "library" ? library : catalog;
+  const matches = useMemo(
+    () =>
+      section === "library"
+        ? matchSorter(items, query, { keys: ["title"] })
+        : (catalog.data?.items ?? []),
+    [section, items, query, catalog.data?.items],
+  );
+  const waiting = section === "catalog" && term.trim().length < 2;
+  const loading =
+    !waiting &&
+    (source.isPending || (section === "catalog" && catalog.isDebouncing));
+  const virtualizer = useVirtualizer<HTMLDivElement, HTMLElement>({
+    count: matches.length,
+    getScrollElement: () => resultsElement,
+    estimateSize: () => 72,
+    getItemKey: useCallback((index: number) => matches[index].id, [matches]),
+    overscan: 5,
+    paddingEnd: matches.length ? 16 : 0,
+    enabled: searchOpen,
+    rangeExtractor: useCallback(
+      (range) => {
+        const indexes = defaultRangeExtractor(range);
+        if (
+          focusedIndex >= 0 &&
+          focusedIndex < matches.length &&
+          !indexes.includes(focusedIndex)
+        ) {
+          indexes.push(focusedIndex);
+          indexes.sort((a, b) => a - b);
+        }
+        return indexes;
+      },
+      [focusedIndex, matches.length],
+    ),
+  });
+
+  function focusResult(index: number) {
+    if (index < 0) {
+      setFocusedIndex(-1);
+      searchInput.current?.focus();
+    } else if (index < matches.length) {
+      setFocusedIndex(index);
+      virtualizer.scrollToIndex(index, { align: "auto" });
+      resultsRef.current
+        ?.querySelector<HTMLElement>(`[data-index="${index}"]`)
+        ?.focus({ preventScroll: true });
+    }
+  }
+
+  useLayoutEffect(() => {
+    if (focusedIndex >= 0) {
+      resultsRef.current
+        ?.querySelector<HTMLElement>(`[data-index="${focusedIndex}"]`)
+        ?.focus({ preventScroll: true });
+    }
+  }, [focusedIndex]);
+
+  function selectItem(item: MediaItem) {
+    setSearchOpen(false);
+    if (section === "library") router.push(mediaHref(item));
+    else {
+      setSeed(item);
+      setReturnToSearch(true);
+      setAddOpen(true);
+    }
+  }
+  function changeSection(next: "library" | "catalog") {
+    setSection(next);
+    setFocusedIndex(-1);
+    searchInput.current?.focus();
+    virtualizer.scrollToOffset(0);
+  }
 
   function openSearch() {
     setAddOpen(false);
+    setSection("library");
     setTerm("");
-    setVisibleCount(20);
+    setFocusedIndex(-1);
     setSearchOpen(true);
   }
 
-  function add(
-    media: MediaItem | null = null,
-    kind: "movie" | "series" = "movie",
-  ) {
-    setSearchOpen(false);
-    setInitialKind(media?.kind ?? kind);
-    setInitialTerm("");
+  function add(media: MediaItem | null = null) {
+    setReturnToSearch(false);
     setSeed(media);
-    setAddOpen(true);
+    setTerm("");
+    setFocusedIndex(-1);
+    setSection("catalog");
+    setSearchOpen(!media);
+    setAddOpen(!!media);
   }
   function connect() {
     setAddOpen(false);
+    setSearchOpen(false);
     router.push("/settings/connections?connect=1");
   }
   function notify(message: string, error = false) {
@@ -132,8 +217,14 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         seed={seed}
-        initialTerm={initialTerm}
-        initialKind={initialKind}
+        onBack={
+          returnToSearch
+            ? () => {
+                setAddOpen(false);
+                setSearchOpen(true);
+              }
+            : undefined
+        }
         instances={instances.data?.instances ?? []}
         library={items}
         onAdded={() => {
@@ -146,10 +237,30 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         initialFocus={searchInput}
         open={searchOpen}
         onOpenChange={setSearchOpen}
-        title="Search your library"
-        description="Every title, across every instance."
-        wide
+        title="Search"
+        command
       >
+        <fieldset
+          aria-label="Search section"
+          className={css({ display: "flex", gap: "6px", mb: "12px" })}
+        >
+          <Button
+            variant="ghost"
+            aria-pressed={section === "library"}
+            onClick={() => changeSection("library")}
+            className={css({ _pressed: { bg: "elevated", color: "ink" } })}
+          >
+            <MagnifyingGlassIcon size={14} /> Library
+          </Button>
+          <Button
+            variant="ghost"
+            aria-pressed={section === "catalog"}
+            onClick={() => changeSection("catalog")}
+            className={css({ _pressed: { bg: "elevated", color: "ink" } })}
+          >
+            <PlusIcon size={14} /> Add media
+          </Button>
+        </fieldset>
         <div className={css({ position: "relative", mb: "20px" })}>
           <MagnifyingGlassIcon
             size={19}
@@ -163,27 +274,35 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
           <input
             ref={searchInput}
             autoComplete="off"
-            aria-label="Search library titles"
+            aria-label={
+              section === "library"
+                ? "Search library titles"
+                : "Search movies and shows"
+            }
             aria-describedby="library-search-summary"
-            placeholder="Movies, shows, something you love..."
+            placeholder={
+              section === "library"
+                ? "Search your movies and shows..."
+                : "Find movies and shows to add..."
+            }
             value={term}
             onChange={(event) => {
               setTerm(event.target.value);
-              setVisibleCount(20);
+              setFocusedIndex(-1);
+              virtualizer.scrollToOffset(0);
             }}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing) return;
               if (event.key === "ArrowDown") {
                 event.preventDefault();
-                resultsRef.current?.querySelector("a")?.focus();
+                focusResult(0);
               }
               if (
                 event.key === "Enter" &&
                 matches[0] &&
                 term === deferredTerm
               ) {
-                setSearchOpen(false);
-                router.push(mediaHref(matches[0]));
+                selectItem(matches[0]);
               }
             }}
             className={cx(inputStyle, css({ pl: "40px", pr: "40px" }))}
@@ -191,10 +310,11 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
           {term && (
             <button
               type="button"
-              aria-label="Clear library search"
+              aria-label="Clear search"
               onClick={() => {
                 setTerm("");
-                setVisibleCount(20);
+                setFocusedIndex(-1);
+                virtualizer.scrollToOffset(0);
                 searchInput.current?.focus();
               }}
               className={css({
@@ -211,8 +331,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
             </button>
           )}
         </div>
-        {library.isError && <Notice error>{library.error.message}</Notice>}
-        {!!library.data?.errors.length && (
+        {source.isError && <Notice error>{source.error?.message}</Notice>}
+        {!!source.data?.errors.length && (
           <Notice error>
             Some instances could not be reached. Results may be incomplete.
           </Notice>
@@ -226,90 +346,125 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
             mb: "10px",
           })}
         >
-          {library.isPending
-            ? "Loading your library..."
-            : `${matches.length} ${matches.length === 1 ? "title" : "titles"}${query ? " found" : " in your library"}`}
+          {waiting
+            ? "Search the catalog · Movies & shows"
+            : loading
+              ? "Searching..."
+              : `${matches.length} ${matches.length === 1 ? "title" : "titles"}${query ? " found" : " in your library"}`}
         </output>
         <div
-          ref={resultsRef}
-          className={css({ maxHeight: "min(400px, 45dvh)", overflowY: "auto" })}
+          ref={setResultsRef}
+          className={css({
+            maxHeight: "min(400px, 38dvh)",
+            mx: "-16px",
+            px: "16px",
+            overflowY: "auto",
+            overscrollBehavior: "contain",
+          })}
         >
-          {matches.slice(0, visibleCount).map((item, index) => (
-            <Link
-              key={item.id}
-              href={mediaHref(item)}
-              onClick={() => setSearchOpen(false)}
-              onKeyDown={(event) => {
-                if (event.key !== "ArrowDown" && event.key !== "ArrowUp")
-                  return;
-                event.preventDefault();
-                const next = index + (event.key === "ArrowDown" ? 1 : -1);
-                if (next < 0) searchInput.current?.focus();
-                else resultsRef.current?.querySelectorAll("a")[next]?.focus();
-              }}
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: "14px",
-                width: "100%",
-                textAlign: "left",
-                padding: "10px",
-                borderRadius: "7px",
-                _hover: { bg: "elevated" },
-                _focusVisible: {
-                  bg: "elevated",
-                  outline: "2px solid token(colors.accent)",
-                  outlineOffset: "-2px",
-                },
-              })}
-            >
-              <span
-                className={css({
-                  width: "35px",
-                  height: "52px",
-                  position: "relative",
-                  overflow: "hidden",
-                  borderRadius: "4px",
-                  flexShrink: 0,
-                })}
-              >
-                <Poster item={item} sizes="35px" />
-              </span>
-              <span
-                className={css({
-                  flex: 1,
-                  fontSize: "13px",
-                  fontWeight: "500",
-                })}
-              >
-                {item.title}
-                <span
+          <div
+            style={{
+              height: virtualizer.getTotalSize(),
+              position: "relative",
+              width: "100%",
+            }}
+          >
+            {virtualizer.getVirtualItems().map((row) => {
+              const index = row.index;
+              const item = matches[index];
+              const Result = section === "library" ? "a" : "button";
+              return (
+                <Result
+                  data-search-result
+                  data-index={index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    transform: `translateY(${row.start}px)`,
+                  }}
+                  onFocus={() => setFocusedIndex(index)}
+                  key={item.id}
+                  href={section === "library" ? mediaHref(item) : undefined}
+                  type={section === "catalog" ? "button" : undefined}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    selectItem(item);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "ArrowDown" && event.key !== "ArrowUp")
+                      return;
+                    event.preventDefault();
+                    focusResult(index + (event.key === "ArrowDown" ? 1 : -1));
+                  }}
                   className={css({
-                    display: "block",
-                    fontSize: "11px",
-                    color: "subtle",
-                    fontWeight: "400",
-                    mt: "4px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "14px",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "10px",
+                    borderRadius: "7px",
+                    _hover: { bg: "elevated" },
+                    _focusVisible: {
+                      bg: "elevated",
+                      outline: "2px solid token(colors.accent)",
+                      outlineOffset: "-2px",
+                    },
                   })}
                 >
-                  {item.year} · {item.kind === "movie" ? "Movie" : "Show"} ·{" "}
-                  {item.targets.length} targets
-                </span>
-              </span>
-              <ArrowRightIcon size={15} className={css({ color: "subtle" })} />
-            </Link>
-          ))}
+                  <span
+                    className={css({
+                      width: "35px",
+                      height: "52px",
+                      position: "relative",
+                      overflow: "hidden",
+                      borderRadius: "4px",
+                      flexShrink: 0,
+                    })}
+                  >
+                    <Poster item={item} sizes="35px" />
+                  </span>
+                  <span
+                    className={css({
+                      flex: 1,
+                      fontSize: "13px",
+                      fontWeight: "500",
+                    })}
+                  >
+                    {item.title}
+                    <span
+                      className={css({
+                        display: "block",
+                        fontSize: "11px",
+                        color: "subtle",
+                        fontWeight: "400",
+                        mt: "4px",
+                      })}
+                    >
+                      {item.year} · {item.kind === "movie" ? "Movie" : "Show"}
+                      {section === "library"
+                        ? ` · ${item.targets.length} targets`
+                        : items.some((entry) => entry.id === item.id)
+                          ? " · In library"
+                          : ""}
+                    </span>
+                  </span>
+                  {section === "library" ? (
+                    <ArrowRightIcon
+                      size={15}
+                      className={css({ color: "subtle" })}
+                    />
+                  ) : (
+                    <PlusIcon size={15} className={css({ color: "subtle" })} />
+                  )}
+                </Result>
+              );
+            })}
+          </div>
         </div>
-        {matches.length > visibleCount && (
-          <Button
-            variant="ghost"
-            onClick={() => setVisibleCount((count) => count + 20)}
-            className={css({ mt: "10px", width: "100%" })}
-          >
-            Show more ({matches.length - visibleCount} remaining)
-          </Button>
-        )}
-        {!matches.length && !library.isError && !library.isPending && (
+        {!matches.length && !source.isError && !loading && (
           <div
             className={css({
               textAlign: "center",
@@ -319,41 +474,16 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
             })}
           >
             <p>
-              {query
-                ? `No library titles match "${deferredTerm.trim()}".`
-                : "Your library is empty. Find a movie or show to get started."}
+              {section === "catalog"
+                ? waiting
+                  ? "Enter at least 2 characters to find a movie or show to add."
+                  : `No catalog titles match "${term.trim()}".`
+                : query
+                  ? `No library titles match "${deferredTerm.trim()}".`
+                  : "Your library is empty. Find a movie or show to get started."}
             </p>
           </div>
         )}
-        <div
-          className={css({
-            mt: "18px",
-            pt: "16px",
-            borderTop: "1px solid token(colors.line)",
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "12px",
-          })}
-        >
-          <span className={css({ color: "subtle", fontSize: "11px" })}>
-            Arrow keys to browse · Enter to open · Esc to close
-          </span>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setSearchOpen(false);
-              setSeed(null);
-              setInitialKind("movie");
-              setInitialTerm(term.trim());
-              setAddOpen(true);
-            }}
-          >
-            <PlusIcon size={15} />
-            Add media
-          </Button>
-        </div>
       </Modal>
       {toast && (
         <div

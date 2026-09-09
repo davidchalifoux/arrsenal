@@ -189,18 +189,4 @@ describe("LibraryBrowser", () => {
         .getAttribute("aria-pressed"),
     ).toBe("true");
   });
-
-  it.each([
-    ["library", "movie"],
-    ["movies", "movie"],
-    ["shows", "series"],
-  ] as const)("seeds both Add actions for %s", (category, kind) => {
-    render(<LibraryBrowser category={category} />);
-    const buttons = screen.getAllByRole("button", { name: "Add media" });
-    expect(buttons).toHaveLength(2);
-    for (const button of buttons) {
-      fireEvent.click(button);
-      expect(mocks.add).toHaveBeenLastCalledWith(null, kind);
-    }
-  });
 });

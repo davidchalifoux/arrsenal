@@ -213,7 +213,7 @@ function LibrarySection({
   const hasCompleteData = !!library.data && library.data.errors.length === 0;
 
   function addMedia() {
-    add(null, category === "shows" ? "series" : "movie");
+    add();
   }
 
   function resetFilters() {

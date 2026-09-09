@@ -207,31 +207,6 @@ it("updates active links and queue badges in both navigation regions on rerender
   }
 });
 
-it("keeps global Search and Add in the header and updates the Add seed with the route", () => {
-  const view = renderShell();
-  for (const [pathname, kind] of [
-    ["/", "movie"],
-    ["/shows", "series"],
-    ["/shows/123", "series"],
-    ["/shows-extra", "movie"],
-    ["/movies/123", "movie"],
-    ["/queue", "movie"],
-    ["/calendar", "movie"],
-    ["/settings/connections", "movie"],
-  ]) {
-    mock.clearAllMocks();
-    mocks.pathname = pathname;
-    view.rerender(<LibraryShell>Library content</LibraryShell>);
-    const header = within(screen.getByRole("banner"));
-    expect(screen.getAllByRole("button")).toHaveLength(2);
-    fireEvent.click(header.getByRole("button", { name: "Add media" }));
-    fireEvent.click(header.getByRole("button", { name: "Search library" }));
-    expect(mocks.add).toHaveBeenCalledTimes(1);
-    expect(mocks.add).toHaveBeenCalledWith(null, kind);
-    expect(mocks.searchLibrary).toHaveBeenCalledTimes(1);
-  }
-});
-
 it("keeps cached content visible and clears only recovered or removed instance warnings", () => {
   const view = renderShell();
   expect(screen.queryByRole("alert")).toBeNull();
