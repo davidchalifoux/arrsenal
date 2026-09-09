@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.0](https://github.com/davidchalifoux/arrsenal/compare/v0.4.1...v0.5.0) (2026-09-09)
+
+
+### Features
+
+* add About settings with GitHub update checks ([#16](https://github.com/davidchalifoux/arrsenal/issues/16)) ([09863c6](https://github.com/davidchalifoux/arrsenal/commit/09863c65e5392916ff290a6bfb6a0a066d903bf1))
+* add library and episode file removal ([#11](https://github.com/davidchalifoux/arrsenal/issues/11)) ([72e1e99](https://github.com/davidchalifoux/arrsenal/commit/72e1e99f72e52ae4dd63a1d20e73394b1021b9dc))
+* simplify season headers and organize target actions ([#14](https://github.com/davidchalifoux/arrsenal/issues/14)) ([d76c5bc](https://github.com/davidchalifoux/arrsenal/commit/d76c5bcf7dbf0d2c0f2f3d8cef147fc79f011293))
+* unify and virtualize media search dialog ([#13](https://github.com/davidchalifoux/arrsenal/issues/13)) ([5b50e40](https://github.com/davidchalifoux/arrsenal/commit/5b50e40ea24171ebd42fa12d7ecf018224e9fc5f))
+
+
+### Bug Fixes
+
+* align movie quality targets with show layout ([#17](https://github.com/davidchalifoux/arrsenal/issues/17)) ([cbaa3ab](https://github.com/davidchalifoux/arrsenal/commit/cbaa3ab19303487a2c74a97bd6c53d070bb09b71))
+* tuck library filters beneath navigation ([#15](https://github.com/davidchalifoux/arrsenal/issues/15)) ([e9d22cc](https://github.com/davidchalifoux/arrsenal/commit/e9d22cc63eafa87e58a89622e936a4363276adc2))
+
 ## [0.4.1](https://github.com/davidchalifoux/arrsenal/compare/v0.4.0...v0.4.1) (2026-09-08)
 
 
