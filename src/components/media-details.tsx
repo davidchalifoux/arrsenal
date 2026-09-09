@@ -6,8 +6,8 @@ import {
   ArrowSquareOutIcon,
   CheckCircleIcon,
   ClockIcon,
+  HandIcon,
   HardDrivesIcon,
-  ListMagnifyingGlassIcon,
   MagnifyingGlassIcon,
   PlusIcon,
   StarIcon,
@@ -699,7 +699,7 @@ export function MediaDetails({
                         }}
                         className={targetActionStyle}
                       >
-                        <ListMagnifyingGlassIcon size={14} />
+                        <HandIcon size={14} />
                         <span
                           className={css({
                             display: { base: "none", md: "inline" },
@@ -864,6 +864,7 @@ export function MediaDetails({
                           setReleaseTarget(target);
                         }}
                       >
+                        <HandIcon size={13} />
                         Manual search
                       </Button>
                     </div>

@@ -1128,21 +1128,39 @@ describe("Episode actions", () => {
       />,
     );
     await screen.findByRole("alert");
+    const summary = screen
+      .getByText("Season 1", { exact: true })
+      .closest("summary");
+    if (!summary) throw new Error("Season toggle missing");
+    fireEvent.click(summary);
+    const table = await screen.findByRole("table", {
+      name: "Season 1 target controls",
+    });
+    const hd = within(table).getByRole("row", { name: /^Sonarr HD / });
+    const uhd = within(table).getByRole("row", { name: /^Sonarr 4K / });
+    const offline = within(table).getByRole("row", {
+      name: /^Offline Sonarr /,
+    });
     expect(
-      screen.getByTitle("Sonarr HD season 1 status").textContent,
-    ).toContain("1 downloaded1 missing");
+      within(hd).getByRole("cell", { name: /1\/6 downloaded/ }).textContent,
+    ).toContain("1 missing");
+    for (const state of [
+      "downloading",
+      "unreleased",
+      "unmonitored",
+      "unknown",
+    ]) {
+      expect(
+        within(hd).getByRole("cell", { name: /1\/6 downloaded/ }).textContent,
+      ).toContain(`1 ${state}`);
+    }
     expect(
-      screen.getByTitle("Sonarr HD season 1 status").textContent,
-    ).toContain("4 other");
+      within(uhd).getByRole("cell", { name: /1\/3 downloaded/ }).textContent,
+    ).toContain("2 missing");
     expect(
-      screen.getByTitle("Sonarr 4K season 1 status").textContent,
-    ).toContain("1 downloaded2 missing");
-    expect(
-      screen.getByTitle("Offline Sonarr season 1 status").textContent,
-    ).toContain("Unavailable");
-    expect(
-      screen.getByTitle("Offline Sonarr season 1 status").textContent,
-    ).not.toContain("missing");
+      within(offline).getByRole("cell", { name: /Unavailable/ }),
+    ).toBeTruthy();
+    expect(within(offline).queryByText(/missing/)).toBeNull();
     expect(writes()).toHaveLength(0);
   });
 
@@ -1241,12 +1259,6 @@ describe("Episode actions", () => {
         .getAttribute("aria-valuenow"),
     ).toBe("0");
     expect(within(row).queryByText("Episode overview")).toBeNull();
-    expect(
-      screen.getByTitle("Sonarr HD season 1 status").textContent,
-    ).toContain("1 downloaded0 missing");
-    expect(
-      screen.getByTitle("Sonarr 4K season 1 status").textContent,
-    ).toContain("0 downloaded1 missing");
     fireEvent.click(within(row).getAllByRole("cell")[0]);
     const details = await screen.findByRole("dialog", { name: "Pilot" });
     expect(within(details).getByText("Episode overview")).toBeTruthy();

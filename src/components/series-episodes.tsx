@@ -7,6 +7,7 @@ import {
   CheckCircleIcon,
   CircleDashedIcon,
   DotsThreeIcon,
+  HandIcon,
   MagnifyingGlassIcon,
   TrashIcon,
   WarningCircleIcon,
@@ -442,6 +443,80 @@ export function SeriesEpisodes({
             (a, b) => a.episode.episodeNumber - b.episode.episodeNumber,
           );
           const open = expanded[number] ?? false;
+          const seasonLabel = number === 0 ? "Specials" : `Season ${number}`;
+          const targetSummaries = media.targets.map((target, index) => {
+            const query = queries[index];
+            let total = 0;
+            let downloaded = 0;
+            const counts: Record<EpisodeStatus, number> = {
+              available: 0,
+              missing: 0,
+              downloading: 0,
+              unreleased: 0,
+              unmonitored: 0,
+              unknown: 0,
+            };
+            for (const row of rows) {
+              const episode = row.targets.get(target.instanceId);
+              if (!episode) continue;
+              total++;
+              if (episode.hasFile) downloaded++;
+              else counts[episode.status]++;
+            }
+            const complete = total > 0 && downloaded === total;
+            const breakdown = Object.entries(statuses)
+              .filter(([status]) => counts[status as EpisodeStatus] > 0)
+              .map(
+                ([status, label]) =>
+                  `${counts[status as EpisodeStatus]} ${label.toLowerCase()}`,
+              );
+            const coverage = `${downloaded}/${total}`;
+            const summary = !query.data
+              ? query.isPending
+                ? "Loading…"
+                : "Unavailable"
+              : total === 0
+                ? "No episodes"
+                : complete
+                  ? coverage
+                  : counts.missing
+                    ? `${counts.missing} missing`
+                    : counts.downloading
+                      ? `${counts.downloading} downloading`
+                      : counts.unreleased === total
+                        ? "Unaired"
+                        : counts.unmonitored === total
+                          ? "Unmonitored"
+                          : counts.unknown === total
+                            ? "Unknown"
+                            : coverage;
+            return {
+              target,
+              complete,
+              summary,
+              status: counts.missing
+                ? "missing"
+                : counts.downloading
+                  ? "downloading"
+                  : complete
+                    ? "available"
+                    : "unknown",
+              description:
+                !query.data || !total
+                  ? summary
+                  : complete
+                    ? `Complete · ${coverage}`
+                    : [`${coverage} downloaded`, ...breakdown].join(" · "),
+              stale: query.isError || Boolean(query.data?.errors.length),
+              hasSeason:
+                total > 0 ||
+                Boolean(
+                  query.data?.seasons.some(
+                    (season) => season.seasonNumber === number,
+                  ),
+                ),
+            };
+          });
           return (
             <details
               key={number}
@@ -508,176 +583,201 @@ export function SeriesEpisodes({
                     ml: { base: "20px", md: "auto" },
                   })}
                 >
-                  {media.targets.map((target, index) => {
-                    const query = queries[index];
-                    const episodes = rows.flatMap((row) => {
-                      const episode = row.targets.get(target.instanceId);
-                      return episode ? [episode] : [];
-                    });
-                    const downloaded = episodes.filter(
-                      (episode) => episode.hasFile,
-                    ).length;
-                    const missing = episodes.filter(
-                      (episode) => episode.status === "missing",
-                    ).length;
-                    const others = episodes.filter(
-                      (episode) =>
-                        !episode.hasFile && episode.status !== "missing",
-                    );
-                    const otherDescription = Object.entries(statuses)
-                      .filter(([status]) =>
-                        others.some((episode) => episode.status === status),
-                      )
-                      .map(
-                        ([status, label]) =>
-                          `${others.filter((episode) => episode.status === status).length} ${label.toLowerCase()}`,
-                      )
-                      .join(", ");
-                    const stale =
-                      query.isError || Boolean(query.data?.errors.length);
-                    const hasSeason =
-                      episodes.length > 0 ||
-                      Boolean(
-                        query.data?.seasons.some(
-                          (season) => season.seasonNumber === number,
-                        ),
-                      );
-                    const seasonLabel =
-                      number === 0 ? "Specials" : `Season ${number}`;
-                    return (
+                  {targetSummaries.map(
+                    ({
+                      target,
+                      summary,
+                      description,
+                      status,
+                      complete,
+                      stale,
+                    }) => (
                       <span
                         key={target.instanceId}
-                        title={`${target.instanceName} season ${number} status`}
+                        title={`${target.instanceName}: ${description}${stale ? " (may be incomplete or out of date)" : ""}`}
                         className={css({
                           display: "inline-flex",
-                          flexWrap: "wrap",
                           alignItems: "center",
-                          gap: "8px",
-                          fontSize: "10px",
-                          fontWeight: "400",
-                          whiteSpace: "nowrap",
+                          gap: "6px",
+                          fontSize: "11px",
                         })}
                       >
-                        <span
-                          title={target.instanceName}
-                          className={css({
-                            color: "muted",
-                            maxWidth: "120px",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          })}
-                        >
+                        <span className={css({ color: "muted" })}>
                           {target.instanceName}
                         </span>
-                        {!query.data ? (
-                          <span className={css({ color: "subtle" })}>
-                            {query.isPending ? "Loading..." : "Unavailable"}
-                          </span>
-                        ) : !episodes.length ? (
-                          <span className={css({ color: "subtle" })}>
-                            No episodes
-                          </span>
-                        ) : (
-                          <>
-                            <span
-                              className={css({
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "4px",
-                                color: "positive",
-                              })}
-                            >
-                              <CheckCircleIcon size={12} />
-                              {downloaded} downloaded
-                            </span>
-                            <span
-                              title="Aired, monitored episodes without a file. Active downloads are counted separately."
-                              className={css({
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "4px",
-                                color: missing ? "warning" : "subtle",
-                              })}
-                            >
-                              <CircleDashedIcon size={12} />
-                              {missing} missing
-                            </span>
-                            {others.length > 0 && (
-                              <span
-                                title={otherDescription}
-                                className={css({ color: "subtle" })}
-                              >
-                                <span aria-hidden="true">
-                                  +{others.length} other
-                                </span>
-                                <span className={css({ srOnly: true })}>
-                                  {otherDescription}
-                                </span>
-                              </span>
-                            )}
-                            {stale && (
-                              <WarningCircleIcon
-                                size={12}
-                                aria-label="Counts may be incomplete or out of date"
-                                className={css({ color: "warning" })}
-                              />
-                            )}
-                          </>
+                        <span
+                          className={statusStyle({
+                            status: status as EpisodeStatus,
+                          })}
+                        >
+                          {summary}
+                          {complete && <CheckCircleIcon size={12} />}
+                        </span>
+                        {stale && (
+                          <WarningCircleIcon
+                            size={12}
+                            aria-label="Counts may be incomplete or out of date"
+                            className={css({ color: "warning" })}
+                          />
                         )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          aria-label={`Auto search ${seasonLabel} on ${target.instanceName}`}
-                          disabled={!hasSeason || pending !== null}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            void search(target, number);
-                          }}
-                        >
-                          {pending ===
-                          `${target.instanceId}:season:${number}` ? (
-                            <Spinner size={12} />
-                          ) : (
-                            <MagnifyingGlassIcon size={12} />
-                          )}
-                          Auto search
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          aria-label={`Manual search ${seasonLabel} on ${target.instanceName}`}
-                          disabled={!hasSeason || pending !== null}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            onSeasonManualSearch(target, number);
-                          }}
-                        >
-                          Manual search
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          aria-label={`Delete files for ${seasonLabel} on ${target.instanceName}`}
-                          disabled={
-                            pending !== null || !canDeleteFiles(target, number)
-                          }
-                          title="Requires current episode data and downloaded files. Refresh episodes if unavailable."
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            confirmDeleteFiles(target, number);
-                          }}
-                        >
-                          <TrashIcon size={12} />
-                          Delete files
-                        </Button>
                       </span>
-                    );
-                  })}
+                    ),
+                  )}
                 </span>
               </summary>
+              {open && (
+                <div
+                  className={css({
+                    overflowX: "auto",
+                    bg: "canvas",
+                    borderTop: "1px solid token(colors.line)",
+                  })}
+                >
+                  <table
+                    className={css({
+                      width: "100%",
+                      borderCollapse: "collapse",
+                      fontSize: "12px",
+                    })}
+                  >
+                    <caption className={css({ srOnly: true })}>
+                      {seasonLabel} target controls
+                    </caption>
+                    <thead
+                      className={css({ color: "muted", fontSize: "10px" })}
+                    >
+                      <tr>
+                        <th
+                          scope="col"
+                          className={css({
+                            px: "12px",
+                            py: "8px",
+                            textAlign: "left",
+                            fontWeight: "400",
+                          })}
+                        >
+                          Target
+                        </th>
+                        <th
+                          scope="col"
+                          className={css({
+                            px: "12px",
+                            py: "8px",
+                            textAlign: "left",
+                            fontWeight: "400",
+                          })}
+                        >
+                          Availability
+                        </th>
+                        <th
+                          scope="col"
+                          className={css({
+                            px: "12px",
+                            py: "8px",
+                            textAlign: "right",
+                            fontWeight: "400",
+                          })}
+                        >
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {targetSummaries.map(
+                        ({ target, description, status, stale, hasSeason }) => (
+                          <tr key={target.instanceId}>
+                            <th
+                              scope="row"
+                              className={`${cellStyle} ${css({ fontWeight: "500", whiteSpace: "nowrap", width: "180px" })}`}
+                            >
+                              {target.instanceName}
+                            </th>
+                            <td className={cellStyle}>
+                              <span
+                                className={`${statusStyle({ status: status as EpisodeStatus })} ${css({ whiteSpace: "normal", minWidth: "110px" })}`}
+                              >
+                                {description}
+                              </span>
+                              {stale && (
+                                <span
+                                  className={css({
+                                    display: "block",
+                                    color: "warning",
+                                    fontSize: "11px",
+                                    mt: "4px",
+                                  })}
+                                >
+                                  May be out of date
+                                </span>
+                              )}
+                            </td>
+                            <td
+                              className={`${cellStyle} ${css({ width: "1%", whiteSpace: "nowrap", textAlign: "right" })}`}
+                            >
+                              <div
+                                className={css({
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "flex-end",
+                                  gap: "4px",
+                                })}
+                              >
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  aria-label={`Auto search ${seasonLabel} on ${target.instanceName}`}
+                                  disabled={!hasSeason || pending !== null}
+                                  onClick={() => void search(target, number)}
+                                >
+                                  {pending ===
+                                  `${target.instanceId}:season:${number}` ? (
+                                    <Spinner size={12} />
+                                  ) : (
+                                    <MagnifyingGlassIcon size={12} />
+                                  )}
+                                  Auto search
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  aria-label={`Manual search ${seasonLabel} on ${target.instanceName}`}
+                                  disabled={!hasSeason || pending !== null}
+                                  onClick={() =>
+                                    onSeasonManualSearch(target, number)
+                                  }
+                                >
+                                  <HandIcon size={12} />
+                                  Manual search
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className={css({
+                                    color: "negative",
+                                    ml: "8px",
+                                  })}
+                                  aria-label={`Delete files for ${seasonLabel} on ${target.instanceName}`}
+                                  disabled={
+                                    pending !== null ||
+                                    !canDeleteFiles(target, number)
+                                  }
+                                  title="Requires current episode data and downloaded files. Refresh episodes if unavailable."
+                                  onClick={() =>
+                                    confirmDeleteFiles(target, number)
+                                  }
+                                >
+                                  <TrashIcon size={12} />
+                                  Delete files
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ),
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
               {rows.length === 0 ? (
                 <p
                   className={css({
@@ -914,6 +1014,7 @@ export function SeriesEpisodes({
                                                   )
                                                 }
                                               >
+                                                <HandIcon size={14} />
                                                 Manual search
                                               </Menu.Item>
                                               <Menu.Item
@@ -1182,6 +1283,7 @@ export function SeriesEpisodes({
                             onManualSearch(target, local, episodeCode(local));
                           }}
                         >
+                          <HandIcon size={13} />
                           Manual search
                         </Button>
                         <Button
