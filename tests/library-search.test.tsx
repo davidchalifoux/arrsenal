@@ -16,10 +16,9 @@ const { push } = { push: mock() };
 mock.module("next/navigation", () => ({ useRouter: () => ({ push }) }));
 mock.module("@/components/media-card", () => ({ Poster: () => null }));
 mock.module("@/components/add-media", () => ({
-  AddMedia: ({ open, initialTerm, seed }: ComponentProps<typeof AddMedia>) =>
+  AddMedia: ({ open, seed }: ComponentProps<typeof AddMedia>) =>
     open ? (
       <section aria-label="Catalog handoff">
-        <span>Query: {initialTerm}</span>
         <span>Seed: {seed?.title ?? "none"}</span>
       </section>
     ) : null,
@@ -30,14 +29,65 @@ const { LibraryProvider, useLibraryActions } = await import(
 const { mediaHref } = await import("@/lib/client");
 
 let client: QueryClient;
+const layoutProperties = [
+  "offsetHeight",
+  "offsetWidth",
+  "scrollHeight",
+  "scrollTo",
+] as const;
+const originalLayout = Object.fromEntries(
+  layoutProperties.map((key) => [
+    key,
+    Object.getOwnPropertyDescriptor(HTMLElement.prototype, key),
+  ]),
+);
 beforeEach(() => {
   mock.clearAllMocks();
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(["instances"], { instances: [] });
+  // jsdom has no layout; supply viewport and row measurements, not a virtualizer mock.
+  Object.defineProperties(HTMLElement.prototype, {
+    offsetHeight: {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.hasAttribute("data-search-result") ? 72 : 288;
+      },
+    },
+    offsetWidth: {
+      configurable: true,
+      get() {
+        return 640;
+      },
+    },
+    scrollHeight: {
+      configurable: true,
+      get(this: HTMLElement) {
+        return (
+          Number.parseFloat(
+            (this.firstElementChild as HTMLElement)?.style.height,
+          ) || 288
+        );
+      },
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+    configurable: true,
+    value(this: HTMLElement, options: ScrollToOptions) {
+      if (this.scrollTop === (options.top ?? 0)) return;
+      this.scrollTop = options.top ?? 0;
+      this.dispatchEvent(new Event("scroll"));
+    },
+  });
 });
 afterEach(() => {
   cleanup();
   client.clear();
+  for (const key of layoutProperties) {
+    const descriptor = originalLayout[key];
+    if (descriptor)
+      Object.defineProperty(HTMLElement.prototype, key, descriptor);
+    else Reflect.deleteProperty(HTMLElement.prototype, key);
+  }
 });
 
 function media(title: string): MediaItem {
@@ -108,29 +158,37 @@ it("trims and ignores query case, ranking exact, prefix, then substring matches 
   );
 });
 
-it("shows results beyond 20 in batches and resets pagination when the query changes", () => {
+it("scrolls to the final result without pagination and resets when searching", async () => {
   renderSearch();
   const input = openSearch();
-  expect(screen.getAllByRole("link")).toHaveLength(20);
-  expect(screen.queryByRole("link", { name: /^Title 21/ })).toBeNull();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Show more (25 remaining)" }),
-  );
-  expect(screen.getAllByRole("link")).toHaveLength(40);
-  expect(
-    screen.getByRole("link", { name: /^Title 21/ }).getAttribute("href"),
-  ).toBe(mediaHref(titles[20]));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Show more (5 remaining)" }),
-  );
-  expect(screen.getAllByRole("link")).toHaveLength(45);
-  expect(screen.getByRole("link", { name: /^Title 45/ })).toBeDefined();
+  const first = await screen.findByRole("link", { name: /^Title 01/ });
+  const scroller = first.parentElement?.parentElement as HTMLElement;
+  expect(screen.queryByRole("link", { name: /^Title 45/ })).toBeNull();
+  fireEvent.scroll(scroller, { target: { scrollTop: 45 * 72 - 288 } });
+  const last = await screen.findByRole("link", { name: /^Title 45/ });
+  expect(last.getAttribute("href")).toBe(mediaHref(titles[44]));
+  fireEvent.change(input, { target: { value: "Title 01" } });
+  await screen.findByRole("link", { name: /^Title 01/ });
+  expect(scroller.scrollTop).toBe(0);
   expect(screen.queryByRole("button", { name: /Show more/ })).toBeNull();
-  fireEvent.change(input, { target: { value: "Title" } });
-  expect(screen.getAllByRole("link")).toHaveLength(20);
-  expect(
-    screen.getByRole("button", { name: "Show more (25 remaining)" }),
-  ).toBeDefined();
+});
+
+it("keeps keyboard focus when navigating beyond the rendered window", async () => {
+  renderSearch();
+  const input = openSearch();
+  await waitFor(() => expect(document.activeElement).toBe(input));
+  for (let index = 0; index < titles.length; index++) {
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: "ArrowDown",
+    });
+    await waitFor(() =>
+      expect(document.activeElement?.textContent).toContain(
+        titles[index].title,
+      ),
+    );
+  }
+  fireEvent.click(document.activeElement as HTMLElement);
+  expect(push).toHaveBeenCalledWith(mediaHref(titles[44]));
 });
 
 it("matches acronyms, non-contiguous letters, and titles without typing accents", () => {
@@ -184,39 +242,42 @@ it("navigates to the top ranked result on Enter and closes search, but not for a
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
 
-it("hands the trimmed current query to Add media and closes the library modal", async () => {
+it("switches sections without replacing the dialog or losing the query", () => {
   renderSearch();
-  fireEvent.change(openSearch(), { target: { value: "  Dune: Part Two  " } });
+  const input = openSearch();
+  const dialog = screen.getByRole("dialog");
+  fireEvent.change(input, { target: { value: "Dune" } });
   fireEvent.click(screen.getByRole("button", { name: "Add media" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByRole("dialog")).toBe(dialog);
   expect(
-    screen.getByRole("region", { name: "Catalog handoff" }).textContent,
-  ).toBe("Query: Dune: Part TwoSeed: none");
+    screen.getByRole<HTMLInputElement>("textbox", {
+      name: "Search movies and shows",
+    }),
+  ).toBe(input);
+  expect(input.value).toBe("Dune");
+  fireEvent.click(screen.getByRole("button", { name: "Library" }));
+  expect(screen.getByRole("textbox", { name: "Search library titles" })).toBe(
+    input,
+  );
+  expect(input.value).toBe("Dune");
   expect(push).not.toHaveBeenCalled();
-  fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-  expect(screen.queryByRole("region", { name: "Catalog handoff" })).toBeNull();
-  expect(screen.getByRole<HTMLInputElement>("textbox").value).toBe("");
 });
 
-// Opening, paginating, and reopening the real dialog can exceed 5s in CI.
+// Opening and reopening the real dialog can exceed 5s in CI.
 it.each([
   "ctrlKey",
   "metaKey",
-] as const)("%s+K toggles search and reopens with a clean query, first page, and input focus", async (modifier) => {
+] as const)("%s+K toggles search and reopens with a clean query and input focus", async (modifier) => {
   renderSearch();
   fireEvent.keyDown(window, { key: "k", [modifier]: true });
   const input = screen.getByRole("textbox");
   fireEvent.change(input, { target: { value: "Title" } });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Show more (25 remaining)" }),
-  );
-  expect(screen.getAllByRole("link")).toHaveLength(40);
   fireEvent.keyDown(input, { key: "K", [modifier]: true });
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   fireEvent.keyDown(window, { key: "k", [modifier]: true });
   const reopened = screen.getByRole<HTMLInputElement>("textbox");
   expect(reopened.value).toBe("");
-  expect(screen.getAllByRole("link")).toHaveLength(20);
+  expect(screen.getByRole("link", { name: /^Title 01/ })).toBeDefined();
   expect(screen.getByRole("status").textContent).toBe(
     "45 titles in your library",
   );

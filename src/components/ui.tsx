@@ -274,6 +274,7 @@ export function Modal({
   children,
   wide = false,
   initialFocus,
+  command = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -282,6 +283,7 @@ export function Modal({
   children: ReactNode;
   wide?: boolean;
   initialFocus?: ComponentProps<typeof Dialog.Popup>["initialFocus"];
+  command?: boolean;
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -305,23 +307,25 @@ export function Modal({
             zIndex: 61,
             overflowY: "auto",
             display: "flex",
-            alignItems: "center",
+            alignItems: command ? "flex-start" : "center",
             justifyContent: "center",
-            p: { base: "12px", md: "32px" },
+            px: { base: "12px", md: "32px" },
+            pb: { base: "12px", md: "32px" },
+            pt: command ? "min(15dvh, 120px)" : { base: "12px", md: "32px" },
           })}
         >
           <Dialog.Popup
             initialFocus={initialFocus}
             className={css({
               width: "100%",
-              maxWidth: wide ? "800px" : "540px",
-              maxHeight: "calc(100dvh - 40px)",
+              maxWidth: command ? "720px" : wide ? "800px" : "540px",
+              maxHeight: command ? "calc(85dvh - 24px)" : "calc(100dvh - 40px)",
               overflowY: "auto",
               bg: "surface",
               border: "1px solid #414141",
               borderRadius: "14px",
               boxShadow: "0 24px 100px #0008",
-              p: { base: "20px", md: "28px" },
+              p: command ? "16px 16px 0" : { base: "20px", md: "28px" },
               outline: "none",
               transition: "opacity 180ms, transform 180ms",
               _startingStyle: {
@@ -340,13 +344,13 @@ export function Modal({
                 alignItems: "flex-start",
                 justifyContent: "space-between",
                 gap: "16px",
-                mb: "22px",
+                mb: command ? "12px" : "22px",
               })}
             >
               <div>
                 <Dialog.Title
                   className={css({
-                    fontSize: "21px",
+                    fontSize: command ? "14px" : "21px",
                     fontWeight: "600",
                     letterSpacing: "-.5px",
                   })}
