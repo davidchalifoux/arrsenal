@@ -134,6 +134,8 @@ function RealtimeWarning() {
 
 export function LibraryShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const isLibraryPage =
+    pathname === "/" || pathname === "/movies" || pathname === "/shows";
   const queue = useQueue();
   const count = queue.data?.items.length ?? 0;
   const current = navigation.find((item) =>
@@ -344,7 +346,7 @@ export function LibraryShell({ children }: { children: ReactNode }) {
         id="main-content"
         className={css({
           px: { base: "16px", md: "32px" },
-          pt: { base: "20px", lg: "28px" },
+          pt: isLibraryPage ? "8px" : { base: "20px", lg: "28px" },
           pb: { base: "calc(96px + env(safe-area-inset-bottom))", lg: "32px" },
           maxWidth: "1864px",
           mx: "auto",

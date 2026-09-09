@@ -68,8 +68,8 @@ export function LibraryToolbar({
         justifyContent: "space-between",
         gap: "12px",
         borderBottom: "1px solid token(colors.line)",
-        pb: "15px",
-        mb: "23px",
+        pb: "8px",
+        mb: "12px",
         flexWrap: "wrap",
       })}
     >
