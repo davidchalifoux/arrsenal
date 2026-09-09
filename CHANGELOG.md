@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/davidchalifoux/arrsenal/compare/v0.5.0...v0.5.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* remove quality targets heading icon ([#18](https://github.com/davidchalifoux/arrsenal/issues/18)) ([08788f6](https://github.com/davidchalifoux/arrsenal/commit/08788f67c0a20c366e09ac0a47e0453bd73044c0))
+
 ## [0.5.0](https://github.com/davidchalifoux/arrsenal/compare/v0.4.1...v0.5.0) (2026-09-09)
 
 
