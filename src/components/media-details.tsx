@@ -27,7 +27,7 @@ import type {
   MediaTarget,
   Release,
 } from "@/lib/types";
-import { Poster, QualityBadge } from "./media-card";
+import { Poster } from "./media-card";
 import { PageToolbar } from "./page-header";
 import { SeriesEpisodes } from "./series-episodes";
 import {
@@ -54,6 +54,20 @@ const targetGridStyle = css({
     base: '"instance status" "coverage actions"',
     md: '"instance status coverage actions"',
     xl: '"instance profile status coverage disk actions"',
+  },
+});
+const movieTargetGridStyle = css({
+  display: "grid",
+  alignItems: "center",
+  columnGap: "20px",
+  rowGap: "16px",
+  gridTemplateColumns: {
+    base: "minmax(0, 1fr) auto",
+    lg: "minmax(160px, 1.2fr) minmax(100px, .8fr) 110px minmax(120px, 1fr) 244px",
+  },
+  gridTemplateAreas: {
+    base: '"instance status" "profile disk" "actions actions"',
+    lg: '"instance profile status disk actions"',
   },
 });
 const targetActionStyle = css({
@@ -162,29 +176,21 @@ export function MediaDetails({
       <article className={css({ minWidth: 0, width: "100%" })}>
         <PageToolbar
           actions={
-            <>
-              {media.targets.length > 0 && (
-                <Button
-                  variant="danger"
-                  disabled={removing}
-                  onClick={() => {
-                    if (removeLock.current) return;
-                    setRemoveTarget(media.targets[0]);
-                    setDeleteFiles(false);
-                    setRemoveError("");
-                  }}
-                >
-                  <TrashIcon size={15} />
-                  Remove {media.kind === "movie" ? "movie" : "show"}
-                </Button>
-              )}
-              {media.kind === "movie" && (
-                <Button onClick={() => onAddTarget(media)}>
-                  <PlusIcon size={15} />
-                  Add target
-                </Button>
-              )}
-            </>
+            media.targets.length > 0 && (
+              <Button
+                variant="danger"
+                disabled={removing}
+                onClick={() => {
+                  if (removeLock.current) return;
+                  setRemoveTarget(media.targets[0]);
+                  setDeleteFiles(false);
+                  setRemoveError("");
+                }}
+              >
+                <TrashIcon size={15} />
+                Remove {media.kind === "movie" ? "movie" : "show"}
+              </Button>
+            )
           }
         >
           <Link
@@ -374,16 +380,14 @@ export function MediaDetails({
                 {media.targets.length}
               </span>
             </h2>
-            {media.kind === "series" && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => onAddTarget(media)}
-              >
-                <PlusIcon size={13} />
-                Add target
-              </Button>
-            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => onAddTarget(media)}
+            >
+              <PlusIcon size={13} />
+              Add target
+            </Button>
           </div>
           {media.kind === "series" && media.targets.length > 0 ? (
             <div
@@ -713,166 +717,216 @@ export function MediaDetails({
                 );
               })}
             </div>
-          ) : (
+          ) : media.targets.length > 0 ? (
             <div
               className={css({
-                display: "grid",
-                gridTemplateColumns:
-                  "repeat(auto-fit, minmax(min(100%, 360px), 1fr))",
-                gap: "10px",
+                border: "1px solid token(colors.line)",
+                borderRadius: "7px",
+                overflow: "hidden",
               })}
             >
-              {media.targets.map((target) => (
+              <div
+                aria-hidden="true"
+                className={cx(
+                  movieTargetGridStyle,
+                  css({
+                    display: { base: "none", lg: "grid" },
+                    px: "18px",
+                    py: "8px",
+                    bg: "canvas",
+                    color: "subtle",
+                    fontSize: "10px",
+                  }),
+                )}
+              >
+                <span>Instance</span>
+                <span>Quality profile</span>
+                <span>Availability</span>
+                <span>On disk</span>
+                <span className={css({ textAlign: "right" })}>Search</span>
+              </div>
+              {media.targets.map((target, index) => (
                 <div
                   key={target.instanceId}
-                  className={css({
-                    p: "15px",
-                    border: "1px solid token(colors.line)",
-                    borderRadius: "8px",
-                    bg: "#202020",
-                  })}
+                  className={cx(
+                    movieTargetGridStyle,
+                    css({
+                      px: "18px",
+                      py: "10px",
+                      bg: "surface",
+                      borderTop: {
+                        base: index ? "1px solid token(colors.line)" : "none",
+                        lg: "1px solid token(colors.line)",
+                      },
+                      _hover: { bg: "#202020" },
+                    }),
+                  )}
                 >
                   <div
                     className={css({
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: "10px",
-                      flexWrap: "wrap",
-                    })}
-                  >
-                    <div
-                      className={css({
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                      })}
-                    >
-                      <span
-                        className={css({
-                          width: "30px",
-                          height: "30px",
-                          display: "grid",
-                          placeItems: "center",
-                          borderRadius: "7px",
-                          bg: "#303030",
-                          color: "#c7c7c7",
-                        })}
-                      >
-                        <HardDrivesIcon size={17} />
-                      </span>
-                      <div>
-                        <h4
-                          className={css({
-                            fontSize: "12px",
-                            fontWeight: "550",
-                          })}
-                        >
-                          {target.instanceName}
-                        </h4>
-                        <p
-                          className={css({
-                            color: "subtle",
-                            fontSize: "10px",
-                            mt: "3px",
-                          })}
-                        >
-                          {target.qualityProfile} ·{" "}
-                          {target.monitored ? "Monitored" : "Unmonitored"}
-                        </p>
-                      </div>
-                    </div>
-                    <QualityBadge target={target} />
-                  </div>
-                  <p
-                    className={css({
-                      color: "subtle",
-                      fontSize: "11px",
-                      mt: "10px",
-                      overflowWrap: "anywhere",
-                    })}
-                  >
-                    On disk:{" "}
-                    {target.quality === "Not downloaded"
-                      ? "No files yet"
-                      : target.quality}
-                  </p>
-                  <div
-                    className={css({
+                      gridArea: "instance",
+                      minWidth: 0,
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "space-between",
-                      flexWrap: "wrap",
                       gap: "10px",
-                      mt: "14px",
                     })}
                   >
                     <span
                       className={css({
-                        fontSize: "11px",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        color:
-                          target.status === "available"
-                            ? "positive"
-                            : target.status === "downloading"
-                              ? "info"
-                              : "warning",
+                        width: "30px",
+                        height: "30px",
+                        flexShrink: 0,
+                        display: "grid",
+                        placeItems: "center",
+                        borderRadius: "7px",
+                        bg: "#303030",
+                        color: "#c7c7c7",
                       })}
                     >
-                      {target.status === "available" ? (
-                        <CheckCircleIcon size={14} />
-                      ) : target.status === "downloading" ? (
-                        <ArrowDownIcon size={14} />
-                      ) : (
-                        <WarningCircleIcon size={14} />
-                      )}
-                      {target.status === "available"
-                        ? "Available"
-                        : target.status === "downloading"
-                          ? "Downloading"
-                          : target.status === "partial"
-                            ? "Some episodes missing"
-                            : "Missing"}
-                      <span className={css({ color: "subtle" })}>
-                        {target.episodeCount !== undefined
-                          ? ` · ${target.episodeFileCount ?? 0}/${target.episodeCount} episodes`
-                          : target.sizeOnDisk
-                            ? ` · ${sizeLabel(target.sizeOnDisk)}`
-                            : ""}
-                      </span>
+                      <HardDrivesIcon size={17} />
                     </span>
-                    <div className={css({ display: "flex", gap: "6px" })}>
-                      <Button
-                        size="sm"
-                        disabled={busy !== null}
-                        onClick={() => search(target)}
+                    <div className={css({ minWidth: 0 })}>
+                      <h3
+                        title={target.instanceName}
+                        className={css({
+                          fontSize: "12px",
+                          fontWeight: "550",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        })}
                       >
-                        {busy === target.instanceId ? (
-                          <Spinner size={13} />
-                        ) : (
-                          <MagnifyingGlassIcon size={13} />
-                        )}
-                        Auto search
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setSearchScope(null);
-                          setReleaseTarget(target);
-                        }}
+                        {target.instanceName}
+                      </h3>
+                      <p
+                        className={css({
+                          color: target.monitored ? "subtle" : "warning",
+                          fontSize: "10px",
+                          mt: "3px",
+                        })}
                       >
-                        <HandIcon size={13} />
-                        Manual search
-                      </Button>
+                        {target.monitored ? "Monitored" : "Unmonitored"}
+                      </p>
                     </div>
+                  </div>
+                  <div
+                    className={css({
+                      gridArea: "profile",
+                      minWidth: 0,
+                    })}
+                  >
+                    <p
+                      title={target.qualityProfile}
+                      className={css({
+                        fontSize: "11px",
+                        lineHeight: "1.4",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      })}
+                    >
+                      {target.qualityProfile}
+                    </p>
+                    <p
+                      title={target.quality}
+                      className={css({
+                        fontSize: "10px",
+                        lineHeight: "1.4",
+                        color: "subtle",
+                        mt: "2px",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      })}
+                    >
+                      {target.quality === "Not downloaded"
+                        ? "No files yet"
+                        : target.quality}
+                    </p>
+                  </div>
+                  <div
+                    className={css({
+                      gridArea: "disk",
+                      minWidth: 0,
+                      fontSize: "11px",
+                      textAlign: { base: "right", lg: "left" },
+                      color: "muted",
+                      whiteSpace: "nowrap",
+                      fontVariantNumeric: "tabular-nums",
+                    })}
+                  >
+                    {sizeLabel(target.sizeOnDisk)}
+                  </div>
+                  <span
+                    className={css({
+                      gridArea: "status",
+                      justifySelf: { base: "end", lg: "start" },
+                      fontSize: "11px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      color:
+                        target.status === "available"
+                          ? "positive"
+                          : target.status === "downloading"
+                            ? "info"
+                            : "warning",
+                    })}
+                  >
+                    {target.status === "available" ? (
+                      <CheckCircleIcon size={14} />
+                    ) : target.status === "downloading" ? (
+                      <ArrowDownIcon size={14} />
+                    ) : (
+                      <WarningCircleIcon size={14} />
+                    )}
+                    {target.status === "available"
+                      ? "Available"
+                      : target.status === "downloading"
+                        ? "Downloading"
+                        : target.status === "partial"
+                          ? "Some episodes missing"
+                          : "Missing"}
+                  </span>
+                  <div
+                    className={css({
+                      gridArea: "actions",
+                      display: "flex",
+                      gap: "6px",
+                      justifyContent: "flex-end",
+                      flexWrap: "wrap",
+                    })}
+                  >
+                    <Button
+                      size="sm"
+                      disabled={busy !== null}
+                      title={`Automatically search ${target.instanceName}`}
+                      onClick={() => search(target)}
+                    >
+                      {busy === target.instanceId ? (
+                        <Spinner size={13} />
+                      ) : (
+                        <MagnifyingGlassIcon size={13} />
+                      )}
+                      Auto search
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title={`Manually search ${target.instanceName}`}
+                      onClick={() => {
+                        setSearchScope(null);
+                        setReleaseTarget(target);
+                      }}
+                    >
+                      <HandIcon size={13} />
+                      Manual search
+                    </Button>
                   </div>
                 </div>
               ))}
             </div>
-          )}
+          ) : null}
           {media.targets.length === 0 && (
             <p className={mutedStyle}>
               This title is not in your library yet. Add a target to get

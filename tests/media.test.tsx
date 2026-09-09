@@ -903,19 +903,6 @@ describe("Library integration", () => {
 });
 
 describe("MediaDetails searches", () => {
-  it("shows profile badges separately from on-disk quality", () => {
-    renderDetails();
-    for (const target of [hdTarget, uhdTarget]) {
-      expect(
-        screen.getByTitle(
-          `${target.instanceName}: ${target.qualityProfile} · ${target.status}`,
-        ).textContent,
-      ).toBe(target.qualityProfile);
-    }
-    expect(screen.getByText("On disk: WEBDL-1080p")).toBeTruthy();
-    expect(screen.getByText("On disk: No files yet")).toBeTruthy();
-  });
-
   it("auto-searches the selected instance and preserves server failures without reporting success", async () => {
     const props = renderDetails();
     await screen.findByRole("heading", { level: 1, name: movie.title });
