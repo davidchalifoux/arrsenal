@@ -44,6 +44,9 @@ const {
 const { coverPath, mediaImage, mergeMedia, normalizeMedia } = await import(
   "../src/lib/server/media.ts"
 );
+const { mergeCommandResource } = await import(
+  "../src/lib/server/realtime-snapshots.ts"
+);
 
 const origin = "http://localhost:3000";
 const secret = "arrsenal-test-secret-not-for-clients";
@@ -1094,6 +1097,59 @@ test("instance summaries expose only active commands for the task indicator", as
       status: "started",
     },
   ]);
+});
+
+test("command messages merge into the active list for push updates", () => {
+  const rss = {
+    id: 1,
+    name: "RssSync",
+    commandName: "RSS Sync",
+    message: "",
+    status: "queued",
+  };
+  const search = {
+    id: 5,
+    name: "SeasonSearch",
+    commandName: "Season Search",
+    message: "Processing release 1/2773",
+    status: "started",
+  };
+  assert.deepEqual(mergeCommandResource([rss], search), [rss, search]);
+  const progressed = { ...search, message: "Processing release 2/2773" };
+  assert.deepEqual(mergeCommandResource([rss, search], progressed), [
+    rss,
+    progressed,
+  ]);
+  assert.deepEqual(
+    mergeCommandResource([rss, progressed], { ...search, status: "completed" }),
+    [rss],
+  );
+  // A terminal update for an untracked command is still applied.
+  assert.deepEqual(
+    mergeCommandResource([rss], { ...search, status: "failed" }),
+    [rss],
+  );
+  assert.deepEqual(
+    mergeCommandResource([], { id: 7, name: "Backup", status: "queued" }),
+    [
+      {
+        id: 7,
+        name: "Backup",
+        commandName: "Backup",
+        message: "",
+        status: "queued",
+      },
+    ],
+  );
+  // Unrecognised statuses or resources fall back to a refetch.
+  assert.equal(
+    mergeCommandResource([rss], { id: 9, name: "X", status: "weird" }),
+    undefined,
+  );
+  assert.equal(
+    mergeCommandResource([rss], { id: "5", name: "X", status: "started" }),
+    undefined,
+  );
 });
 
 for (const [name, handler] of [

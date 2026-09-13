@@ -811,6 +811,7 @@ function createStore() {
     )
       return;
     const direct = topics.includes("library") && applyMedia(state, message);
+    const command = topics.includes("commands") && applyCommand(state, message);
     if (topics.includes("queue")) mark(state.queue);
     const queueMessage = /^queue(?:\/|$)/i.test(str(row(message).name));
     if (topics.includes("library") && !direct && !queueMessage) {
@@ -819,7 +820,7 @@ function createStore() {
         state.library.value.enrichment.complete = false;
     }
     if (topics.includes("instances")) mark(state.summary);
-    if (topics.includes("commands")) mark(state.commands);
+    if (topics.includes("commands") && !command) mark(state.commands);
     if (topics.includes("options")) {
       mark(state.options);
       mark(state.library);
@@ -905,6 +906,74 @@ const mediaResource = z.object({
     })
     .optional(),
 });
+
+const commandResource = z.object({
+  id,
+  name: z.string().trim().min(1),
+  commandName: z.string().optional(),
+  message: z.string().optional(),
+  status: z.string().min(1),
+});
+const terminalCommandStatuses = [
+  "completed",
+  "failed",
+  "aborted",
+  "cancelled",
+  "orphaned",
+];
+
+// Merges one command resource from a SignalR message into the active list.
+// Returns the next list, or undefined when the message cannot be applied and
+// the caller should fall back to re-reading /api/v3/command.
+export function mergeCommandResource(
+  commands: ActiveCommand[],
+  resource: unknown,
+): ActiveCommand[] | undefined {
+  const parsed = commandResource.safeParse(resource);
+  if (!parsed.success) return undefined;
+  const { id: commandId, name, status } = parsed.data;
+  const active = status === "queued" || status === "started";
+  if (!active && !terminalCommandStatuses.includes(status)) return undefined;
+  const index = commands.findIndex((command) => command.id === commandId);
+  if (!active && index === -1) return commands;
+  const next = [...commands];
+  if (active) {
+    const entry: ActiveCommand = {
+      id: commandId,
+      name,
+      commandName: parsed.data.commandName || name,
+      message: parsed.data.message ?? "",
+      status,
+    };
+    if (index === -1) next.push(entry);
+    else next[index] = entry;
+  } else {
+    next.splice(index, 1);
+  }
+  return next;
+}
+
+// Applies a command message in place when the slot already holds a settled
+// baseline. Anything else (no baseline yet, an in-flight load, or an
+// unrecognised resource) returns false so the caller refreshes instead.
+function applyCommand(state: Backing, message: unknown): boolean {
+  const envelope = row(message);
+  if (str(envelope.name).toLowerCase() !== "command") return false;
+  const current = state.commands.value;
+  if (
+    !current ||
+    state.commands.pending ||
+    state.commands.committed !== state.commands.generation
+  )
+    return false;
+  const next = mergeCommandResource(
+    current,
+    row(envelope.body).resource ?? envelope.resource,
+  );
+  if (!next) return false;
+  state.commands.value = next;
+  return true;
+}
 
 function applyMedia(state: Backing, message: unknown): boolean {
   const envelope = row(message);
