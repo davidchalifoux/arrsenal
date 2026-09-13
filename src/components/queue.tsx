@@ -4,16 +4,12 @@ import {
   ArrowClockwiseIcon,
   ArrowDownIcon,
   CheckCircleIcon,
-  ClockIcon,
-  FilmSlateIcon,
   PlayIcon,
-  TelevisionIcon,
   TrashIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
-import Image from "next/image";
-import { useId, useRef, useState } from "react";
+import { Fragment, useId, useRef, useState } from "react";
 import { api, sizeLabel } from "@/lib/client";
 import type { ActionResponse, QueueItem, QueueResponse } from "@/lib/types";
 import {
@@ -40,6 +36,38 @@ function hasWarning(item: QueueItem) {
   );
 }
 
+// Instances format remaining time as d.hh:mm:ss or hh:mm:ss.
+function timeLeftSeconds(timeleft?: string) {
+  const match = /^(?:(\d+)\.)?(\d{1,2}):(\d{1,2}):(\d{1,2})$/.exec(
+    timeleft?.trim() ?? "",
+  );
+  if (!match) return undefined;
+  return (
+    Number(match[1] ?? 0) * 86_400 +
+    Number(match[2]) * 3_600 +
+    Number(match[3]) * 60 +
+    Number(match[4])
+  );
+}
+
+function queueProgress(item: QueueItem) {
+  const size = Number.isFinite(item.size) ? item.size : 0;
+  const left = Number.isFinite(item.sizeleft) ? item.sizeleft : 0;
+  return size > 0 ? 100 - (left / size) * 100 : 0;
+}
+
+// Mirrors Sonarr's queue order: soonest remaining time first (missing ETA
+// last), then the most complete download first.
+function compareQueueItems(a: QueueItem, b: QueueItem) {
+  const left = timeLeftSeconds(a.timeleft);
+  const right = timeLeftSeconds(b.timeleft);
+  if (left === undefined && right !== undefined) return 1;
+  if (left !== undefined && right === undefined) return -1;
+  if (left !== undefined && right !== undefined && left !== right)
+    return left - right;
+  return queueProgress(b) - queueProgress(a);
+}
+
 const statusLabels: Record<string, string> = {
   downloading: "Downloading",
   queued: "Queued",
@@ -52,6 +80,24 @@ const statusLabels: Record<string, string> = {
   error: "Error",
   unknown: "Status unknown",
 };
+
+const headCellStyle = css({
+  px: "10px",
+  py: "7px",
+  textAlign: "left",
+  fontWeight: "500",
+  whiteSpace: "nowrap",
+});
+const cellStyle = css({
+  px: "10px",
+  py: "7px",
+  textAlign: "left",
+  verticalAlign: "middle",
+  borderTop: "1px solid token(colors.line)",
+});
+const columnSm = css({ display: { base: "none", sm: "table-cell" } });
+const columnMd = css({ display: { base: "none", md: "table-cell" } });
+const columnLg = css({ display: { base: "none", lg: "table-cell" } });
 
 export function DownloadQueue({
   data,
@@ -67,7 +113,6 @@ export function DownloadQueue({
   const id = useId();
   const [instanceFilter, setInstanceFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [failedPosters, setFailedPosters] = useState<Set<string>>(new Set());
   const [removing, setRemoving] = useState<QueueItem | null>(null);
   const [removeFromClient, setRemoveFromClient] = useState(true);
   const [blocklist, setBlocklist] = useState(false);
@@ -97,6 +142,7 @@ export function DownloadQueue({
           item.status.toLowerCase() === "downloading") ||
         (statusFilter === "warning" && hasWarning(item))),
   );
+  const orderedItems = [...filteredItems].sort(compareQueueItems);
   const activeCount = items.filter(
     (item) => item.status.toLowerCase() === "downloading",
   ).length;
@@ -391,441 +437,412 @@ export function DownloadQueue({
             )}
           </div>
         ) : (
-          <ul
-            className={css({
-              display: "grid",
-              gap: "10px",
-              listStyle: "none",
-              p: 0,
-              m: 0,
-            })}
+          <div
+            className={cx(panelStyle, css({ minWidth: 0, overflowX: "auto" }))}
           >
-            {filteredItems.map((item) => {
-              const key = queueKey(item);
-              const status = item.status.toLowerCase();
-              const warning = hasWarning(item);
-              const warnings = Array.from(new Set(item.warnings));
-              const size = Number.isFinite(item.size)
-                ? Math.max(0, item.size)
-                : 0;
-              const remaining = Number.isFinite(item.sizeleft)
-                ? Math.max(0, item.sizeleft)
-                : 0;
-              const progress =
-                size > 0
-                  ? Math.min(
-                      100,
-                      Math.max(
-                        0,
-                        Math.round(((size - remaining) / size) * 100),
-                      ),
-                    )
-                  : status === "completed"
-                    ? 100
-                    : undefined;
-              const canGrab =
-                ["delay", "downloadclientunavailable"].includes(status) &&
-                !item.downloadId;
-              const canImport = status === "completed" && !!item.downloadId;
-              const poster = item.poster;
-              return (
-                <li
-                  key={key}
-                  className={cx(
-                    panelStyle,
-                    css({ p: { base: "14px", md: "18px" }, minWidth: 0 }),
-                  )}
-                >
-                  <article
-                    aria-label={`${item.mediaTitle} download`}
-                    className={css({
-                      display: "grid",
-                      gridTemplateColumns: {
-                        base: "44px minmax(0, 1fr)",
-                        md: "52px minmax(0, 1fr) minmax(180px, 250px) auto",
-                      },
-                      columnGap: { base: "12px", md: "18px" },
-                      rowGap: "16px",
-                      alignItems: "center",
-                      minWidth: 0,
-                    })}
+            <table
+              className={css({
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: "12px",
+              })}
+            >
+              <caption className={css({ srOnly: true })}>
+                Download queue
+              </caption>
+              <thead
+                className={css({
+                  color: "muted",
+                  fontSize: "10px",
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                })}
+              >
+                <tr>
+                  <th
+                    scope="col"
+                    className={`${headCellStyle} ${css({ width: "100%" })}`}
                   >
-                    <div
-                      className={css({
-                        width: { base: "44px", md: "52px" },
-                        height: { base: "66px", md: "78px" },
-                        display: "grid",
-                        placeItems: "center",
-                        bg: "elevated",
-                        border: "1px solid token(colors.line)",
-                        borderRadius: "6px",
-                        overflow: "hidden",
-                        color: "subtle",
-                        alignSelf: "start",
-                      })}
-                    >
-                      {poster && !failedPosters.has(poster) ? (
-                        <Image
-                          src={poster}
-                          alt=""
-                          width={52}
-                          height={78}
-                          sizes="(min-width: 768px) 52px, 44px"
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                          onError={() =>
-                            setFailedPosters((previous) =>
-                              new Set(previous).add(poster),
-                            )
-                          }
-                          className={css({
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                          })}
-                        />
-                      ) : item.kind === "series" ? (
-                        <TelevisionIcon size={21} />
-                      ) : (
-                        <FilmSlateIcon size={21} />
-                      )}
-                    </div>
-                    <div className={css({ minWidth: 0 })}>
-                      <h2
-                        className={css({
-                          fontSize: "14px",
-                          fontWeight: "550",
-                          lineHeight: "1.5",
-                          overflowWrap: "anywhere",
-                        })}
-                      >
-                        {item.mediaTitle}
-                      </h2>
-                      <p
-                        title={item.title}
-                        className={css({
-                          fontSize: "11px",
-                          color: "subtle",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          mt: "3px",
-                        })}
-                      >
-                        {item.title}
-                      </p>
-                      <div
-                        className={css({
-                          display: "flex",
-                          flexWrap: "wrap",
-                          alignItems: "center",
-                          columnGap: "8px",
-                          rowGap: "5px",
-                          mt: "10px",
-                          fontSize: "10px",
-                          color: "muted",
-                          minWidth: 0,
-                          overflowWrap: "anywhere",
-                        })}
-                      >
-                        <span
-                          className={css({
-                            px: "6px",
-                            py: "2px",
-                            border: "1px solid token(colors.line)",
-                            borderRadius: "4px",
-                            color: "ink",
-                            bg: "elevated",
-                            maxWidth: "100%",
-                          })}
-                        >
-                          {item.quality || "Quality unknown"}
-                        </span>
-                        <span>{item.instanceName}</span>
-                        <span
-                          aria-hidden="true"
-                          className={css({ color: "subtle" })}
-                        >
-                          /
-                        </span>
-                        <span>
-                          {item.downloadClient || "Client not reported"}
-                        </span>
-                      </div>
-                    </div>
-                    <div
-                      className={css({
-                        minWidth: 0,
-                        gridColumn: { base: "1 / -1", md: "auto" },
-                      })}
-                    >
-                      <div
-                        className={css({
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: "10px",
-                          fontSize: "11px",
-                          mb: "9px",
-                        })}
-                      >
-                        <span
-                          className={css({
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "6px",
-                            color: warning
-                              ? "warning"
-                              : status === "downloading"
-                                ? "accent"
-                                : status === "completed"
-                                  ? "positive"
-                                  : "muted",
-                            minWidth: 0,
-                            overflowWrap: "anywhere",
-                          })}
-                        >
-                          {warning ? (
-                            <WarningCircleIcon
-                              size={13}
-                              className={css({ flexShrink: 0 })}
-                            />
-                          ) : status === "downloading" ? (
-                            <ArrowDownIcon
-                              size={12}
-                              className={css({ flexShrink: 0 })}
-                            />
-                          ) : null}
-                          {statusLabels[status] ||
-                            item.status ||
-                            "Status unknown"}
-                        </span>
-                        <span
-                          className={css({
-                            color: "muted",
-                            flexShrink: 0,
-                            fontVariantNumeric: "tabular-nums",
-                          })}
-                        >
-                          {progress === undefined ? "Unknown" : `${progress}%`}
-                        </span>
-                      </div>
-                      <progress
-                        value={progress}
-                        max={100}
-                        aria-label={`Download progress for ${item.mediaTitle}`}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-valuenow={progress}
-                        aria-valuetext={
-                          progress === undefined
-                            ? "Progress unavailable"
-                            : `${progress}% downloaded`
-                        }
-                        className={css({
-                          display: "block",
-                          width: "100%",
-                          height: "4px",
-                          appearance: "none",
-                          border: 0,
-                          borderRadius: "4px",
-                          overflow: "hidden",
-                          bg: "line",
-                          color: warning ? "warning" : "accent",
-                          "&::-webkit-progress-bar": {
-                            bg: "line",
-                            borderRadius: "4px",
-                          },
-                          "&::-webkit-progress-value": {
-                            bg: "currentColor",
-                            borderRadius: "4px",
-                          },
-                          "&::-moz-progress-bar": {
-                            bg: "currentColor",
-                            borderRadius: "4px",
-                          },
-                        })}
-                      />
-                      <div
-                        className={css({
-                          display: "flex",
-                          flexWrap: "wrap",
-                          justifyContent: "space-between",
-                          gap: "6px",
-                          color: "subtle",
-                          fontSize: "10px",
-                          mt: "9px",
-                          fontVariantNumeric: "tabular-nums",
-                        })}
-                      >
-                        <span>
-                          {size > 0
-                            ? `${sizeLabel(remaining)} of ${sizeLabel(size)} left`
-                            : remaining > 0
-                              ? `${sizeLabel(remaining)} left / total unknown`
-                              : "Size not reported"}
-                        </span>
-                        <span
-                          className={css({
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "4px",
-                            overflowWrap: "anywhere",
-                            minWidth: 0,
-                          })}
-                        >
-                          <ClockIcon
-                            size={11}
-                            className={css({ flexShrink: 0 })}
-                          />
-                          {status === "completed"
-                            ? "Download finished"
-                            : item.timeleft
-                              ? `${item.timeleft} left`
-                              : "ETA unavailable"}
-                        </span>
-                      </div>
-                    </div>
-                    <div
-                      className={css({
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "flex-end",
-                        gap: "6px",
-                        gridColumn: { base: "1 / -1", md: "auto" },
-                      })}
-                    >
-                      {(canGrab || canImport) && (
-                        <Button
-                          size="sm"
-                          disabled={!!busy || loading}
-                          title={
-                            canGrab
-                              ? "Bypass the release delay and request a download"
-                              : "Request an import scan; manual import may still be needed"
-                          }
-                          onClick={() => void mutate(item, "retry")}
-                        >
-                          {busy?.key === key && busy.action === "retry" ? (
-                            <Spinner size={14} />
-                          ) : canGrab ? (
-                            <PlayIcon size={13} />
-                          ) : (
-                            <ArrowClockwiseIcon size={13} />
-                          )}
-                          {canGrab ? "Grab now" : "Retry import"}
-                        </Button>
-                      )}
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label={`Remove ${item.mediaTitle} from queue`}
-                        disabled={!!busy || loading}
-                        onClick={() => {
-                          setRemoving(item);
-                          setRemoveFromClient(true);
-                          setBlocklist(false);
-                          setActionError(undefined);
-                        }}
-                      >
-                        <TrashIcon size={16} />
-                      </Button>
-                    </div>
-                    {warnings.length > 0 && (
-                      <details
-                        className={css({
-                          gridColumn: "1 / -1",
-                          borderTop: "1px solid token(colors.line)",
-                          pt: "10px",
-                          color: "warning",
-                          fontSize: "11px",
-                          lineHeight: "1.7",
-                          minWidth: 0,
-                        })}
-                      >
-                        <summary
-                          aria-label={`Warning details for ${item.mediaTitle}`}
-                          className={css({
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            cursor: "pointer",
-                            listStyle: "none",
-                            "&::-webkit-details-marker": { display: "none" },
-                            _focusVisible: {
-                              outline: "2px solid token(colors.accent)",
-                              outlineOffset: "3px",
-                              borderRadius: "3px",
-                            },
-                          })}
-                        >
-                          <WarningCircleIcon
-                            size={15}
-                            className={css({ flexShrink: 0 })}
-                          />
+                    Download
+                  </th>
+                  <th scope="col" className={headCellStyle}>
+                    Status
+                  </th>
+                  <th scope="col" className={headCellStyle}>
+                    Progress
+                  </th>
+                  <th scope="col" className={`${headCellStyle} ${columnMd}`}>
+                    Size
+                  </th>
+                  <th scope="col" className={`${headCellStyle} ${columnSm}`}>
+                    Time left
+                  </th>
+                  <th scope="col" className={`${headCellStyle} ${columnLg}`}>
+                    Source
+                  </th>
+                  <th scope="col" className={headCellStyle}>
+                    <span className={css({ srOnly: true })}>Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {orderedItems.map((item) => {
+                  const key = queueKey(item);
+                  const status = item.status.toLowerCase();
+                  const warning = hasWarning(item);
+                  const warnings = Array.from(new Set(item.warnings));
+                  const size = Number.isFinite(item.size)
+                    ? Math.max(0, item.size)
+                    : 0;
+                  const remaining = Number.isFinite(item.sizeleft)
+                    ? Math.max(0, item.sizeleft)
+                    : 0;
+                  const progress =
+                    size > 0
+                      ? Math.min(
+                          100,
+                          Math.max(
+                            0,
+                            Math.round(((size - remaining) / size) * 100),
+                          ),
+                        )
+                      : status === "completed"
+                        ? 100
+                        : undefined;
+                  const canGrab =
+                    ["delay", "downloadclientunavailable"].includes(status) &&
+                    !item.downloadId;
+                  const canImport = status === "completed" && !!item.downloadId;
+                  return (
+                    <Fragment key={key}>
+                      <tr aria-label={`${item.mediaTitle} download`}>
+                        <td className={`${cellStyle} ${css({ maxWidth: 0 })}`}>
                           <span
-                            title={warnings[0]}
                             className={css({
-                              minWidth: 0,
+                              display: "block",
+                              fontWeight: "550",
                               overflow: "hidden",
                               textOverflow: "ellipsis",
                               whiteSpace: "nowrap",
                             })}
                           >
-                            {warnings[0]}
+                            {item.mediaTitle}
                           </span>
                           <span
                             className={css({
-                              flexShrink: 0,
-                              ml: "auto",
-                              color: "muted",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              mt: "2px",
+                              minWidth: 0,
                             })}
                           >
-                            Details
-                            {warnings.length > 1 ? ` (${warnings.length})` : ""}
+                            <span
+                              className={css({
+                                flexShrink: 0,
+                                px: "5px",
+                                py: "1px",
+                                border: "1px solid token(colors.line)",
+                                borderRadius: "4px",
+                                color: "muted",
+                                fontSize: "10px",
+                              })}
+                            >
+                              {item.quality || "Quality unknown"}
+                            </span>
+                            <span
+                              title={item.title}
+                              className={css({
+                                minWidth: 0,
+                                color: "subtle",
+                                fontSize: "11px",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              })}
+                            >
+                              {item.title}
+                            </span>
                           </span>
-                        </summary>
-                        <ul
-                          aria-label={`Warnings for ${item.mediaTitle}`}
-                          className={css({
-                            minWidth: 0,
-                            maxHeight: "180px",
-                            overflowY: "auto",
-                            overflowWrap: "anywhere",
-                            display: "grid",
-                            gap: "3px",
-                            listStyle: "none",
-                            pl: "23px",
-                            pr: "8px",
-                            py: 0,
-                            mt: "8px",
-                            mb: 0,
-                          })}
+                        </td>
+                        <td
+                          className={`${cellStyle} ${css({ whiteSpace: "nowrap" })}`}
                         >
-                          {warnings.map((message) => (
-                            <li key={message}>{message}</li>
-                          ))}
-                        </ul>
-                      </details>
-                    )}
-                    {status === "completed" && !item.downloadId && (
-                      <p
-                        className={css({
-                          gridColumn: "1 / -1",
-                          color: "muted",
-                          fontSize: "11px",
-                          lineHeight: "1.6",
-                        })}
-                      >
-                        No download ID was reported. Open this instance's manual
-                        import screen to review the completed files.
-                      </p>
-                    )}
-                  </article>
-                </li>
-              );
-            })}
-          </ul>
+                          <span
+                            className={css({
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              color: warning
+                                ? "warning"
+                                : status === "downloading"
+                                  ? "accent"
+                                  : status === "completed"
+                                    ? "positive"
+                                    : "muted",
+                            })}
+                          >
+                            {warning ? (
+                              <WarningCircleIcon size={13} />
+                            ) : status === "downloading" ? (
+                              <ArrowDownIcon size={12} />
+                            ) : null}
+                            {statusLabels[status] ||
+                              item.status ||
+                              "Status unknown"}
+                          </span>
+                        </td>
+                        <td
+                          className={`${cellStyle} ${css({ whiteSpace: "nowrap" })}`}
+                        >
+                          <div
+                            className={css({
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                            })}
+                          >
+                            <progress
+                              value={progress}
+                              max={100}
+                              aria-label={`Download progress for ${item.mediaTitle}`}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={progress}
+                              aria-valuetext={
+                                progress === undefined
+                                  ? "Progress unavailable"
+                                  : `${progress}% downloaded`
+                              }
+                              className={css({
+                                width: { base: "64px", md: "96px" },
+                                height: "4px",
+                                appearance: "none",
+                                border: 0,
+                                borderRadius: "4px",
+                                overflow: "hidden",
+                                bg: "line",
+                                color: warning ? "warning" : "accent",
+                                "&::-webkit-progress-bar": {
+                                  bg: "line",
+                                  borderRadius: "4px",
+                                },
+                                "&::-webkit-progress-value": {
+                                  bg: "currentColor",
+                                  borderRadius: "4px",
+                                },
+                                "&::-moz-progress-bar": {
+                                  bg: "currentColor",
+                                  borderRadius: "4px",
+                                },
+                              })}
+                            />
+                            <span
+                              className={css({
+                                minWidth: "42px",
+                                color: "muted",
+                                fontVariantNumeric: "tabular-nums",
+                              })}
+                            >
+                              {progress === undefined
+                                ? "Unknown"
+                                : `${progress}%`}
+                            </span>
+                          </div>
+                        </td>
+                        <td
+                          className={`${cellStyle} ${columnMd} ${css({ color: "muted", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" })}`}
+                        >
+                          {size > 0
+                            ? `${sizeLabel(remaining)} / ${sizeLabel(size)}`
+                            : remaining > 0
+                              ? `${sizeLabel(remaining)} / ?`
+                              : "—"}
+                        </td>
+                        <td
+                          className={`${cellStyle} ${columnSm} ${css({ color: "muted", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" })}`}
+                        >
+                          {status === "completed"
+                            ? "Finished"
+                            : item.timeleft
+                              ? item.timeleft
+                              : "—"}
+                        </td>
+                        <td className={`${cellStyle} ${columnLg}`}>
+                          <span
+                            className={css({
+                              display: "block",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            })}
+                          >
+                            {item.instanceName}
+                          </span>
+                          <span
+                            className={css({
+                              display: "block",
+                              color: "subtle",
+                              fontSize: "11px",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            })}
+                          >
+                            {item.downloadClient || "Client not reported"}
+                          </span>
+                        </td>
+                        <td
+                          className={`${cellStyle} ${css({ textAlign: "right", whiteSpace: "nowrap" })}`}
+                        >
+                          <div
+                            className={css({
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "flex-end",
+                              gap: "4px",
+                            })}
+                          >
+                            {(canGrab || canImport) && (
+                              <Button
+                                size="sm"
+                                disabled={!!busy || loading}
+                                title={
+                                  canGrab
+                                    ? "Bypass the release delay and request a download"
+                                    : "Request an import scan; manual import may still be needed"
+                                }
+                                onClick={() => void mutate(item, "retry")}
+                              >
+                                {busy?.key === key &&
+                                busy.action === "retry" ? (
+                                  <Spinner size={14} />
+                                ) : canGrab ? (
+                                  <PlayIcon size={13} />
+                                ) : (
+                                  <ArrowClockwiseIcon size={13} />
+                                )}
+                                {canGrab ? "Grab now" : "Retry import"}
+                              </Button>
+                            )}
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              aria-label={`Remove ${item.mediaTitle} from queue`}
+                              disabled={!!busy || loading}
+                              onClick={() => {
+                                setRemoving(item);
+                                setRemoveFromClient(true);
+                                setBlocklist(false);
+                                setActionError(undefined);
+                              }}
+                            >
+                              <TrashIcon size={16} />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                      {(warnings.length > 0 ||
+                        (status === "completed" && !item.downloadId)) && (
+                        <tr>
+                          <td
+                            colSpan={7}
+                            className={css({
+                              px: "10px",
+                              pb: "8px",
+                              color: "warning",
+                              fontSize: "11px",
+                              lineHeight: "1.6",
+                              overflowWrap: "anywhere",
+                            })}
+                          >
+                            {warnings.length > 0 && (
+                              <details>
+                                <summary
+                                  aria-label={`Warning details for ${item.mediaTitle}`}
+                                  className={css({
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "8px",
+                                    cursor: "pointer",
+                                    listStyle: "none",
+                                    "&::-webkit-details-marker": {
+                                      display: "none",
+                                    },
+                                    _focusVisible: {
+                                      outline: "2px solid token(colors.accent)",
+                                      outlineOffset: "3px",
+                                      borderRadius: "3px",
+                                    },
+                                  })}
+                                >
+                                  <WarningCircleIcon
+                                    size={14}
+                                    className={css({ flexShrink: 0 })}
+                                  />
+                                  <span
+                                    title={warnings[0]}
+                                    className={css({
+                                      minWidth: 0,
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                    })}
+                                  >
+                                    {warnings[0]}
+                                  </span>
+                                  <span
+                                    className={css({
+                                      flexShrink: 0,
+                                      ml: "auto",
+                                      color: "muted",
+                                    })}
+                                  >
+                                    Details
+                                    {warnings.length > 1
+                                      ? ` (${warnings.length})`
+                                      : ""}
+                                  </span>
+                                </summary>
+                                <ul
+                                  aria-label={`Warnings for ${item.mediaTitle}`}
+                                  className={css({
+                                    minWidth: 0,
+                                    maxHeight: "180px",
+                                    overflowY: "auto",
+                                    overflowWrap: "anywhere",
+                                    display: "grid",
+                                    gap: "3px",
+                                    listStyle: "none",
+                                    pl: "22px",
+                                    pr: "8px",
+                                    py: 0,
+                                    mt: "6px",
+                                    mb: 0,
+                                  })}
+                                >
+                                  {warnings.map((message) => (
+                                    <li key={message}>{message}</li>
+                                  ))}
+                                </ul>
+                              </details>
+                            )}
+                            {status === "completed" && !item.downloadId && (
+                              <p className={css({ color: "muted", mt: "4px" })}>
+                                No download ID was reported. Open this
+                                instance's manual import screen to review the
+                                completed files.
+                              </p>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

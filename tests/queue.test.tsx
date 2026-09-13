@@ -97,9 +97,9 @@ describe("DownloadQueue", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Warnings" }));
     expect(
-      screen.queryByRole("article", { name: "Severance download" }),
+      screen.queryByRole("row", { name: "Severance download" }),
     ).toBeNull();
-    expect(screen.getByRole("article", { name: "Silo download" })).toBeTruthy();
+    expect(screen.getByRole("row", { name: "Silo download" })).toBeTruthy();
     expect(
       screen.getByLabelText("Warning details for Silo").closest("details")
         ?.open,
@@ -111,10 +111,66 @@ describe("DownloadQueue", () => {
       screen.getByText("Remaining size").parentElement?.textContent,
     ).toContain("256.0 MB");
     fireEvent.click(screen.getByRole("button", { name: "Downloading" }));
-    expect(screen.queryByRole("article", { name: "Silo download" })).toBeNull();
+    expect(screen.queryByRole("row", { name: "Silo download" })).toBeNull();
     expect(
-      screen.getByRole("article", { name: "Severance download" }),
+      screen.getByRole("row", { name: "Severance download" }),
     ).toBeTruthy();
+  });
+
+  it("matches Sonarr's queue order by remaining time, then progress", () => {
+    const waiting = {
+      ...download,
+      id: 1,
+      mediaTitle: "Waiting",
+      timeleft: undefined,
+    };
+    const slow = {
+      ...download,
+      id: 2,
+      mediaTitle: "Slow",
+      timeleft: "01:00:00",
+    };
+    const fast = {
+      ...download,
+      id: 3,
+      mediaTitle: "Fast",
+      timeleft: "00:05:00",
+    };
+    const lowerProgress = {
+      ...download,
+      id: 4,
+      mediaTitle: "Lower progress",
+      timeleft: "00:10:00",
+      size: 100,
+      sizeleft: 90,
+    };
+    const higherProgress = {
+      ...download,
+      id: 5,
+      mediaTitle: "Higher progress",
+      timeleft: "00:10:00",
+      size: 100,
+      sizeleft: 20,
+    };
+    render(
+      <DownloadQueue
+        data={queue([waiting, slow, lowerProgress, fast, higherProgress])}
+        loading={false}
+        onRefresh={mock()}
+        notify={mock()}
+      />,
+    );
+    expect(
+      screen
+        .getAllByRole("row", { name: / download$/ })
+        .map((item) => item.getAttribute("aria-label")),
+    ).toEqual([
+      "Fast download",
+      "Higher progress download",
+      "Lower progress download",
+      "Slow download",
+      "Waiting download",
+    ]);
   });
 
   it("distinguishes loading, missing responses, all-service failure, and a truly empty queue", () => {
@@ -172,36 +228,12 @@ describe("DownloadQueue", () => {
     fireEvent.pointerDown(option);
     fireEvent.click(option);
     expect(
-      screen.queryByRole("article", { name: "Severance download" }),
+      screen.queryByRole("row", { name: "Severance download" }),
     ).toBeNull();
-    expect(screen.getByRole("article", { name: "Dune download" })).toBeTruthy();
+    expect(screen.getByRole("row", { name: "Dune download" })).toBeTruthy();
     rerender(<DownloadQueue {...props} data={queue()} />);
     expect(
-      screen.getByRole("article", { name: "Severance download" }),
-    ).toBeTruthy();
-  });
-
-  it("falls back to a media icon when a poster cannot be loaded", () => {
-    const { container } = render(
-      <DownloadQueue
-        data={queue([
-          {
-            ...download,
-            poster:
-              "/api/image?instanceId=sonarr-hd&path=/MediaCover/1/poster.jpg",
-          },
-        ])}
-        loading={false}
-        onRefresh={mock()}
-        notify={mock()}
-      />,
-    );
-    const poster = container.querySelector("img");
-    if (!poster) throw new Error("Poster missing");
-    fireEvent.error(poster);
-    expect(container.querySelector("img")).toBeNull();
-    expect(
-      screen.getByRole("article", { name: "Severance download" }),
+      screen.getByRole("row", { name: "Severance download" }),
     ).toBeTruthy();
   });
 
@@ -224,7 +256,7 @@ describe("DownloadQueue", () => {
       />,
     );
     expect(
-      screen.getByRole("article", { name: "Severance download" }),
+      screen.getByRole("row", { name: "Severance download" }),
     ).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toContain("may be missing");
   });
@@ -385,7 +417,7 @@ describe("DownloadQueue", () => {
     expect(screen.getByText(/No download ID was reported/)).toBeTruthy();
     expect(
       within(
-        screen.getByRole("article", { name: "Already grabbed download" }),
+        screen.getByRole("row", { name: "Already grabbed download" }),
       ).queryByRole("button", { name: "Grab now" }),
     ).toBeNull();
   });

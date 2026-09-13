@@ -17,7 +17,7 @@ import { usePathname } from "next/navigation";
 import { type ReactNode, useState } from "react";
 import { useInstances, useQueue, useSyncData } from "@/lib/collections";
 import { useLibraryActions } from "./library-provider";
-import { LibraryUtilities } from "./page-header";
+import { LibraryUtilities, TaskStatus } from "./page-header";
 import { Button } from "./ui";
 
 const navigation = [
@@ -314,6 +314,7 @@ export function LibraryShell({ children }: { children: ReactNode }) {
               ml: "auto",
             })}
           >
+            <TaskStatus />
             <LibraryUtilities />
             <Link
               href="/settings"

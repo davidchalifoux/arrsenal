@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { InstanceOptions, InstanceSummary } from "../types";
+import type { ActiveCommand, InstanceOptions, InstanceSummary } from "../types";
 import type { InstanceConfig } from "./config";
 import { ApiError, errorMessage } from "./http";
 
@@ -269,6 +269,32 @@ export async function instanceSummary(
     summary.error = errorMessage(error);
   }
   return summary;
+}
+
+// Long-running work Sonarr/Radarr surfaces in its own sidebar (searches, RSS
+// sync, import, rename). Only active commands are useful for a live indicator.
+export async function activeCommands(
+  instance: InstanceConfig,
+  signal?: AbortSignal,
+): Promise<ActiveCommand[]> {
+  const records = rows(await arrRequest(instance, "command", { signal }));
+  const active = records.flatMap((item) => {
+    const status = str(item.status);
+    if (status !== "queued" && status !== "started") return [];
+    if (!Number.isInteger(item.id)) return [];
+    return [
+      {
+        id: num(item.id),
+        name: str(item.name),
+        commandName: str(item.commandName, str(item.name)),
+        message: str(item.message),
+        status,
+      },
+    ];
+  });
+  // The instances snapshot schema bounds this list; a bulk search can enqueue
+  // far more, and an over-long array would reject the whole snapshot.
+  return active.slice(0, 32);
 }
 
 export async function profiles(

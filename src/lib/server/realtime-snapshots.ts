@@ -13,6 +13,7 @@ import {
   type Versioned,
 } from "../realtime-events";
 import type {
+  ActiveCommand,
   CalendarResponse,
   EpisodesResponse,
   InstanceOptions,
@@ -24,6 +25,7 @@ import type {
   ServiceError,
 } from "../types";
 import {
+  activeCommands,
   instanceOptions,
   instanceSummary,
   num,
@@ -69,6 +71,7 @@ type Backing = {
   library: Slot<LibraryBacking>;
   queue: Slot<QueueBacking>;
   summary: Slot<InstanceSummary>;
+  commands: Slot<ActiveCommand[]>;
   options: Slot<InstanceOptions>;
   calendars: Map<string, Slot<CalendarBacking>>;
   episodes: Map<number, Slot<EpisodesResponse>>;
@@ -104,6 +107,7 @@ function createStore() {
     state.library,
     state.queue,
     state.summary,
+    state.commands,
     state.options,
     ...state.calendars.values(),
     ...state.episodes.values(),
@@ -208,6 +212,18 @@ function createStore() {
     });
   }
 
+  // A failed command lookup must never take down the instance summary; the
+  // indicator simply stays empty until the next refresh.
+  function commandsFor(state: Backing) {
+    return load(state.commands, async () => {
+      try {
+        return await activeCommands(state.instance);
+      } catch {
+        return [];
+      }
+    });
+  }
+
   function libraryFor(state: Backing) {
     return load(state.library, async () => {
       let enrichment: MediaEnrichment | undefined;
@@ -255,7 +271,7 @@ function createStore() {
       case "queue":
         return [state.queue];
       case "instances":
-        return [state.summary];
+        return [state.summary, state.commands];
       case "calendar":
         return [calendarCell(state, key)];
       case "episodes":
@@ -344,16 +360,17 @@ function createStore() {
                   errors: [],
                 } as Data,
               };
-            case "instances":
+            case "instances": {
+              const summary = await load(state.summary, () =>
+                instanceSummary(state.instance),
+              );
+              const commands = await commandsFor(state);
               return {
                 data: {
-                  instances: [
-                    await load(state.summary, () =>
-                      instanceSummary(state.instance),
-                    ),
-                  ],
+                  instances: [{ ...summary, commands }],
                 } as Data,
               };
+            }
             case "calendar": {
               const value = await load(calendarCell(state, key), async () => {
                 const result = await instanceCalendar(
@@ -659,6 +676,7 @@ function createStore() {
             library: slot(),
             queue: slot(),
             summary: slot(),
+            commands: slot(),
             options: slot(),
             calendars: new Map(),
             episodes: new Map(),
@@ -801,6 +819,7 @@ function createStore() {
         state.library.value.enrichment.complete = false;
     }
     if (topics.includes("instances")) mark(state.summary);
+    if (topics.includes("commands")) mark(state.commands);
     if (topics.includes("options")) {
       mark(state.options);
       mark(state.library);
@@ -820,7 +839,8 @@ function createStore() {
           entry.key[2] === remoteId) &&
         (topics.includes(topic(entry.key)) ||
           (entry.key[0] === "library" &&
-            (topics.includes("queue") || topics.includes("options"))))
+            (topics.includes("queue") || topics.includes("options"))) ||
+          (entry.key[0] === "instances" && topics.includes("commands")))
       )
         schedule(entry);
     }

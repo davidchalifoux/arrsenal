@@ -205,6 +205,8 @@ async function setup(definitions = {}) {
         return send([{ id: 1, name: node.profile ?? "HD-1080p" }]);
       if (endpoint === "rootfolder")
         return send([{ id: 1, path: "/media", freeSpace: 100000 }]);
+      if (endpoint === "command" && req.method === "GET")
+        return send(node.commands ?? []);
       if (endpoint === "queue" && req.method === "GET") {
         const page = Number(url.searchParams.get("page"));
         if (node.queuePages) return send(node.queuePages[page - 1]);
@@ -1056,6 +1058,42 @@ test("unconfigured reads return empty collections without network access or pers
   });
   assert.equal(calls.length, 0);
   assert.deepEqual(await readdir(directory), []);
+});
+
+test("instance summaries expose only active commands for the task indicator", async () => {
+  const env = await setup({
+    hd: {
+      commands: [
+        {
+          id: 1,
+          name: "SeasonSearch",
+          commandName: "Season Search",
+          status: "started",
+          message: "Processing release 2142/2773",
+        },
+        {
+          id: 2,
+          name: "Backup",
+          commandName: "Backup",
+          status: "completed",
+          message: "Completed",
+        },
+      ],
+    },
+  });
+  const hd = await env.connect("hd");
+  const summary = (await (await instancesRoute.GET()).json()).instances.find(
+    (instance) => instance.id === hd.id,
+  );
+  assert.deepEqual(summary.commands, [
+    {
+      id: 1,
+      name: "SeasonSearch",
+      commandName: "Season Search",
+      message: "Processing release 2142/2773",
+      status: "started",
+    },
+  ]);
 });
 
 for (const [name, handler] of [

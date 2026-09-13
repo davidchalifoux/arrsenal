@@ -1,14 +1,78 @@
 "use client";
 
 import {
+  CircleNotchIcon,
   CommandIcon,
   MagnifyingGlassIcon,
   PlusIcon,
 } from "@phosphor-icons/react";
 import { css } from "@styled-system/css";
 import type { ReactNode } from "react";
+import { useInstances } from "@/lib/collections";
 import { useLibraryActions } from "./library-provider";
 import { Button } from "./ui";
+
+export function TaskStatus() {
+  const active = (useInstances().data?.instances ?? []).flatMap((instance) =>
+    (instance.commands ?? []).map((command) => ({
+      ...command,
+      instanceName: instance.name,
+    })),
+  );
+  if (active.length === 0) return null;
+  const [first] = active;
+  const label = first.message || first.commandName || first.name;
+  const details = active
+    .map(
+      (command) =>
+        `${command.instanceName}: ${command.message || command.commandName}`,
+    )
+    .join("; ");
+  return (
+    <div
+      title={details}
+      className={css({
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        height: { base: "44px", lg: "32px" },
+        maxWidth: { base: "44px", md: "280px" },
+        px: "10px",
+        flexShrink: 1,
+        minWidth: 0,
+        color: "muted",
+        fontSize: "11px",
+        bg: "surface",
+        border: "1px solid token(colors.line)",
+        borderRadius: "7px",
+      })}
+    >
+      <CircleNotchIcon
+        size={14}
+        aria-hidden="true"
+        className={css({
+          flexShrink: 0,
+          color: "accent",
+          animation: "spin 1s linear infinite",
+        })}
+      />
+      <span className={css({ srOnly: true })}>{details}</span>
+      <span
+        aria-hidden="true"
+        className={css({
+          display: { base: "none", md: "block" },
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        })}
+      >
+        {label}
+        {active.length > 1 ? ` +${active.length - 1}` : ""}
+      </span>
+    </div>
+  );
+}
 
 export function LibraryUtilities() {
   const { add, searchLibrary } = useLibraryActions();

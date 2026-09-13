@@ -75,8 +75,8 @@ function messageTopics(message: unknown): readonly RealtimeTopic[] | undefined {
     case "command": {
       const status = row(row(value.body).resource).status;
       return status === "completed" || status === "failed"
-        ? importTopics
-        : undefined;
+        ? ["commands", ...importTopics]
+        : ["commands"];
     }
     case "health":
     case "system":
