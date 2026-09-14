@@ -144,6 +144,7 @@ const calendarEvent = z.object({
 const episode = z.object({
   id: remoteId,
   seriesId: remoteId,
+  episodeFileId: z.number().int().nonnegative(),
   seasonNumber: z.number(),
   episodeNumber: z.number(),
   title: z.string(),

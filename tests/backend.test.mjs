@@ -44,9 +44,8 @@ const {
 const { coverPath, mediaImage, mergeMedia, normalizeMedia } = await import(
   "../src/lib/server/media.ts"
 );
-const { mergeCommandResource } = await import(
-  "../src/lib/server/realtime-snapshots.ts"
-);
+const { mergeCommandResource, mergeEpisodeResource, mergeEpisodeFile } =
+  await import("../src/lib/server/realtime-snapshots.ts");
 
 const origin = "http://localhost:3000";
 const secret = "arrsenal-test-secret-not-for-clients";
@@ -1150,6 +1149,146 @@ test("command messages merge into the active list for push updates", () => {
     mergeCommandResource([rss], { id: "5", name: "X", status: "started" }),
     undefined,
   );
+});
+
+const baseEpisode = {
+  id: 101,
+  seriesId: 22,
+  episodeFileId: 0,
+  seasonNumber: 1,
+  episodeNumber: 1,
+  title: "Pilot",
+  overview: "Overview",
+  airDateUtc: "2024-01-01T00:00:00.000Z",
+  runtime: 60,
+  monitored: true,
+  hasFile: false,
+  quality: "Not downloaded",
+  sizeOnDisk: 0,
+  status: "missing",
+};
+
+test("episode messages merge into a cached series list", () => {
+  const now = Date.parse("2024-06-01T00:00:00Z");
+  const imported = mergeEpisodeResource(
+    [baseEpisode],
+    {
+      id: 101,
+      seriesId: 22,
+      episodeFileId: 500,
+      seasonNumber: 1,
+      episodeNumber: 1,
+      title: "Pilot",
+      monitored: true,
+      hasFile: true,
+      episodeFile: {
+        size: 1234,
+        quality: { quality: { name: "WEBDL-1080p" } },
+      },
+    },
+    now,
+  );
+  assert.equal(imported[0].hasFile, true);
+  assert.equal(imported[0].episodeFileId, 500);
+  assert.equal(imported[0].quality, "WEBDL-1080p");
+  assert.equal(imported[0].sizeOnDisk, 1234);
+  assert.equal(imported[0].status, "available");
+
+  const grabbed = mergeEpisodeResource(
+    [baseEpisode],
+    {
+      id: 101,
+      seriesId: 22,
+      seasonNumber: 1,
+      episodeNumber: 1,
+      monitored: true,
+      hasFile: false,
+      grabbed: true,
+    },
+    now,
+  );
+  assert.equal(grabbed[0].status, "downloading");
+
+  const future = mergeEpisodeResource(
+    [{ ...baseEpisode, airDateUtc: "2025-01-01T00:00:00.000Z" }],
+    {
+      id: 101,
+      seriesId: 22,
+      seasonNumber: 1,
+      episodeNumber: 1,
+      monitored: true,
+      hasFile: false,
+    },
+    now,
+  );
+  assert.equal(future[0].status, "unreleased");
+
+  const unmonitored = mergeEpisodeResource(
+    [baseEpisode],
+    {
+      id: 101,
+      seriesId: 22,
+      seasonNumber: 1,
+      episodeNumber: 1,
+      monitored: false,
+      hasFile: false,
+    },
+    now,
+  );
+  assert.equal(unmonitored[0].status, "unmonitored");
+
+  assert.equal(
+    mergeEpisodeResource(
+      [baseEpisode],
+      {
+        id: 999,
+        seriesId: 22,
+        seasonNumber: 1,
+        episodeNumber: 9,
+        monitored: true,
+        hasFile: false,
+      },
+      now,
+    ),
+    undefined,
+  );
+});
+
+test("episode file messages update or clear every referencing episode", () => {
+  const now = Date.parse("2024-06-01T00:00:00Z");
+  const watched = {
+    ...baseEpisode,
+    hasFile: true,
+    episodeFileId: 500,
+    quality: "HDTV-720p",
+    sizeOnDisk: 100,
+    status: "available",
+  };
+  const other = {
+    ...baseEpisode,
+    id: 102,
+    episodeNumber: 2,
+    hasFile: true,
+    episodeFileId: 501,
+    quality: "HDTV-720p",
+    status: "available",
+  };
+  const upgraded = mergeEpisodeFile(
+    [watched, other],
+    500,
+    { quality: "WEBDL-1080p", sizeOnDisk: 200 },
+    now,
+  );
+  assert.equal(upgraded[0].quality, "WEBDL-1080p");
+  assert.equal(upgraded[0].sizeOnDisk, 200);
+  assert.equal(upgraded[1].quality, "HDTV-720p");
+  const removed = mergeEpisodeFile([watched, other], 500, undefined, now);
+  assert.equal(removed[0].hasFile, false);
+  assert.equal(removed[0].episodeFileId, 0);
+  assert.equal(removed[0].quality, "Not downloaded");
+  assert.equal(removed[0].sizeOnDisk, 0);
+  assert.equal(removed[0].status, "missing");
+  assert.equal(mergeEpisodeFile([watched], 999, undefined, now), undefined);
 });
 
 for (const [name, handler] of [

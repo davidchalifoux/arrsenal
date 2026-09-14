@@ -134,6 +134,7 @@ export type EpisodeStatus =
 export interface Episode {
   id: number;
   seriesId: number;
+  episodeFileId: number;
   seasonNumber: number;
   episodeNumber: number;
   title: string;

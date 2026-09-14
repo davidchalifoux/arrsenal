@@ -1087,6 +1087,7 @@ describe("Episode actions", () => {
       const episodes: Episode[] = states.map((status, index) => ({
         id: index + 1,
         seriesId: target.remoteId,
+        episodeFileId: status === "available" ? index + 1 : 0,
         seasonNumber: 1,
         episodeNumber: index + 1,
         title: `Episode ${index + 1}`,
@@ -1188,6 +1189,7 @@ describe("Episode actions", () => {
         const episode: Episode = {
           id: hd ? 101 : 901,
           seriesId: target.remoteId,
+          episodeFileId: hd ? 500 : 0,
           seasonNumber: 1,
           episodeNumber: 1,
           title: "Pilot",
