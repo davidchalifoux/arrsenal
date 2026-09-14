@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
+  MAX_ACTIVE_COMMANDS,
   type RealtimeQueryKey,
   type RealtimeSnapshot,
   type RealtimeTopic,
@@ -956,7 +957,8 @@ export function mergeCommandResource(
   } else {
     next.splice(index, 1);
   }
-  return next;
+  // The instances snapshot schema caps this list; keep the two in step.
+  return next.slice(0, MAX_ACTIVE_COMMANDS);
 }
 
 // True when a cell holds a committed value with no load in flight, so a
@@ -1005,7 +1007,9 @@ const episodeResource = z.object({
 });
 const episodeFileResource = z.object({
   id,
-  seriesId: id.optional(),
+  // Deleted files are broadcast as a default-constructed resource, so value
+  // types like seriesId arrive as 0 rather than being omitted.
+  seriesId: z.number().int().nonnegative().optional(),
   seasonNumber: z.number().int().min(0).max(2147483647).optional(),
   size: number.optional(),
   quality: quality.optional(),
@@ -1136,33 +1140,65 @@ function applyEpisode(state: Backing, message: unknown): boolean {
 
 // Applies an episodefile message to any open series. Update payloads carry the
 // file; deletes carry only an id and are located through episodeFileId.
+// Resolves an episodefile message into the file id, owning series, and (for
+// updates) the file metadata to apply. Returns undefined when the resource is
+// unusable so the caller refreshes.
+export function parseEpisodeFileResource(
+  resource: unknown,
+  action: string,
+):
+  | {
+      fileId: number;
+      seriesId: number;
+      removed: boolean;
+      file?: { quality: string; sizeOnDisk: number };
+    }
+  | undefined {
+  const parsed = episodeFileResource.safeParse(resource);
+  if (!parsed.success) return undefined;
+  const seriesId = parsed.data.seriesId ?? 0;
+  if (action === "deleted" || seriesId <= 0)
+    return { fileId: parsed.data.id, seriesId, removed: true };
+  return {
+    fileId: parsed.data.id,
+    seriesId,
+    removed: false,
+    file: {
+      quality: qualityName(parsed.data.quality) || "Unknown",
+      sizeOnDisk: Math.max(0, parsed.data.size ?? 0),
+    },
+  };
+}
+
 function applyEpisodeFile(state: Backing, message: unknown): boolean {
   const envelope = row(message);
   if (str(envelope.name).toLowerCase() !== "episodefile") return false;
   const body = row(envelope.body);
   const action = str(body.action, str(envelope.action)).toLowerCase();
-  const parsed = episodeFileResource.safeParse(
+  const target = parseEpisodeFileResource(
     body.resource ?? envelope.resource,
+    action,
   );
-  if (!parsed.success) return false;
-  const fileId = parsed.data.id;
-  const seriesId = parsed.data.seriesId;
-  const removed = action === "deleted" || seriesId === undefined;
-  const file = removed
-    ? undefined
-    : {
-        quality: qualityName(parsed.data.quality) || "Unknown",
-        sizeOnDisk: Math.max(0, parsed.data.size ?? 0),
-      };
+  if (!target) return false;
   for (const [id, cell] of state.episodes) {
-    if (!removed && id !== seriesId) continue;
+    if (!target.removed && id !== target.seriesId) continue;
     const value = cell.value;
-    if (!value?.episodes.some((episode) => episode.episodeFileId === fileId))
+    if (
+      !value?.episodes.some(
+        (episode) => episode.episodeFileId === target.fileId,
+      )
+    )
       continue;
     if (!settled(cell)) return false;
-    const episodes = mergeEpisodeFile(value.episodes, fileId, file);
+    const episodes = mergeEpisodeFile(
+      value.episodes,
+      target.fileId,
+      target.file,
+    );
     if (episodes) cell.value = { ...value, episodes };
   }
+  // Handled even when no open series references the file; the matching episode
+  // message still drives the affected page.
   return true;
 }
 

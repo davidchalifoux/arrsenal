@@ -44,8 +44,12 @@ const {
 const { coverPath, mediaImage, mergeMedia, normalizeMedia } = await import(
   "../src/lib/server/media.ts"
 );
-const { mergeCommandResource, mergeEpisodeResource, mergeEpisodeFile } =
-  await import("../src/lib/server/realtime-snapshots.ts");
+const {
+  mergeCommandResource,
+  mergeEpisodeResource,
+  mergeEpisodeFile,
+  parseEpisodeFileResource,
+} = await import("../src/lib/server/realtime-snapshots.ts");
 
 const origin = "http://localhost:3000";
 const secret = "arrsenal-test-secret-not-for-clients";
@@ -1289,6 +1293,48 @@ test("episode file messages update or clear every referencing episode", () => {
   assert.equal(removed[0].sizeOnDisk, 0);
   assert.equal(removed[0].status, "missing");
   assert.equal(mergeEpisodeFile([watched], 999, undefined, now), undefined);
+});
+
+test("active command merges stay within the snapshot cap", () => {
+  let commands = [];
+  for (let id = 1; id <= 40; id++) {
+    commands = mergeCommandResource(commands, {
+      id,
+      name: "Search",
+      status: "started",
+    });
+  }
+  assert.equal(commands.length, 32);
+  assert.equal(commands.at(-1).id, 32);
+});
+
+test("episode file delete resources are parsed for the fast path", () => {
+  assert.deepEqual(
+    parseEpisodeFileResource(
+      { id: 500, seriesId: 0, seasonNumber: 0, size: 0 },
+      "deleted",
+    ),
+    { fileId: 500, seriesId: 0, removed: true },
+  );
+  assert.equal(
+    parseEpisodeFileResource({ id: 500, seriesId: 0, size: 0 }, "updated")
+      .removed,
+    true,
+  );
+  const updated = parseEpisodeFileResource(
+    {
+      id: 500,
+      seriesId: 22,
+      size: 1234,
+      quality: { quality: { name: "WEBDL-1080p" } },
+    },
+    "updated",
+  );
+  assert.equal(updated.removed, false);
+  assert.equal(updated.seriesId, 22);
+  assert.equal(updated.file.quality, "WEBDL-1080p");
+  assert.equal(updated.file.sizeOnDisk, 1234);
+  assert.equal(parseEpisodeFileResource({ id: "500" }, "deleted"), undefined);
 });
 
 for (const [name, handler] of [

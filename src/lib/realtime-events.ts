@@ -110,6 +110,9 @@ const queueItem = z.object({
   downloadId: z.string().optional(),
   warnings: z.array(z.string()),
 });
+// Bounds the active-command list carried in each instance summary. Kept in one
+// place so the fetch, the SignalR merge, and the snapshot schema agree.
+export const MAX_ACTIVE_COMMANDS = 32;
 const activeCommand = z.object({
   id: z.number().int(),
   name: z.string(),
@@ -126,7 +129,7 @@ const instance = z.object({
   connected: z.boolean(),
   version: z.string().optional(),
   error: z.string().optional(),
-  commands: z.array(activeCommand).max(32).optional(),
+  commands: z.array(activeCommand).max(MAX_ACTIVE_COMMANDS).optional(),
 });
 const calendarEvent = z.object({
   id: z.string(),

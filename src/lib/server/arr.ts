@@ -1,5 +1,6 @@
 import "server-only";
 
+import { MAX_ACTIVE_COMMANDS } from "../realtime-events";
 import type { ActiveCommand, InstanceOptions, InstanceSummary } from "../types";
 import type { InstanceConfig } from "./config";
 import { ApiError, errorMessage } from "./http";
@@ -294,7 +295,7 @@ export async function activeCommands(
   });
   // The instances snapshot schema bounds this list; a bulk search can enqueue
   // far more, and an over-long array would reject the whole snapshot.
-  return active.slice(0, 32);
+  return active.slice(0, MAX_ACTIVE_COMMANDS);
 }
 
 export async function profiles(
