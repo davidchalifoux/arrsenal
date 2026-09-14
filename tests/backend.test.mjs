@@ -44,6 +44,12 @@ const {
 const { coverPath, mediaImage, mergeMedia, normalizeMedia } = await import(
   "../src/lib/server/media.ts"
 );
+const {
+  mergeCommandResource,
+  mergeEpisodeResource,
+  mergeEpisodeFile,
+  parseEpisodeFileResource,
+} = await import("../src/lib/server/realtime-snapshots.ts");
 
 const origin = "http://localhost:3000";
 const secret = "arrsenal-test-secret-not-for-clients";
@@ -205,6 +211,8 @@ async function setup(definitions = {}) {
         return send([{ id: 1, name: node.profile ?? "HD-1080p" }]);
       if (endpoint === "rootfolder")
         return send([{ id: 1, path: "/media", freeSpace: 100000 }]);
+      if (endpoint === "command" && req.method === "GET")
+        return send(node.commands ?? []);
       if (endpoint === "queue" && req.method === "GET") {
         const page = Number(url.searchParams.get("page"));
         if (node.queuePages) return send(node.queuePages[page - 1]);
@@ -1056,6 +1064,277 @@ test("unconfigured reads return empty collections without network access or pers
   });
   assert.equal(calls.length, 0);
   assert.deepEqual(await readdir(directory), []);
+});
+
+test("instance summaries expose only active commands for the task indicator", async () => {
+  const env = await setup({
+    hd: {
+      commands: [
+        {
+          id: 1,
+          name: "SeasonSearch",
+          commandName: "Season Search",
+          status: "started",
+          message: "Processing release 2142/2773",
+        },
+        {
+          id: 2,
+          name: "Backup",
+          commandName: "Backup",
+          status: "completed",
+          message: "Completed",
+        },
+      ],
+    },
+  });
+  const hd = await env.connect("hd");
+  const summary = (await (await instancesRoute.GET()).json()).instances.find(
+    (instance) => instance.id === hd.id,
+  );
+  assert.deepEqual(summary.commands, [
+    {
+      id: 1,
+      name: "SeasonSearch",
+      commandName: "Season Search",
+      message: "Processing release 2142/2773",
+      status: "started",
+    },
+  ]);
+});
+
+test("command messages merge into the active list for push updates", () => {
+  const rss = {
+    id: 1,
+    name: "RssSync",
+    commandName: "RSS Sync",
+    message: "",
+    status: "queued",
+  };
+  const search = {
+    id: 5,
+    name: "SeasonSearch",
+    commandName: "Season Search",
+    message: "Processing release 1/2773",
+    status: "started",
+  };
+  assert.deepEqual(mergeCommandResource([rss], search), [rss, search]);
+  const progressed = { ...search, message: "Processing release 2/2773" };
+  assert.deepEqual(mergeCommandResource([rss, search], progressed), [
+    rss,
+    progressed,
+  ]);
+  assert.deepEqual(
+    mergeCommandResource([rss, progressed], { ...search, status: "completed" }),
+    [rss],
+  );
+  // A terminal update for an untracked command is still applied.
+  assert.deepEqual(
+    mergeCommandResource([rss], { ...search, status: "failed" }),
+    [rss],
+  );
+  assert.deepEqual(
+    mergeCommandResource([], { id: 7, name: "Backup", status: "queued" }),
+    [
+      {
+        id: 7,
+        name: "Backup",
+        commandName: "Backup",
+        message: "",
+        status: "queued",
+      },
+    ],
+  );
+  // Unrecognised statuses or resources fall back to a refetch.
+  assert.equal(
+    mergeCommandResource([rss], { id: 9, name: "X", status: "weird" }),
+    undefined,
+  );
+  assert.equal(
+    mergeCommandResource([rss], { id: "5", name: "X", status: "started" }),
+    undefined,
+  );
+});
+
+const baseEpisode = {
+  id: 101,
+  seriesId: 22,
+  episodeFileId: 0,
+  seasonNumber: 1,
+  episodeNumber: 1,
+  title: "Pilot",
+  overview: "Overview",
+  airDateUtc: "2024-01-01T00:00:00.000Z",
+  runtime: 60,
+  monitored: true,
+  hasFile: false,
+  quality: "Not downloaded",
+  sizeOnDisk: 0,
+  status: "missing",
+};
+
+test("episode messages merge into a cached series list", () => {
+  const now = Date.parse("2024-06-01T00:00:00Z");
+  const imported = mergeEpisodeResource(
+    [baseEpisode],
+    {
+      id: 101,
+      seriesId: 22,
+      episodeFileId: 500,
+      seasonNumber: 1,
+      episodeNumber: 1,
+      title: "Pilot",
+      monitored: true,
+      hasFile: true,
+      episodeFile: {
+        size: 1234,
+        quality: { quality: { name: "WEBDL-1080p" } },
+      },
+    },
+    now,
+  );
+  assert.equal(imported[0].hasFile, true);
+  assert.equal(imported[0].episodeFileId, 500);
+  assert.equal(imported[0].quality, "WEBDL-1080p");
+  assert.equal(imported[0].sizeOnDisk, 1234);
+  assert.equal(imported[0].status, "available");
+
+  const grabbed = mergeEpisodeResource(
+    [baseEpisode],
+    {
+      id: 101,
+      seriesId: 22,
+      seasonNumber: 1,
+      episodeNumber: 1,
+      monitored: true,
+      hasFile: false,
+      grabbed: true,
+    },
+    now,
+  );
+  assert.equal(grabbed[0].status, "downloading");
+
+  const future = mergeEpisodeResource(
+    [{ ...baseEpisode, airDateUtc: "2025-01-01T00:00:00.000Z" }],
+    {
+      id: 101,
+      seriesId: 22,
+      seasonNumber: 1,
+      episodeNumber: 1,
+      monitored: true,
+      hasFile: false,
+    },
+    now,
+  );
+  assert.equal(future[0].status, "unreleased");
+
+  const unmonitored = mergeEpisodeResource(
+    [baseEpisode],
+    {
+      id: 101,
+      seriesId: 22,
+      seasonNumber: 1,
+      episodeNumber: 1,
+      monitored: false,
+      hasFile: false,
+    },
+    now,
+  );
+  assert.equal(unmonitored[0].status, "unmonitored");
+
+  assert.equal(
+    mergeEpisodeResource(
+      [baseEpisode],
+      {
+        id: 999,
+        seriesId: 22,
+        seasonNumber: 1,
+        episodeNumber: 9,
+        monitored: true,
+        hasFile: false,
+      },
+      now,
+    ),
+    undefined,
+  );
+});
+
+test("episode file messages update or clear every referencing episode", () => {
+  const now = Date.parse("2024-06-01T00:00:00Z");
+  const watched = {
+    ...baseEpisode,
+    hasFile: true,
+    episodeFileId: 500,
+    quality: "HDTV-720p",
+    sizeOnDisk: 100,
+    status: "available",
+  };
+  const other = {
+    ...baseEpisode,
+    id: 102,
+    episodeNumber: 2,
+    hasFile: true,
+    episodeFileId: 501,
+    quality: "HDTV-720p",
+    status: "available",
+  };
+  const upgraded = mergeEpisodeFile(
+    [watched, other],
+    500,
+    { quality: "WEBDL-1080p", sizeOnDisk: 200 },
+    now,
+  );
+  assert.equal(upgraded[0].quality, "WEBDL-1080p");
+  assert.equal(upgraded[0].sizeOnDisk, 200);
+  assert.equal(upgraded[1].quality, "HDTV-720p");
+  const removed = mergeEpisodeFile([watched, other], 500, undefined, now);
+  assert.equal(removed[0].hasFile, false);
+  assert.equal(removed[0].episodeFileId, 0);
+  assert.equal(removed[0].quality, "Not downloaded");
+  assert.equal(removed[0].sizeOnDisk, 0);
+  assert.equal(removed[0].status, "missing");
+  assert.equal(mergeEpisodeFile([watched], 999, undefined, now), undefined);
+});
+
+test("active command merges stay within the snapshot cap", () => {
+  let commands = [];
+  for (let id = 1; id <= 40; id++) {
+    commands = mergeCommandResource(commands, {
+      id,
+      name: "Search",
+      status: "started",
+    });
+  }
+  assert.equal(commands.length, 32);
+  assert.equal(commands.at(-1).id, 32);
+});
+
+test("episode file delete resources are parsed for the fast path", () => {
+  assert.deepEqual(
+    parseEpisodeFileResource(
+      { id: 500, seriesId: 0, seasonNumber: 0, size: 0 },
+      "deleted",
+    ),
+    { fileId: 500, seriesId: 0, removed: true },
+  );
+  assert.equal(
+    parseEpisodeFileResource({ id: 500, seriesId: 0, size: 0 }, "updated")
+      .removed,
+    true,
+  );
+  const updated = parseEpisodeFileResource(
+    {
+      id: 500,
+      seriesId: 22,
+      size: 1234,
+      quality: { quality: { name: "WEBDL-1080p" } },
+    },
+    "updated",
+  );
+  assert.equal(updated.removed, false);
+  assert.equal(updated.seriesId, 22);
+  assert.equal(updated.file.quality, "WEBDL-1080p");
+  assert.equal(updated.file.sizeOnDisk, 1234);
+  assert.equal(parseEpisodeFileResource({ id: "500" }, "deleted"), undefined);
 });
 
 for (const [name, handler] of [

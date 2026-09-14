@@ -2,6 +2,14 @@ export type InstanceKind = "radarr" | "sonarr";
 export type MediaKind = "movie" | "series";
 export type MediaStatus = "available" | "partial" | "missing" | "downloading";
 
+export interface ActiveCommand {
+  id: number;
+  name: string;
+  commandName: string;
+  message: string;
+  status: string;
+}
+
 export interface InstanceSummary {
   id: string;
   name: string;
@@ -11,6 +19,7 @@ export interface InstanceSummary {
   connected: boolean;
   version?: string;
   error?: string;
+  commands?: ActiveCommand[];
 }
 
 export interface MediaTarget {
@@ -125,6 +134,7 @@ export type EpisodeStatus =
 export interface Episode {
   id: number;
   seriesId: number;
+  episodeFileId: number;
   seasonNumber: number;
   episodeNumber: number;
   title: string;

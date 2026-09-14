@@ -13,6 +13,7 @@ import {
   within,
 } from "@testing-library/react";
 import type { ComponentProps, PropsWithChildren } from "react";
+import type { InstanceSummary } from "@/lib/types";
 import type { RealtimeConnection } from "@/lib/use-realtime";
 
 const mocks = {
@@ -29,7 +30,7 @@ const mocks = {
       instances: [
         { id: "private-radarr-id", name: "Movies server" },
         { id: "private-sonarr-id", name: "Shows server" },
-      ],
+      ] as Partial<InstanceSummary>[],
     },
   },
   sync: mock(async (_scope: string) => {}),
@@ -81,6 +82,14 @@ beforeEach(() => {
   mocks.sync.mockImplementation(async () => {});
   mocks.pathname = "/";
   mocks.queue = { data: { items: [] } };
+  mocks.instances = {
+    data: {
+      instances: [
+        { id: "private-radarr-id", name: "Movies server" },
+        { id: "private-sonarr-id", name: "Shows server" },
+      ],
+    },
+  };
 });
 afterEach(() => {
   cleanup();
@@ -95,6 +104,38 @@ function renderShell() {
     { wrapper },
   );
 }
+
+it("shows the active instance command in the header", () => {
+  mocks.instances = {
+    data: {
+      instances: [
+        {
+          id: "private-sonarr-id",
+          name: "Shows server",
+          commands: [
+            {
+              id: 1,
+              name: "SeasonSearch",
+              commandName: "Season Search",
+              message: "Processing release 2142/2773",
+              status: "started",
+            },
+          ],
+        },
+      ],
+    },
+  };
+  renderShell();
+  expect(screen.getByText("Processing release 2142/2773")).toBeTruthy();
+  expect(
+    screen.getByTitle("Shows server: Processing release 2142/2773"),
+  ).toBeTruthy();
+});
+
+it("shows no task indicator when no command is active", () => {
+  renderShell();
+  expect(screen.queryByText(/Processing release/)).toBeNull();
+});
 
 it("places Settings after Calendar on desktop and keeps five mobile tabs", () => {
   renderShell();

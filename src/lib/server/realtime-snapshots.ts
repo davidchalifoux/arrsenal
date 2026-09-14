@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
+  MAX_ACTIVE_COMMANDS,
   type RealtimeQueryKey,
   type RealtimeSnapshot,
   type RealtimeTopic,
@@ -13,7 +14,10 @@ import {
   type Versioned,
 } from "../realtime-events";
 import type {
+  ActiveCommand,
   CalendarResponse,
+  Episode,
+  EpisodeStatus,
   EpisodesResponse,
   InstanceOptions,
   InstanceSummary,
@@ -24,6 +28,7 @@ import type {
   ServiceError,
 } from "../types";
 import {
+  activeCommands,
   instanceOptions,
   instanceSummary,
   num,
@@ -42,6 +47,7 @@ import {
   mergeMedia,
   normalizeMedia,
   normalizeQueue,
+  qualityName,
 } from "./media";
 import { instanceMedia, type MediaEnrichment } from "./services";
 
@@ -69,6 +75,7 @@ type Backing = {
   library: Slot<LibraryBacking>;
   queue: Slot<QueueBacking>;
   summary: Slot<InstanceSummary>;
+  commands: Slot<ActiveCommand[]>;
   options: Slot<InstanceOptions>;
   calendars: Map<string, Slot<CalendarBacking>>;
   episodes: Map<number, Slot<EpisodesResponse>>;
@@ -104,6 +111,7 @@ function createStore() {
     state.library,
     state.queue,
     state.summary,
+    state.commands,
     state.options,
     ...state.calendars.values(),
     ...state.episodes.values(),
@@ -208,6 +216,18 @@ function createStore() {
     });
   }
 
+  // A failed command lookup must never take down the instance summary; the
+  // indicator simply stays empty until the next refresh.
+  function commandsFor(state: Backing) {
+    return load(state.commands, async () => {
+      try {
+        return await activeCommands(state.instance);
+      } catch {
+        return [];
+      }
+    });
+  }
+
   function libraryFor(state: Backing) {
     return load(state.library, async () => {
       let enrichment: MediaEnrichment | undefined;
@@ -255,7 +275,7 @@ function createStore() {
       case "queue":
         return [state.queue];
       case "instances":
-        return [state.summary];
+        return [state.summary, state.commands];
       case "calendar":
         return [calendarCell(state, key)];
       case "episodes":
@@ -344,16 +364,17 @@ function createStore() {
                   errors: [],
                 } as Data,
               };
-            case "instances":
+            case "instances": {
+              const summary = await load(state.summary, () =>
+                instanceSummary(state.instance),
+              );
+              const commands = await commandsFor(state);
               return {
                 data: {
-                  instances: [
-                    await load(state.summary, () =>
-                      instanceSummary(state.instance),
-                    ),
-                  ],
+                  instances: [{ ...summary, commands }],
                 } as Data,
               };
+            }
             case "calendar": {
               const value = await load(calendarCell(state, key), async () => {
                 const result = await instanceCalendar(
@@ -659,6 +680,7 @@ function createStore() {
             library: slot(),
             queue: slot(),
             summary: slot(),
+            commands: slot(),
             options: slot(),
             calendars: new Map(),
             episodes: new Map(),
@@ -793,6 +815,10 @@ function createStore() {
     )
       return;
     const direct = topics.includes("library") && applyMedia(state, message);
+    const command = topics.includes("commands") && applyCommand(state, message);
+    const episode = topics.includes("episodes") && applyEpisode(state, message);
+    const episodeFile =
+      topics.includes("episodes") && applyEpisodeFile(state, message);
     if (topics.includes("queue")) mark(state.queue);
     const queueMessage = /^queue(?:\/|$)/i.test(str(row(message).name));
     if (topics.includes("library") && !direct && !queueMessage) {
@@ -801,6 +827,7 @@ function createStore() {
         state.library.value.enrichment.complete = false;
     }
     if (topics.includes("instances")) mark(state.summary);
+    if (topics.includes("commands") && !command) mark(state.commands);
     if (topics.includes("options")) {
       mark(state.options);
       mark(state.library);
@@ -809,7 +836,7 @@ function createStore() {
     }
     if (topics.includes("calendar"))
       for (const cell of state.calendars.values()) mark(cell);
-    if (topics.includes("episodes"))
+    if (topics.includes("episodes") && !episode && !episodeFile)
       for (const [id, cell] of state.episodes)
         if (remoteId === undefined || id === remoteId) mark(cell);
     for (const entry of entries.values()) {
@@ -820,7 +847,8 @@ function createStore() {
           entry.key[2] === remoteId) &&
         (topics.includes(topic(entry.key)) ||
           (entry.key[0] === "library" &&
-            (topics.includes("queue") || topics.includes("options"))))
+            (topics.includes("queue") || topics.includes("options"))) ||
+          (entry.key[0] === "instances" && topics.includes("commands")))
       )
         schedule(entry);
     }
@@ -885,6 +913,294 @@ const mediaResource = z.object({
     })
     .optional(),
 });
+
+const commandResource = z.object({
+  id,
+  name: z.string().trim().min(1),
+  commandName: z.string().optional(),
+  message: z.string().optional(),
+  status: z.string().min(1),
+});
+const terminalCommandStatuses = [
+  "completed",
+  "failed",
+  "aborted",
+  "cancelled",
+  "orphaned",
+];
+
+// Merges one command resource from a SignalR message into the active list.
+// Returns the next list, or undefined when the message cannot be applied and
+// the caller should fall back to re-reading /api/v3/command.
+export function mergeCommandResource(
+  commands: ActiveCommand[],
+  resource: unknown,
+): ActiveCommand[] | undefined {
+  const parsed = commandResource.safeParse(resource);
+  if (!parsed.success) return undefined;
+  const { id: commandId, name, status } = parsed.data;
+  const active = status === "queued" || status === "started";
+  if (!active && !terminalCommandStatuses.includes(status)) return undefined;
+  const index = commands.findIndex((command) => command.id === commandId);
+  if (!active && index === -1) return commands;
+  const next = [...commands];
+  if (active) {
+    const entry: ActiveCommand = {
+      id: commandId,
+      name,
+      commandName: parsed.data.commandName || name,
+      message: parsed.data.message ?? "",
+      status,
+    };
+    if (index === -1) next.push(entry);
+    else next[index] = entry;
+  } else {
+    next.splice(index, 1);
+  }
+  // The instances snapshot schema caps this list; keep the two in step.
+  return next.slice(0, MAX_ACTIVE_COMMANDS);
+}
+
+// True when a cell holds a committed value with no load in flight, so a
+// direct-apply can mutate it without racing a pending fetch.
+function settled<T>(cell: Slot<T>): boolean {
+  return (
+    cell.value !== undefined &&
+    !cell.pending &&
+    cell.committed === cell.generation
+  );
+}
+
+// Applies a command message in place when the slot already holds a settled
+// baseline. Anything else (no baseline yet, an in-flight load, or an
+// unrecognised resource) returns false so the caller refreshes instead.
+function applyCommand(state: Backing, message: unknown): boolean {
+  const envelope = row(message);
+  if (str(envelope.name).toLowerCase() !== "command") return false;
+  const current = state.commands.value;
+  if (!current || !settled(state.commands)) return false;
+  const next = mergeCommandResource(
+    current,
+    row(envelope.body).resource ?? envelope.resource,
+  );
+  if (!next) return false;
+  state.commands.value = next;
+  return true;
+}
+
+const episodeResource = z.object({
+  id,
+  seriesId: id,
+  episodeFileId: number.optional(),
+  seasonNumber: z.number().int().min(0).max(2147483647),
+  episodeNumber: z.number().int().min(0).max(2147483647),
+  title: z.string().optional(),
+  overview: z.string().optional(),
+  airDateUtc: z.string().optional(),
+  runtime: number.optional(),
+  monitored: z.boolean(),
+  hasFile: z.boolean(),
+  grabbed: z.boolean().optional(),
+  episodeFile: z
+    .object({ size: number.optional(), quality: quality.optional() })
+    .optional(),
+});
+const episodeFileResource = z.object({
+  id,
+  // Deleted files are broadcast as a default-constructed resource, so value
+  // types like seriesId arrive as 0 rather than being omitted.
+  seriesId: z.number().int().nonnegative().optional(),
+  seasonNumber: z.number().int().min(0).max(2147483647).optional(),
+  size: number.optional(),
+  quality: quality.optional(),
+});
+
+function isoDate(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? new Date(time).toISOString() : undefined;
+}
+
+function deriveEpisodeStatus(
+  episode: Pick<Episode, "airDateUtc" | "monitored" | "status">,
+  hasFile: boolean,
+  grabbed: boolean,
+  now: number,
+): EpisodeStatus {
+  if (hasFile) return "available";
+  if (grabbed || episode.status === "downloading") return "downloading";
+  const time = episode.airDateUtc ? Date.parse(episode.airDateUtc) : NaN;
+  if (Number.isFinite(time) && time > now) return "unreleased";
+  if (!episode.monitored) return "unmonitored";
+  return Number.isFinite(time) ? "missing" : "unknown";
+}
+
+// Merges one episode resource from a SignalR message into a cached series list.
+// Returns the next list, or undefined when the episode is not present (so the
+// caller refreshes instead of silently dropping a new episode).
+export function mergeEpisodeResource(
+  episodes: Episode[],
+  resource: unknown,
+  now = Date.now(),
+): Episode[] | undefined {
+  const parsed = episodeResource.safeParse(resource);
+  if (!parsed.success) return undefined;
+  const record = parsed.data;
+  const index = episodes.findIndex((episode) => episode.id === record.id);
+  if (index === -1) return undefined;
+  const previous = episodes[index];
+  if (previous.seriesId !== record.seriesId) return undefined;
+  const hasFile = record.hasFile;
+  const episodeFileId = hasFile
+    ? (record.episodeFileId ?? previous.episodeFileId)
+    : 0;
+  const file = hasFile ? record.episodeFile : undefined;
+  const quality = hasFile
+    ? file
+      ? qualityName(file.quality) || "Unknown"
+      : previous.hasFile
+        ? previous.quality
+        : "Unknown"
+    : "Not downloaded";
+  const sizeOnDisk = hasFile
+    ? file
+      ? Math.max(0, file.size ?? 0)
+      : previous.hasFile
+        ? previous.sizeOnDisk
+        : 0
+    : 0;
+  const airDateUtc = isoDate(record.airDateUtc) ?? previous.airDateUtc;
+  const next = [...episodes];
+  next[index] = {
+    ...previous,
+    title: record.title || previous.title,
+    overview: record.overview ?? previous.overview,
+    airDateUtc,
+    runtime: record.runtime ?? previous.runtime,
+    monitored: record.monitored,
+    hasFile,
+    episodeFileId,
+    quality,
+    sizeOnDisk,
+    status: deriveEpisodeStatus(
+      { airDateUtc, monitored: record.monitored, status: previous.status },
+      hasFile,
+      record.grabbed === true,
+      now,
+    ),
+  };
+  return next;
+}
+
+// Applies an episode-file add/change or removal to every episode referencing
+// the file. `file` is undefined for a deletion.
+export function mergeEpisodeFile(
+  episodes: Episode[],
+  fileId: number,
+  file: { quality: string; sizeOnDisk: number } | undefined,
+  now = Date.now(),
+): Episode[] | undefined {
+  if (!episodes.some((episode) => episode.episodeFileId === fileId))
+    return undefined;
+  return episodes.map((episode) => {
+    if (episode.episodeFileId !== fileId) return episode;
+    if (file)
+      return {
+        ...episode,
+        hasFile: true,
+        quality: file.quality,
+        sizeOnDisk: file.sizeOnDisk,
+        status: "available" as const,
+      };
+    return {
+      ...episode,
+      hasFile: false,
+      episodeFileId: 0,
+      quality: "Not downloaded",
+      sizeOnDisk: 0,
+      status: deriveEpisodeStatus(episode, false, false, now),
+    };
+  });
+}
+
+// Applies an episode message in place when the affected series is open and
+// settled; otherwise returns false so the page refreshes.
+function applyEpisode(state: Backing, message: unknown): boolean {
+  const envelope = row(message);
+  if (str(envelope.name).toLowerCase() !== "episode") return false;
+  const resource = row(row(envelope.body).resource ?? envelope.resource);
+  const cell = state.episodes.get(num(resource.seriesId, -1));
+  const value = cell?.value;
+  if (!cell || !value || !settled(cell)) return false;
+  const episodes = mergeEpisodeResource(value.episodes, resource);
+  if (!episodes) return false;
+  cell.value = { ...value, episodes };
+  return true;
+}
+
+// Applies an episodefile message to any open series. Update payloads carry the
+// file; deletes carry only an id and are located through episodeFileId.
+// Resolves an episodefile message into the file id, owning series, and (for
+// updates) the file metadata to apply. Returns undefined when the resource is
+// unusable so the caller refreshes.
+export function parseEpisodeFileResource(
+  resource: unknown,
+  action: string,
+):
+  | {
+      fileId: number;
+      seriesId: number;
+      removed: boolean;
+      file?: { quality: string; sizeOnDisk: number };
+    }
+  | undefined {
+  const parsed = episodeFileResource.safeParse(resource);
+  if (!parsed.success) return undefined;
+  const seriesId = parsed.data.seriesId ?? 0;
+  if (action === "deleted" || seriesId <= 0)
+    return { fileId: parsed.data.id, seriesId, removed: true };
+  return {
+    fileId: parsed.data.id,
+    seriesId,
+    removed: false,
+    file: {
+      quality: qualityName(parsed.data.quality) || "Unknown",
+      sizeOnDisk: Math.max(0, parsed.data.size ?? 0),
+    },
+  };
+}
+
+function applyEpisodeFile(state: Backing, message: unknown): boolean {
+  const envelope = row(message);
+  if (str(envelope.name).toLowerCase() !== "episodefile") return false;
+  const body = row(envelope.body);
+  const action = str(body.action, str(envelope.action)).toLowerCase();
+  const target = parseEpisodeFileResource(
+    body.resource ?? envelope.resource,
+    action,
+  );
+  if (!target) return false;
+  for (const [id, cell] of state.episodes) {
+    if (!target.removed && id !== target.seriesId) continue;
+    const value = cell.value;
+    if (
+      !value?.episodes.some(
+        (episode) => episode.episodeFileId === target.fileId,
+      )
+    )
+      continue;
+    if (!settled(cell)) return false;
+    const episodes = mergeEpisodeFile(
+      value.episodes,
+      target.fileId,
+      target.file,
+    );
+    if (episodes) cell.value = { ...value, episodes };
+  }
+  // Handled even when no open series references the file; the matching episode
+  // message still drives the affected page.
+  return true;
+}
 
 function applyMedia(state: Backing, message: unknown): boolean {
   const envelope = row(message);

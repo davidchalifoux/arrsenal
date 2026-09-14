@@ -249,6 +249,7 @@ export async function instanceEpisodes(
     return {
       id: episode.id,
       seriesId: episode.seriesId,
+      episodeFileId: num(episode.episodeFileId),
       seasonNumber: episode.seasonNumber,
       episodeNumber: episode.episodeNumber,
       title: str(episode.title) || `Episode ${episode.episodeNumber}`,

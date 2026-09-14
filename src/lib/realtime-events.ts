@@ -7,6 +7,7 @@ export const realtimeTopics = [
   "calendar",
   "instances",
   "options",
+  "commands",
 ] as const;
 
 const instanceId = z.string().min(1).max(100);
@@ -109,6 +110,16 @@ const queueItem = z.object({
   downloadId: z.string().optional(),
   warnings: z.array(z.string()),
 });
+// Bounds the active-command list carried in each instance summary. Kept in one
+// place so the fetch, the SignalR merge, and the snapshot schema agree.
+export const MAX_ACTIVE_COMMANDS = 32;
+const activeCommand = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  commandName: z.string(),
+  message: z.string(),
+  status: z.string(),
+});
 const instance = z.object({
   id: instanceId,
   name: z.string(),
@@ -118,6 +129,7 @@ const instance = z.object({
   connected: z.boolean(),
   version: z.string().optional(),
   error: z.string().optional(),
+  commands: z.array(activeCommand).max(MAX_ACTIVE_COMMANDS).optional(),
 });
 const calendarEvent = z.object({
   id: z.string(),
@@ -135,6 +147,7 @@ const calendarEvent = z.object({
 const episode = z.object({
   id: remoteId,
   seriesId: remoteId,
+  episodeFileId: z.number().int().nonnegative(),
   seasonNumber: z.number(),
   episodeNumber: z.number(),
   title: z.string(),
