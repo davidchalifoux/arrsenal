@@ -1,0 +1,14 @@
+{
+  "mcp": {
+    "servers": {
+      "pandacss": {
+        "type": "local",
+        "command": [
+          "bun",
+          "x",
+          "@pandacss/mcp@latest"
+        ]
+      }
+    }
+  }
+}
