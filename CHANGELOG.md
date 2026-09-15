@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/davidchalifoux/arrsenal/compare/v0.5.1...v0.6.0) (2026-09-15)
+
+
+### Features
+
+* dense downloads table, Sonarr-matched queue order, and live task status ([#21](https://github.com/davidchalifoux/arrsenal/issues/21)) ([db5f96c](https://github.com/davidchalifoux/arrsenal/commit/db5f96c73f27a89b78ca5d98765a6464c531322d))
+
 ## [0.5.1](https://github.com/davidchalifoux/arrsenal/compare/v0.5.0...v0.5.1) (2026-09-09)
 
 
