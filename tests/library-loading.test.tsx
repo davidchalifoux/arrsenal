@@ -195,19 +195,26 @@ describe("LibraryLoading", () => {
     expect(unmounted).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ...names,
-  ])("waits for %s when it is the final successful query", async (last) => {
-    const { Wrapper, resolve } = setup();
+  it("reveals library results while queue and instance summaries are still pending", async () => {
+    const { client, Wrapper, resolve } = setup();
     render(<div>Route content</div>, { wrapper: Wrapper });
-    for (const name of names.filter((name) => name !== last)) {
-      await resolve(name);
-      expect(screen.getByRole("status")).toBeTruthy();
-      expectBlocked(screen.getByText("Route content"), true);
-    }
-    await resolve(last);
+    await resolve("library");
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
     expectBlocked(screen.getByText("Route content"), false);
+    expect(client.getQueryState(["queue"])?.status).toBe("pending");
+    expect(client.getQueryState(["instances"])?.status).toBe("pending");
+  });
+
+  it("keeps loading until library data arrives even when auxiliary requests finish", async () => {
+    const { Wrapper, resolve } = setup();
+    render(<div>Route content</div>, { wrapper: Wrapper });
+    await resolve("queue");
+    await resolve("instances");
+    expectBlocked(screen.getByText("Route content"), true);
+    await resolve("library");
+    await waitFor(() =>
+      expectBlocked(screen.getByText("Route content"), false),
+    );
   });
 
   it("dismisses after three empty successful responses", async () => {

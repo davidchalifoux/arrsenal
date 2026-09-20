@@ -23,6 +23,7 @@ import type {
   InstanceSummary,
   LibraryResponse,
   MediaItem,
+  MediaTarget,
   QueueItem,
   QueueResponse,
   ServiceError,
@@ -49,7 +50,11 @@ import {
   normalizeQueue,
   qualityName,
 } from "./media";
-import { instanceMedia, type MediaEnrichment } from "./services";
+import {
+  instanceMedia,
+  type MediaEnrichment,
+  seriesEpisodeQuality,
+} from "./services";
 
 type Data =
   | LibraryResponse
@@ -70,6 +75,16 @@ type Slot<T> = {
 type LibraryBacking = LibraryResponse & { enrichment?: MediaEnrichment };
 type QueueBacking = { items: QueueItem[]; records: Row[] };
 type CalendarBacking = Pick<CalendarResponse, "items" | "errors">;
+// Per-series episode quality, cached and filled in the background. Keyed by the
+// remote series id and validated against (episodeFileCount, sizeOnDisk) so a
+// changed series is refetched while unchanged ones are reused across refreshes.
+type EpisodeQuality = {
+  episodeFileCount: number;
+  sizeOnDisk: number;
+  quality: string[];
+  nextAttemptAt: number;
+  failures: number;
+};
 type Backing = {
   instance: InstanceConfig;
   library: Slot<LibraryBacking>;
@@ -79,6 +94,10 @@ type Backing = {
   options: Slot<InstanceOptions>;
   calendars: Map<string, Slot<CalendarBacking>>;
   episodes: Map<number, Slot<EpisodesResponse>>;
+  episodeQuality: Map<number, EpisodeQuality>;
+  enriching: boolean;
+  qualityRetry?: NodeJS.Timeout;
+  qualityAbort?: AbortController;
 };
 type Entry = {
   key: RealtimeQueryKey;
@@ -92,6 +111,7 @@ type Entry = {
   pending?: Promise<RealtimeSnapshot>;
   timer?: NodeJS.Timeout;
   expiry?: NodeJS.Timeout;
+  qualityTimer?: NodeJS.Timeout;
 };
 
 function createStore() {
@@ -285,9 +305,45 @@ function createStore() {
     }
   }
 
+  // A series' episode quality comes from the background-filled cache, keyed by
+  // (episodeFileCount, sizeOnDisk) so stale entries are ignored. Until the cache
+  // holds a matching entry the label is "Unknown" — never an error, just a value
+  // that fills in once the background sweep reaches this series.
+  function seriesQuality(state: Backing, target: MediaTarget): string {
+    const fileCount = target.episodeFileCount ?? 0;
+    if (fileCount <= 0) return "Not downloaded";
+    const cached = state.episodeQuality.get(target.remoteId);
+    if (
+      cached &&
+      cached.episodeFileCount === fileCount &&
+      cached.sizeOnDisk === target.sizeOnDisk &&
+      cached.quality.length
+    )
+      return [...new Set(cached.quality)].sort().join(", ");
+    return "Unknown";
+  }
+
+  function withSeriesQuality(
+    state: Backing,
+    item: MediaItem,
+    target: MediaTarget,
+  ): MediaTarget {
+    return item.kind === "series"
+      ? { ...target, quality: seriesQuality(state, target) }
+      : target;
+  }
+
   function libraryItems(state: Backing, value: LibraryBacking): MediaItem[] {
     const records = state.queue.value?.records;
-    if (!records || state.queue.error) return value.items;
+    // Even when download status is unavailable, series still get their cached
+    // episode quality applied; only the live downloading status is skipped.
+    if (!records || state.queue.error)
+      return value.items.map((item) => ({
+        ...item,
+        targets: item.targets.map((target) =>
+          withSeriesQuality(state, item, target),
+        ),
+      }));
     const downloading = new Set(
       records
         .filter(
@@ -302,7 +358,7 @@ function createStore() {
     );
     return value.items.map((item) => {
       const targets = item.targets.map((target) => ({
-        ...target,
+        ...withSeriesQuality(state, item, target),
         instanceName: state.instance.name,
         status: downloading.has(target.remoteId)
           ? ("downloading" as const)
@@ -321,6 +377,161 @@ function createStore() {
     });
   }
 
+  // Series with files whose episode quality is not yet cached (or whose file
+  // stats changed). These are what the background enrichment pass fetches.
+  function pendingQuality(state: Backing): MediaTarget[] {
+    const value = state.library.value;
+    if (!value) return [];
+    const pending: MediaTarget[] = [];
+    for (const item of value.items) {
+      if (item.kind !== "series") continue;
+      const target = item.targets.find(
+        (candidate) => candidate.instanceId === state.instance.id,
+      );
+      if (!target || (target.episodeFileCount ?? 0) <= 0) continue;
+      const cached = state.episodeQuality.get(target.remoteId);
+      if (
+        !cached ||
+        cached.episodeFileCount !== target.episodeFileCount ||
+        cached.sizeOnDisk !== target.sizeOnDisk ||
+        cached.nextAttemptAt <= Date.now()
+      )
+        pending.push(target);
+    }
+    return pending;
+  }
+
+  // Quality updates share one throttle across instances. Each publication is a
+  // full snapshot, so never send one per series/batch. Ordinary media changes
+  // retain their existing low-latency scheduling.
+  function scheduleQuality(entry: Entry) {
+    if (entry.retired || entry.qualityTimer) return;
+    entry.qualityTimer = setTimeout(() => {
+      entry.qualityTimer = undefined;
+      // A pending aggregate will publish its own result. Do not invalidate its
+      // generation and suppress progressive results from other instances.
+      if (entry.pending) scheduleQuality(entry);
+      else schedule(entry);
+    }, 2000);
+    entry.qualityTimer.unref?.();
+  }
+
+  function stopQuality(state: Backing) {
+    clearTimeout(state.qualityRetry);
+    state.qualityRetry = undefined;
+    state.qualityAbort?.abort();
+  }
+
+  function enrichLibrary(state: Backing): void {
+    if (state.instance.kind !== "sonarr" || state.enriching) return;
+    const libraryEntry = entries.get(
+      JSON.stringify(["library"] satisfies RealtimeQueryKey),
+    );
+    if (!libraryEntry || !active(libraryEntry)) return;
+    clearTimeout(state.qualityRetry);
+    state.qualityRetry = undefined;
+    const ids = new Set(
+      state.library.value?.items.flatMap((item) =>
+        item.kind === "series"
+          ? item.targets
+              .filter((target) => (target.episodeFileCount ?? 0) > 0)
+              .map((target) => target.remoteId)
+          : [],
+      ),
+    );
+    for (const id of state.episodeQuality.keys())
+      if (!ids.has(id)) state.episodeQuality.delete(id);
+    const targets = pendingQuality(state);
+    const current = () =>
+      !state.library.retired &&
+      !libraryEntry.retired &&
+      backing.get(state.instance.id) === state;
+    if (!targets.length) {
+      // Refresh stale successes and retry failures only while someone is
+      // subscribed. REST-only reads can restart work on their next visit.
+      if (libraryEntry.listeners.size) {
+        let next = Infinity;
+        for (const value of state.episodeQuality.values())
+          next = Math.min(next, value.nextAttemptAt);
+        if (Number.isFinite(next)) {
+          state.qualityRetry = setTimeout(
+            () => enrichLibrary(state),
+            Math.max(1, next - Date.now()),
+          );
+          state.qualityRetry.unref?.();
+        }
+      }
+      return;
+    }
+    state.enriching = true;
+    const controller = new AbortController();
+    state.qualityAbort = controller;
+    void (async () => {
+      try {
+        let cursor = 0;
+        // Each request has its own timeout. Walk the entire queue once instead
+        // of resetting a whole-sweep deadline and repeatedly starving its tail.
+        await Promise.all(
+          Array.from({ length: Math.min(4, targets.length) }, async () => {
+            while (
+              cursor < targets.length &&
+              !controller.signal.aborted &&
+              current()
+            ) {
+              const target = targets[cursor++];
+              const previous = state.episodeQuality.get(target.remoteId);
+              const attempt: EpisodeQuality = {
+                episodeFileCount: target.episodeFileCount ?? 0,
+                sizeOnDisk: target.sizeOnDisk,
+                quality:
+                  previous &&
+                  previous.episodeFileCount === target.episodeFileCount &&
+                  previous.sizeOnDisk === target.sizeOnDisk
+                    ? previous.quality
+                    : [],
+                nextAttemptAt: Infinity,
+                failures: previous?.failures ?? 0,
+              };
+              state.episodeQuality.set(target.remoteId, attempt);
+              const valid = () =>
+                current() &&
+                !controller.signal.aborted &&
+                state.episodeQuality.get(target.remoteId) === attempt;
+              try {
+                const quality = await seriesEpisodeQuality(
+                  state.instance,
+                  target.remoteId,
+                  controller.signal,
+                );
+                // An event can invalidate this series while the request is in
+                // flight. Its old response must not repopulate the cache.
+                if (!valid()) continue;
+                attempt.quality = [...new Set(quality)].sort();
+                attempt.failures = 0;
+                attempt.nextAttemptAt = Date.now() + 15 * 60_000;
+                scheduleQuality(libraryEntry);
+              } catch {
+                if (!valid()) continue;
+                attempt.failures++;
+                attempt.nextAttemptAt =
+                  Date.now() +
+                  Math.min(
+                    300_000,
+                    30_000 * 2 ** Math.min(attempt.failures - 1, 4),
+                  );
+              }
+            }
+          }),
+        );
+      } finally {
+        state.enriching = false;
+        state.qualityAbort = undefined;
+        // New/invalidated series run next; failures wait for their own backoff.
+        if (current()) enrichLibrary(state);
+      }
+    })();
+  }
+
   async function aggregate(entry: Entry): Promise<Data> {
     const key = entry.key;
     entry.calendarFailure = undefined;
@@ -332,110 +543,163 @@ function createStore() {
       !states.length
     )
       throw new ApiError(404, "Instance not found.");
+    const generation = entry.generation;
+    const completed = new Map<
+      string,
+      { data?: Data; failure?: ServiceError }
+    >();
+    let partialTimer: NodeJS.Timeout | undefined;
+    const publishPartial = () => {
+      partialTimer = undefined;
+      if (
+        entry.retired ||
+        entry.generation !== generation ||
+        completed.size === states.length ||
+        ![...completed.values()].some((result) => result.data)
+      )
+        return;
+      const items = states.flatMap((state) => {
+        const result = completed.get(state.instance.id);
+        if (result)
+          return (result.data as LibraryResponse | undefined)?.items ?? [];
+        return state.library.value
+          ? libraryItems(state, state.library.value)
+          : [];
+      });
+      publish(
+        entry,
+        realtimeSnapshotSchema.parse({
+          queryKey: ["library"],
+          version: version(),
+          data: {
+            items: mergeMedia(items),
+            errors: [...completed.values()].flatMap((result) => [
+              ...((result.data as LibraryResponse | undefined)?.errors ?? []),
+              ...(result.failure ? [result.failure] : []),
+            ]),
+            loadingInstanceIds: states
+              .filter((state) => !completed.has(state.instance.id))
+              .map((state) => state.instance.id),
+          },
+        }),
+      );
+    };
     const results = await Promise.all(
-      states.map(async (state) => {
-        try {
-          switch (key[0]) {
-            case "library": {
-              const value = await libraryFor(state);
-              const errors = [...value.errors];
-              try {
-                await queueFor(state);
-              } catch (error) {
-                if (
-                  !errors.some((entry) =>
-                    entry.message.startsWith("Download status unavailable:"),
+      states.map((state) =>
+        (async () => {
+          try {
+            switch (key[0]) {
+              case "library": {
+                const value = await libraryFor(state);
+                // Kick off (or continue) background episode-quality enrichment;
+                // it fills the cache and republishes without blocking this read.
+                enrichLibrary(state);
+                const errors = [...value.errors];
+                try {
+                  await queueFor(state);
+                } catch (error) {
+                  if (
+                    !errors.some((entry) =>
+                      entry.message.startsWith("Download status unavailable:"),
+                    )
                   )
-                )
-                  errors.push({
-                    instanceId: state.instance.id,
-                    instanceName: state.instance.name,
-                    message: `Download status unavailable: ${errorMessage(error)}`,
-                  });
-              }
-              return {
-                data: { items: libraryItems(state, value), errors } as Data,
-              };
-            }
-            case "queue":
-              return {
-                data: {
-                  items: (await queueFor(state)).items,
-                  errors: [],
-                } as Data,
-              };
-            case "instances": {
-              const summary = await load(state.summary, () =>
-                instanceSummary(state.instance),
-              );
-              const commands = await commandsFor(state);
-              return {
-                data: {
-                  instances: [{ ...summary, commands }],
-                } as Data,
-              };
-            }
-            case "calendar": {
-              const value = await load(calendarCell(state, key), async () => {
-                const result = await instanceCalendar(
-                  state.instance,
-                  key[1],
-                  key[2],
-                );
-                if (result.errors.length)
-                  throw new ApiError(502, result.errors[0].message);
-                return result;
-              });
-              return { data: { ...value, instanceCount: 1 } as Data };
-            }
-            case "episodes":
-              return {
-                data: (await load(episodeCell(state, key[2]), () =>
-                  instanceEpisodes(
-                    state.instance,
-                    key[2],
-                    async () => (await queueFor(state)).records,
-                  ),
-                )) as Data,
-              };
-            case "instance-options":
-              return {
-                data: (await load(state.options, () =>
-                  instanceOptions(state.instance),
-                )) as Data,
-              };
-          }
-        } catch (error) {
-          if (key[0] === "episodes" || key[0] === "instance-options")
-            throw error;
-          const failure: ServiceError = {
-            instanceId: state.instance.id,
-            instanceName: state.instance.name,
-            message: errorMessage(error),
-          };
-          let data: Data | undefined;
-          switch (key[0]) {
-            case "library":
-              if (state.library.value)
-                data = {
-                  items: libraryItems(state, state.library.value),
-                  errors: [],
+                    errors.push({
+                      instanceId: state.instance.id,
+                      instanceName: state.instance.name,
+                      message: `Download status unavailable: ${errorMessage(error)}`,
+                    });
+                }
+                return {
+                  data: { items: libraryItems(state, value), errors } as Data,
                 };
-              break;
-            case "queue":
-              if (state.queue.value)
-                data = { items: state.queue.value.items, errors: [] };
-              break;
-            case "calendar": {
-              const value = calendarCell(state, key).value;
-              if (value) data = { ...value, instanceCount: 1 };
-              break;
+              }
+              case "queue":
+                return {
+                  data: {
+                    items: (await queueFor(state)).items,
+                    errors: [],
+                  } as Data,
+                };
+              case "instances": {
+                const summary = await load(state.summary, () =>
+                  instanceSummary(state.instance),
+                );
+                const commands = await commandsFor(state);
+                return {
+                  data: {
+                    instances: [{ ...summary, commands }],
+                  } as Data,
+                };
+              }
+              case "calendar": {
+                const value = await load(calendarCell(state, key), async () => {
+                  const result = await instanceCalendar(
+                    state.instance,
+                    key[1],
+                    key[2],
+                  );
+                  if (result.errors.length)
+                    throw new ApiError(502, result.errors[0].message);
+                  return result;
+                });
+                return { data: { ...value, instanceCount: 1 } as Data };
+              }
+              case "episodes":
+                return {
+                  data: (await load(episodeCell(state, key[2]), () =>
+                    instanceEpisodes(
+                      state.instance,
+                      key[2],
+                      async () => (await queueFor(state)).records,
+                    ),
+                  )) as Data,
+                };
+              case "instance-options":
+                return {
+                  data: (await load(state.options, () =>
+                    instanceOptions(state.instance),
+                  )) as Data,
+                };
             }
+          } catch (error) {
+            if (key[0] === "episodes" || key[0] === "instance-options")
+              throw error;
+            const failure: ServiceError = {
+              instanceId: state.instance.id,
+              instanceName: state.instance.name,
+              message: errorMessage(error),
+            };
+            let data: Data | undefined;
+            switch (key[0]) {
+              case "library":
+                if (state.library.value)
+                  data = {
+                    items: libraryItems(state, state.library.value),
+                    errors: [],
+                  };
+                break;
+              case "queue":
+                if (state.queue.value)
+                  data = { items: state.queue.value.items, errors: [] };
+                break;
+              case "calendar": {
+                const value = calendarCell(state, key).value;
+                if (value) data = { ...value, instanceCount: 1 };
+                break;
+              }
+            }
+            return { data, failure };
           }
-          return { data, failure };
-        }
-      }),
-    );
+        })().then((result) => {
+          completed.set(state.instance.id, result);
+          if (key[0] === "library" && !partialTimer && entry.listeners.size) {
+            partialTimer = setTimeout(publishPartial, 100);
+            partialTimer.unref?.();
+          }
+          return result;
+        }),
+      ),
+    ).finally(() => clearTimeout(partialTimer));
     const failures = results.flatMap((result) =>
       result.failure ? [result.failure] : [],
     );
@@ -555,6 +819,7 @@ function createStore() {
         relevant(entry, id),
       );
       if (!interested.length) {
+        stopQuality(state);
         for (const cell of allSlots(state)) cell.retired = true;
         backing.delete(id);
         continue;
@@ -581,6 +846,7 @@ function createStore() {
       if (active(entry)) return;
       entry.retired = true;
       clearTimeout(entry.timer);
+      clearTimeout(entry.qualityTimer);
       entries.delete(JSON.stringify(entry.key));
       prune();
     }, 30_000);
@@ -599,6 +865,7 @@ function createStore() {
           throw new ApiError(503, "Too many active realtime queries.");
         unused.retired = true;
         clearTimeout(unused.timer);
+        clearTimeout(unused.qualityTimer);
         clearTimeout(unused.expiry);
         entries.delete(JSON.stringify(unused.key));
         prune();
@@ -631,6 +898,7 @@ function createStore() {
         next.url !== state.instance.url ||
         next.apiKey !== state.instance.apiKey
       ) {
+        stopQuality(state);
         for (const cell of allSlots(state)) cell.retired = true;
         backing.delete(id);
         changed = true;
@@ -684,6 +952,8 @@ function createStore() {
             options: slot(),
             calendars: new Map(),
             episodes: new Map(),
+            episodeQuality: new Map(),
+            enriching: false,
           });
           changed = true;
         }
@@ -784,6 +1054,8 @@ function createStore() {
         entry.listeners.delete(forward);
         if (!entry.listeners.size) {
           clearTimeout(entry.timer);
+          clearTimeout(entry.qualityTimer);
+          entry.qualityTimer = undefined;
           entry.timer = undefined;
         }
         expire(entry);
@@ -814,6 +1086,16 @@ function createStore() {
       state.instance.kind !== instance.kind
     )
       return;
+    // Episode-file metadata can change without changing aggregate file stats.
+    // Deleting the entry also invalidates the identity of an in-flight fetch.
+    const envelope = row(message);
+    const name = str(envelope.name).toLowerCase();
+    if (state.instance.kind === "sonarr" && name === "episodefile") {
+      const resource = row(row(envelope.body).resource ?? envelope.resource);
+      const seriesId = num(resource.seriesId, remoteId ?? 0);
+      if (seriesId > 0) state.episodeQuality.delete(seriesId);
+      else state.episodeQuality.clear();
+    }
     const direct = topics.includes("library") && applyMedia(state, message);
     const command = topics.includes("commands") && applyCommand(state, message);
     const episode = topics.includes("episodes") && applyEpisode(state, message);
@@ -852,6 +1134,9 @@ function createStore() {
       )
         schedule(entry);
     }
+    // A direct media apply can add a series or change its file stats; refill any
+    // episode quality the change left pending, without a library reload.
+    if (direct) enrichLibrary(state);
   }
 
   return { read, subscribe, update, reconcile, refreshAll };
@@ -1258,13 +1543,9 @@ function applyMedia(state: Backing, message: unknown): boolean {
       statistics.sizeOnDisk === undefined
     )
       return false;
-    if (
-      statistics.episodeFileCount > 0 &&
-      (!enrichment.episodeQualities.has(parsed.data.id) ||
-        previous?.targets[0].episodeFileCount !== statistics.episodeFileCount ||
-        previous.targets[0].sizeOnDisk !== statistics.sizeOnDisk)
-    )
-      return false;
+    // Episode quality is no longer gated here: the item is applied now with its
+    // counts, and libraryItems shows "Unknown" until the background sweep (kicked
+    // off after this apply) refetches the changed series' files from cache.
   }
   if (
     !previous &&
@@ -1283,7 +1564,6 @@ function applyMedia(state: Backing, message: unknown): boolean {
     state.instance,
     enrichment.profiles,
     enrichment.downloading,
-    enrichment.episodeQualities.get(parsed.data.id),
   );
   if (previous) {
     if (
