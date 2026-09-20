@@ -210,7 +210,11 @@ function LibrarySection({
     return () => cancelAnimationFrame(frame);
   }, [snapshotLoaded, library.data, isReady]);
 
-  const hasCompleteData = !!library.data && library.data.errors.length === 0;
+  const loadingInstances = library.data?.loadingInstanceIds?.length ?? 0;
+  const hasCompleteData =
+    !!library.data &&
+    library.data.errors.length === 0 &&
+    loadingInstances === 0;
 
   function addMedia() {
     add();
@@ -311,6 +315,8 @@ function LibrarySection({
               >
                 {library.isPending ? (
                   <LibraryLoadingStatus />
+                ) : loadingInstances > 0 ? (
+                  `Loading ${loadingInstances} more ${loadingInstances === 1 ? "instance" : "instances"}...`
                 ) : library.isFetching ? (
                   "Syncing library..."
                 ) : library.isError ? (
@@ -389,6 +395,8 @@ function LibrarySection({
         ) : (
           <MediaList items={filtered} />
         )
+      ) : loadingInstances > 0 ? (
+        <output>More library items are still loading.</output>
       ) : (
         <div
           className={css({
