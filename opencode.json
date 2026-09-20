@@ -3,11 +3,7 @@
     "servers": {
       "pandacss": {
         "type": "local",
-        "command": [
-          "bun",
-          "x",
-          "@pandacss/mcp@latest"
-        ]
+        "command": ["bun", "x", "@pandacss/mcp@latest"]
       }
     }
   }

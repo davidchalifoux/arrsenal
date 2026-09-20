@@ -173,7 +173,11 @@ export const realtimeSnapshotSchema = z.union([
   z.object({
     queryKey: z.tuple([z.literal("library")]),
     version: realtimeVersionSchema,
-    data: z.object({ items: z.array(media), errors }),
+    data: z.object({
+      items: z.array(media),
+      errors,
+      loadingInstanceIds: z.array(instanceId).max(32).optional(),
+    }),
   }),
   z.object({
     queryKey: z.tuple([z.literal("queue")]),

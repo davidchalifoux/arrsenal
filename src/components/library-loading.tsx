@@ -25,10 +25,7 @@ export function LibraryLoading({ children }: { children: ReactNode }) {
   const [finished, setFinished] = useState(false);
   const [slow, setSlow] = useState(false);
   const settled =
-    library.isError ||
-    instances.isError ||
-    queue.isError ||
-    (!library.isPending && !instances.isPending && !queue.isPending);
+    library.isError || instances.isError || queue.isError || !library.isPending;
   // Startup is a one-way transition, never replayed by polling or navigation.
   if (!finished && settled) setFinished(true);
   useEffect(() => {

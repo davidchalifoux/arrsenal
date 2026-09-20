@@ -49,6 +49,8 @@ const {
   mergeEpisodeResource,
   mergeEpisodeFile,
   parseEpisodeFileResource,
+  subscribeSnapshots,
+  updateSnapshots,
 } = await import("../src/lib/server/realtime-snapshots.ts");
 
 const origin = "http://localhost:3000";
@@ -249,6 +251,8 @@ async function setup(definitions = {}) {
         }
         return new Response(null, { status: 200 });
       }
+      const custom = await node.respond?.(endpoint, req, url);
+      if (custom) return custom;
       if (endpoint === "episodefile")
         return send(
           node.files ?? [
@@ -3331,5 +3335,244 @@ test("image proxy is base-aware, raster-only, key-safe, and refuses external or 
       config,
     ),
     "https://image.tmdb.org/t/p/w500/poster.jpg",
+  );
+});
+
+async function eventually(check, timeoutMs = 5000) {
+  const deadline = performance.now() + timeoutMs;
+  while (!check()) {
+    if (performance.now() > deadline)
+      throw new Error("Condition did not converge");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+function watchLibrary() {
+  const snapshots = [];
+  const unsubscribe = subscribeSnapshots((snapshot) => {
+    if (snapshot.queryKey[0] === "library" && "data" in snapshot)
+      snapshots.push(snapshot);
+  });
+  onTestFinished(unsubscribe);
+  return snapshots;
+}
+
+test("background quality throttles full-library broadcasts for 1900 series", async () => {
+  const env = await setup({
+    sonarr: {
+      kind: "sonarr",
+      media: Array.from({ length: 1900 }, (_, i) => ({
+        ...series,
+        id: i + 1,
+        tvdbId: i + 1,
+      })),
+      respond: async (endpoint) => {
+        if (endpoint === "episodefile")
+          await new Promise((resolve) => setTimeout(resolve, 5));
+      },
+    },
+  });
+  await env.connect("sonarr");
+  const snapshots = watchLibrary();
+  await eventually(
+    () =>
+      snapshots.at(-1)?.data.items.length === 1900 &&
+      snapshots
+        .at(-1)
+        .data.items.every((item) => item.targets[0].quality !== "Unknown"),
+    15000,
+  );
+  expect(snapshots.length).toBeLessThanOrEqual(6);
+  expect(
+    snapshots.reduce(
+      (bytes, snapshot) => bytes + Buffer.byteLength(JSON.stringify(snapshot)),
+      0,
+    ),
+  ).toBeLessThan(6 * 1024 * 1024);
+  expect(
+    env.calls.filter((call) => call.endpoint === "episodefile"),
+  ).toHaveLength(1900);
+  await libraryRoute.GET();
+  expect(
+    env.calls.filter((call) => call.endpoint === "episodefile"),
+  ).toHaveLength(1900);
+}, 20000);
+
+test("background quality reaches healthy series after timeouts and backs off failed requests", async () => {
+  const env = await setup({
+    sonarr: {
+      kind: "sonarr",
+      media: Array.from({ length: 30 }, (_, i) => ({
+        ...series,
+        id: i + 1,
+        tvdbId: i + 1,
+      })),
+      respond: async (endpoint, req, url) => {
+        if (
+          endpoint !== "episodefile" ||
+          Number(url.searchParams.get("seriesId")) > 6
+        )
+          return;
+        return new Promise((resolve) => {
+          const abort = () => resolve(new Response(null, { status: 204 }));
+          if (req.signal.aborted) abort();
+          else req.signal.addEventListener("abort", abort, { once: true });
+        });
+      },
+    },
+  });
+  await env.connect("sonarr");
+  const timeout = AbortSignal.timeout.bind(AbortSignal);
+  const timeoutSpy = spyOn(AbortSignal, "timeout").mockImplementation((ms) =>
+    timeout(ms === 8000 ? 30 : ms === 120000 ? 15 : ms),
+  );
+  onTestFinished(() => timeoutSpy.mockRestore());
+  const snapshots = watchLibrary();
+  await eventually(
+    () =>
+      snapshots
+        .at(-1)
+        ?.data.items.filter((item) => item.targets[0].quality !== "Unknown")
+        .length === 24,
+  );
+  expect(
+    new Set(
+      env.calls
+        .filter((call) => call.endpoint === "episodefile")
+        .map((call) => call.query.seriesId),
+    ).size,
+  ).toBe(30);
+  const before = env.calls.filter(
+    (call) => call.endpoint === "episodefile",
+  ).length;
+  await libraryRoute.GET();
+  expect(
+    env.calls.filter((call) => call.endpoint === "episodefile"),
+  ).toHaveLength(before);
+  // Recovery is possible without changing the series' file statistics.
+  env.nodes.sonarr.respond = undefined;
+  const future = Date.now() + 31000;
+  const now = spyOn(Date, "now").mockReturnValue(future);
+  onTestFinished(() => now.mockRestore());
+  await libraryRoute.GET();
+  await eventually(
+    () =>
+      env.calls.filter((call) => call.endpoint === "episodefile").length ===
+      before + 6,
+  );
+});
+
+test("episode-file notifications invalidate same-stat quality and ignore obsolete in-flight responses", async () => {
+  const first = Promise.withResolvers();
+  let requested = false;
+  const env = await setup({
+    sonarr: {
+      kind: "sonarr",
+      media: [series],
+      respond: async (endpoint) => {
+        if (endpoint === "episodefile" && !requested) {
+          requested = true;
+          await first.promise;
+          return Response.json([{ quality: quality("WEBDL-720p") }]);
+        }
+      },
+    },
+  });
+  await env.connect("sonarr");
+  onTestFinished(() => first.resolve());
+  const snapshots = watchLibrary();
+  await eventually(() => requested);
+  const instance = (await readInstances())[0];
+  env.nodes.sonarr.files = [{ quality: quality("WEBDL-2160p") }];
+  const notify = () =>
+    updateSnapshots(
+      instance,
+      {
+        name: "episodefile",
+        body: {
+          action: "updated",
+          resource: { id: 9, seriesId: 22, quality: quality("WEBDL-2160p") },
+        },
+      },
+      ["library", "episodes", "queue"],
+      22,
+    );
+  notify();
+  first.resolve();
+  await eventually(
+    () => snapshots.at(-1)?.data.items[0]?.targets[0].quality === "WEBDL-2160p",
+  );
+  env.nodes.sonarr.files = [{ quality: quality("Bluray-1080p") }];
+  notify();
+  await eventually(
+    () =>
+      snapshots.at(-1)?.data.items[0]?.targets[0].quality === "Bluray-1080p",
+  );
+  expect(
+    env.calls.filter((call) => call.endpoint === "episodefile"),
+  ).toHaveLength(3);
+});
+
+test("quality cache expires unchanged series and refetches changed file statistics", async () => {
+  const env = await setup({ sonarr: { kind: "sonarr", media: [series] } });
+  await env.connect("sonarr");
+  const snapshots = watchLibrary();
+  await eventually(
+    () =>
+      snapshots.at(-1)?.data.items[0]?.targets[0].quality ===
+      "Bluray-1080p, WEBDL-1080p",
+  );
+  env.nodes.sonarr.files = [{ quality: quality("WEBDL-2160p") }];
+  const future = Date.now() + 16 * 60000;
+  const now = spyOn(Date, "now").mockReturnValue(future);
+  onTestFinished(() => now.mockRestore());
+  await libraryRoute.GET();
+  await eventually(
+    () => snapshots.at(-1)?.data.items[0]?.targets[0].quality === "WEBDL-2160p",
+  );
+  now.mockRestore();
+  env.nodes.sonarr.files = [{ quality: quality("WEBDL-720p") }];
+  env.nodes.sonarr.media = [
+    { ...series, statistics: { ...series.statistics, sizeOnDisk: 7000 } },
+  ];
+  await libraryRoute.GET();
+  await eventually(
+    () => snapshots.at(-1)?.data.items[0]?.targets[0].quality === "WEBDL-720p",
+  );
+  expect(
+    env.calls.filter((call) => call.endpoint === "episodefile"),
+  ).toHaveLength(3);
+}, 10000);
+
+test("library publishes healthy instances before a slow list finishes", async () => {
+  const slow = Promise.withResolvers();
+  onTestFinished(() => slow.resolve());
+  const env = await setup({
+    fast: { media: [movie] },
+    slow: {
+      kind: "sonarr",
+      media: [series],
+      respond: async (endpoint) => {
+        if (endpoint === "series") await slow.promise;
+      },
+    },
+  });
+  await env.connect("fast");
+  const instance = await env.connect("slow");
+  const snapshots = watchLibrary();
+  await eventually(() =>
+    snapshots.some((snapshot) =>
+      snapshot.data.loadingInstanceIds?.includes(instance.id),
+    ),
+  );
+  const partial = snapshots.at(-1).data;
+  expect(partial.items).toHaveLength(1);
+  expect(partial.items[0].kind).toBe("movie");
+  expect(partial.errors).toEqual([]);
+  slow.resolve();
+  await eventually(
+    () =>
+      snapshots.at(-1)?.data.items.length === 2 &&
+      !snapshots.at(-1)?.data.loadingInstanceIds?.length,
   );
 });

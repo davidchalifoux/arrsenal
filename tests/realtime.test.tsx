@@ -894,3 +894,44 @@ it("reports unsupported EventSource without starting a stream", () => {
   expect(result.current.connection).toBe("disconnected");
   expect(Stream.instances).toEqual([]);
 });
+
+it("applies partial library snapshots and clears the loading marker on completion", async () => {
+  const { client, wrapper } = setup();
+  client.setQueryData<LibraryResponse>(["library"], { items: [], errors: [] });
+  const view = renderHook(
+    () => {
+      useRealtime();
+      return useLibrary();
+    },
+    { wrapper },
+  );
+  await tick();
+  act(() =>
+    latestStream().snapshot(
+      ["library"],
+      {
+        items: [movie],
+        errors: [],
+        loadingInstanceIds: ["slow"],
+      },
+      1,
+    ),
+  );
+  await tick();
+  expect(view.result.current.data?.items).toHaveLength(1);
+  expect(view.result.current.data?.loadingInstanceIds).toEqual(["slow"]);
+  act(() =>
+    latestStream().snapshot(
+      ["library"],
+      {
+        items: [movie, { ...movie, id: "movie:2" }],
+        errors: [],
+      },
+      2,
+    ),
+  );
+  await tick();
+  expect(view.result.current.data?.items).toHaveLength(2);
+  expect(view.result.current.data?.loadingInstanceIds).toBeUndefined();
+  expect(globalThis.fetch).not.toHaveBeenCalled();
+});

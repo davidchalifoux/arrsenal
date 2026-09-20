@@ -15,13 +15,13 @@ import {
   waitFor,
 } from "@testing-library/react";
 
-import type { MediaItem } from "@/lib/types";
+import type { LibraryResponse, MediaItem } from "@/lib/types";
 
 const mocks = {
   add: mock(),
   replace: mock(),
   ready: true,
-  data: { items: [] as MediaItem[], errors: [] },
+  data: { items: [] as MediaItem[], errors: [] } as LibraryResponse,
   pending: false,
 };
 mock.module("next/navigation", () => ({
@@ -189,4 +189,15 @@ describe("LibraryBrowser", () => {
         .getAttribute("aria-pressed"),
     ).toBe("true");
   });
+});
+
+it("labels partial startup data and does not claim an empty or complete library", async () => {
+  mocks.data = { items: [], errors: [], loadingInstanceIds: ["slow"] };
+  render(<LibraryBrowser category="library" />);
+  expect(screen.getByText("Loading 1 more instance...")).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toBe(
+    "More library items are still loading.",
+  );
+  expect(screen.queryByText("Library up to date")).toBeNull();
+  expect(screen.queryByText("The beginning of a great collection.")).toBeNull();
 });

@@ -61,6 +61,7 @@ export interface ServiceError {
 }
 
 export interface LibraryResponse {
+  loadingInstanceIds?: string[];
   items: MediaItem[];
   errors: ServiceError[];
 }
