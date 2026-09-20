@@ -58,6 +58,9 @@ type Data =
   | EpisodesResponse
   | InstanceOptions
   | { instances: InstanceSummary[] };
+// One instance's contribution to an aggregate: its data (when available) and/or
+// a failure. Both may be present when a fetch fails but last-good data survives.
+type StateResult = { data?: Data; failure?: ServiceError };
 type Listener = (snapshot: RealtimeSnapshot) => void;
 type Slot<T> = {
   generation: number;
@@ -321,7 +324,10 @@ function createStore() {
     });
   }
 
-  async function aggregate(entry: Entry): Promise<Data> {
+  async function aggregate(
+    entry: Entry,
+    onProgress?: (data: LibraryResponse) => void,
+  ): Promise<Data> {
     const key = entry.key;
     entry.calendarFailure = undefined;
     const states = [...backing.values()].filter((state) =>
@@ -332,8 +338,28 @@ function createStore() {
       !states.length
     )
       throw new ApiError(404, "Instance not found.");
+    // Progressive library: as each instance resolves, publish the library merged
+    // so far so the grid renders ready instances instead of blocking on the
+    // slowest. `collected` accumulates per-instance outcomes in resolve order,
+    // and the final (complete) snapshot is published by refresh as usual.
+    const collected: StateResult[] = [];
+    const emitPartial = () => {
+      if (!onProgress || collected.length >= states.length) return;
+      const values = collected.flatMap((part) =>
+        part.data ? [part.data as LibraryResponse] : [],
+      );
+      const failures = collected.flatMap((part) =>
+        part.failure ? [part.failure] : [],
+      );
+      const items = mergeMedia(values.flatMap((value) => value.items));
+      const errors = [
+        ...values.flatMap((value) => value.errors),
+        ...failures,
+      ];
+      if (items.length || errors.length) onProgress({ items, errors });
+    };
     const results = await Promise.all(
-      states.map(async (state) => {
+      states.map(async (state): Promise<StateResult> => {
         try {
           switch (key[0]) {
             case "library": {
@@ -353,9 +379,14 @@ function createStore() {
                     message: `Download status unavailable: ${errorMessage(error)}`,
                   });
               }
-              return {
+              const outcome = {
                 data: { items: libraryItems(state, value), errors } as Data,
               };
+              if (onProgress) {
+                collected.push(outcome);
+                emitPartial();
+              }
+              return outcome;
             }
             case "queue":
               return {
@@ -432,7 +463,12 @@ function createStore() {
               break;
             }
           }
-          return { data, failure };
+          const outcome = { data, failure };
+          if (key[0] === "library" && onProgress) {
+            collected.push(outcome);
+            emitPartial();
+          }
+          return outcome;
         }
       }),
     );
@@ -506,7 +542,23 @@ function createStore() {
         const generation = entry.generation;
         let data: Data;
         try {
-          data = await aggregate(entry);
+          data = await aggregate(
+            entry,
+            // Only the library streams partials; other queries publish once.
+            entry.key[0] === "library"
+              ? (partial) => {
+                  if (entry.retired || entry.generation !== generation) return;
+                  publish(
+                    entry,
+                    realtimeSnapshotSchema.parse({
+                      queryKey: entry.key,
+                      version: version(),
+                      data: partial,
+                    }),
+                  );
+                }
+              : undefined,
+          );
         } catch (error) {
           if (entry.generation !== generation) continue;
           entry.failure =
