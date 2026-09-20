@@ -1395,12 +1395,12 @@ test("library primary success remains successful with only auxiliary warnings", 
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.items).toHaveLength(media.length);
+    // Episode quality is a background enhancement, not a primary result: a failed
+    // episodefile sweep is never surfaced as an error, only quality profiles and
+    // download status are. The series still loads with "Unknown" episode quality.
     expect(body.errors.map((error) => error.message)).toEqual([
       expect.stringMatching(/^Quality profiles unavailable:/),
       expect.stringMatching(/^Download status unavailable:/),
-      ...(media.length
-        ? [expect.stringMatching(/^Some episode qualities are unknown:/)]
-        : []),
     ]);
     if (media.length)
       expect(body.items[0].targets[0]).toMatchObject({
@@ -2590,11 +2590,29 @@ test("library merges by provider identity, preserves per-target quality/counts, 
   assert.equal(shogun.targets[0].episodeCount, 10);
   assert.equal(shogun.targets[0].episodeFileCount, 6);
   assert.equal(shogun.targets[0].sizeOnDisk, 6000);
-  assert.equal(shogun.targets[0].quality, "Bluray-1080p, WEBDL-1080p");
+  // Episode quality is not fetched on the primary read; it starts "Unknown".
+  assert.equal(shogun.targets[0].quality, "Unknown");
   assert.equal(shogun.status, "partial");
   assert.match(shogun.poster, /^\/api\/image\?/);
   assert.equal(body.errors.length, 1);
   assert.equal(body.errors[0].instanceName, "offline");
+  // Background enrichment fetches per-series episode files and fills the label
+  // without a reload; poll a follow-up read until it converges.
+  let enriched;
+  for (let attempt = 0; attempt < 100 && !enriched; attempt++) {
+    const next = await (await libraryRoute.GET()).json();
+    const series = next.items.find((item) => item.kind === "series");
+    if (series?.targets[0].quality === "Bluray-1080p, WEBDL-1080p")
+      enriched = series;
+    else await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(enriched?.targets[0].quality, "Bluray-1080p, WEBDL-1080p");
+  // The episode quality arrives from a per-series episodefile request.
+  assert.ok(
+    env.calls.some(
+      (call) => call.node === "sonarr" && call.endpoint === "episodefile",
+    ),
+  );
 });
 
 test("normalization scopes fallback identities and does not conflate movie and series IDs", () => {

@@ -61,9 +61,27 @@ function requireKind(instance: InstanceConfig, kind: MediaKind): void {
 export type MediaEnrichment = {
   profiles: InstanceOptions["profiles"];
   downloading: Set<number>;
-  episodeQualities: Map<number, string[]>;
   complete: boolean;
 };
+
+// Sonarr exposes real per-episode quality only through per-series episodefile
+// calls, an unavoidable N+1 (there is no bulk endpoint). The snapshot store
+// fills these in the background and caches them per series, so the library
+// itself never blocks on the sweep and an unreachable series just keeps its
+// "Unknown" labels until a later pass. Returns the distinct file qualities.
+export async function seriesEpisodeQuality(
+  instance: InstanceConfig,
+  seriesId: number,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const files = rows(
+    await arrRequest(instance, "episodefile", {
+      signal,
+      query: { seriesId },
+    }),
+  );
+  return files.map((file) => qualityName(file.quality));
+}
 
 export type MediaDependencies = {
   queue?: () => Promise<Row[]>;
@@ -76,10 +94,14 @@ export async function instanceMedia(
   dependencies: MediaDependencies = {},
 ): Promise<LibraryResponse & { primarySucceeded: boolean }> {
   const errors: ServiceError[] = [];
-  const signal = AbortSignal.timeout(20000);
+  const signal = AbortSignal.timeout(30000);
   const endpoint = instance.kind === "radarr" ? "movie" : "series";
   const [mediaResult, profileResult, queueResult] = await Promise.allSettled([
     arrRequest(instance, term === undefined ? endpoint : `${endpoint}/lookup`, {
+      // A full library list for a large instance takes well beyond arrRequest's
+      // 8s default; give it the whole instance budget so the list is never
+      // dropped (which would drop every item, not just an optional label).
+      timeoutMs: 30000,
       signal,
       query: term === undefined ? undefined : { term },
     }).then((value) => {
@@ -142,54 +164,13 @@ export async function instanceMedia(
       .filter((id) => id > 0),
   );
   const media = mediaResult.value;
-  const episodeQualities = new Map<number, string[]>();
-  if (instance.kind === "sonarr") {
-    const series = media.filter(
-      (item) =>
-        num(item.id) > 0 && num(row(item.statistics).episodeFileCount) > 0,
-    );
-    let cursor = 0;
-    let qualityError: unknown;
-    // Sonarr exposes actual episode quality only via per-series episodefile calls.
-    // Bound concurrency and the entire instance budget, keeping counts if these fail.
-    await Promise.all(
-      Array.from({ length: Math.min(4, series.length) }, async () => {
-        while (cursor < series.length && !signal.aborted) {
-          const item = series[cursor++];
-          try {
-            const files = rows(
-              await arrRequest(instance, "episodefile", {
-                signal,
-                query: { seriesId: num(item.id) },
-              }),
-            );
-            episodeQualities.set(
-              num(item.id),
-              files.map((file) => qualityName(file.quality)),
-            );
-          } catch (error) {
-            qualityError = error;
-          }
-        }
-      }),
-    );
-    if (signal.aborted && cursor < series.length)
-      qualityError = new ApiError(504, "Instance request timed out.");
-    if (qualityError)
-      errors.push(
-        serviceError(
-          instance,
-          new ApiError(
-            502,
-            `Some episode qualities are unknown: ${errorMessage(qualityError)}`,
-          ),
-        ),
-      );
-  }
+  // Episode-level quality (Sonarr) is not fetched here: it is a per-series N+1
+  // that would block the whole library and time out on large instances. The
+  // snapshot store fills and caches it in the background instead; series items
+  // start with "Unknown" episode quality and are enriched without a reload.
   dependencies.enrichment?.({
     profiles: qualityProfiles,
     downloading,
-    episodeQualities,
     complete:
       profileResult.status === "fulfilled" &&
       queueResult.status === "fulfilled",
@@ -197,13 +178,7 @@ export async function instanceMedia(
   return {
     primarySucceeded: true,
     items: media.map((item) =>
-      normalizeMedia(
-        item,
-        instance,
-        qualityProfiles,
-        downloading,
-        episodeQualities.get(num(item.id)),
-      ),
+      normalizeMedia(item, instance, qualityProfiles, downloading),
     ),
     errors,
   };

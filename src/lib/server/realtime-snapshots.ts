@@ -23,6 +23,7 @@ import type {
   InstanceSummary,
   LibraryResponse,
   MediaItem,
+  MediaTarget,
   QueueItem,
   QueueResponse,
   ServiceError,
@@ -49,7 +50,11 @@ import {
   normalizeQueue,
   qualityName,
 } from "./media";
-import { instanceMedia, type MediaEnrichment } from "./services";
+import {
+  instanceMedia,
+  type MediaEnrichment,
+  seriesEpisodeQuality,
+} from "./services";
 
 type Data =
   | LibraryResponse
@@ -70,6 +75,14 @@ type Slot<T> = {
 type LibraryBacking = LibraryResponse & { enrichment?: MediaEnrichment };
 type QueueBacking = { items: QueueItem[]; records: Row[] };
 type CalendarBacking = Pick<CalendarResponse, "items" | "errors">;
+// Per-series episode quality, cached and filled in the background. Keyed by the
+// remote series id and validated against (episodeFileCount, sizeOnDisk) so a
+// changed series is refetched while unchanged ones are reused across refreshes.
+type EpisodeQuality = {
+  episodeFileCount: number;
+  sizeOnDisk: number;
+  quality: string[];
+};
 type Backing = {
   instance: InstanceConfig;
   library: Slot<LibraryBacking>;
@@ -79,6 +92,8 @@ type Backing = {
   options: Slot<InstanceOptions>;
   calendars: Map<string, Slot<CalendarBacking>>;
   episodes: Map<number, Slot<EpisodesResponse>>;
+  episodeQuality: Map<number, EpisodeQuality>;
+  enriching: boolean;
 };
 type Entry = {
   key: RealtimeQueryKey;
@@ -285,9 +300,45 @@ function createStore() {
     }
   }
 
+  // A series' episode quality comes from the background-filled cache, keyed by
+  // (episodeFileCount, sizeOnDisk) so stale entries are ignored. Until the cache
+  // holds a matching entry the label is "Unknown" — never an error, just a value
+  // that fills in once the background sweep reaches this series.
+  function seriesQuality(state: Backing, target: MediaTarget): string {
+    const fileCount = target.episodeFileCount ?? 0;
+    if (fileCount <= 0) return "Not downloaded";
+    const cached = state.episodeQuality.get(target.remoteId);
+    if (
+      cached &&
+      cached.episodeFileCount === fileCount &&
+      cached.sizeOnDisk === target.sizeOnDisk &&
+      cached.quality.length
+    )
+      return [...new Set(cached.quality)].sort().join(", ");
+    return "Unknown";
+  }
+
+  function withSeriesQuality(
+    state: Backing,
+    item: MediaItem,
+    target: MediaTarget,
+  ): MediaTarget {
+    return item.kind === "series"
+      ? { ...target, quality: seriesQuality(state, target) }
+      : target;
+  }
+
   function libraryItems(state: Backing, value: LibraryBacking): MediaItem[] {
     const records = state.queue.value?.records;
-    if (!records || state.queue.error) return value.items;
+    // Even when download status is unavailable, series still get their cached
+    // episode quality applied; only the live downloading status is skipped.
+    if (!records || state.queue.error)
+      return value.items.map((item) => ({
+        ...item,
+        targets: item.targets.map((target) =>
+          withSeriesQuality(state, item, target),
+        ),
+      }));
     const downloading = new Set(
       records
         .filter(
@@ -302,7 +353,7 @@ function createStore() {
     );
     return value.items.map((item) => {
       const targets = item.targets.map((target) => ({
-        ...target,
+        ...withSeriesQuality(state, item, target),
         instanceName: state.instance.name,
         status: downloading.has(target.remoteId)
           ? ("downloading" as const)
@@ -319,6 +370,91 @@ function createStore() {
       }));
       return { ...item, targets, status: combinedStatus(targets) };
     });
+  }
+
+  // Series with files whose episode quality is not yet cached (or whose file
+  // stats changed). These are what the background enrichment pass fetches.
+  function pendingQuality(state: Backing): MediaTarget[] {
+    const value = state.library.value;
+    if (!value) return [];
+    const pending: MediaTarget[] = [];
+    for (const item of value.items) {
+      if (item.kind !== "series") continue;
+      const target = item.targets.find(
+        (candidate) => candidate.instanceId === state.instance.id,
+      );
+      if (!target || (target.episodeFileCount ?? 0) <= 0) continue;
+      const cached = state.episodeQuality.get(target.remoteId);
+      if (
+        !cached ||
+        cached.episodeFileCount !== target.episodeFileCount ||
+        cached.sizeOnDisk !== target.sizeOnDisk
+      )
+        pending.push(target);
+    }
+    return pending;
+  }
+
+  // Fills episode quality for a Sonarr instance in the background, one series at
+  // a time, then republishes the library so subscribers receive the labels with
+  // no reload. It never blocks a library read and never surfaces an error: an
+  // unreachable series simply keeps "Unknown" until a later change refetches it.
+  function enrichLibrary(state: Backing): void {
+    if (state.instance.kind !== "sonarr" || state.enriching) return;
+    const libraryEntry = entries.get(
+      JSON.stringify(["library"] satisfies RealtimeQueryKey),
+    );
+    if (!libraryEntry || !active(libraryEntry)) return;
+    const targets = pendingQuality(state);
+    if (!targets.length) return;
+    state.enriching = true;
+    const current = () =>
+      !state.library.retired &&
+      !libraryEntry.retired &&
+      backing.get(state.instance.id) === state;
+    void (async () => {
+      let filled = 0;
+      try {
+        // A generous background budget; a slow sweep never blocks anything.
+        const signal = AbortSignal.timeout(120_000);
+        let cursor = 0;
+        let sincePublish = 0;
+        await Promise.all(
+          Array.from({ length: Math.min(6, targets.length) }, async () => {
+            while (cursor < targets.length && !signal.aborted && current()) {
+              const target = targets[cursor++];
+              try {
+                const quality = await seriesEpisodeQuality(
+                  state.instance,
+                  target.remoteId,
+                  signal,
+                );
+                state.episodeQuality.set(target.remoteId, {
+                  episodeFileCount: target.episodeFileCount ?? 0,
+                  sizeOnDisk: target.sizeOnDisk,
+                  quality,
+                });
+                filled++;
+                // Stream results in batches instead of one final repaint.
+                if (++sincePublish >= 24 && current()) {
+                  sincePublish = 0;
+                  schedule(libraryEntry);
+                }
+              } catch {
+                // Left uncached; retried on the next refresh. No error surfaced.
+              }
+            }
+          }),
+        );
+        if (filled && current()) schedule(libraryEntry);
+      } finally {
+        state.enriching = false;
+        // Continue only while making progress, so a batch of unreachable series
+        // cannot loop forever; a later refresh retries them.
+        if (filled && current() && pendingQuality(state).length)
+          enrichLibrary(state);
+      }
+    })();
   }
 
   async function aggregate(entry: Entry): Promise<Data> {
@@ -338,6 +474,9 @@ function createStore() {
           switch (key[0]) {
             case "library": {
               const value = await libraryFor(state);
+              // Kick off (or continue) background episode-quality enrichment;
+              // it fills the cache and republishes without blocking this read.
+              enrichLibrary(state);
               const errors = [...value.errors];
               try {
                 await queueFor(state);
@@ -684,6 +823,8 @@ function createStore() {
             options: slot(),
             calendars: new Map(),
             episodes: new Map(),
+            episodeQuality: new Map(),
+            enriching: false,
           });
           changed = true;
         }
@@ -852,6 +993,9 @@ function createStore() {
       )
         schedule(entry);
     }
+    // A direct media apply can add a series or change its file stats; refill any
+    // episode quality the change left pending, without a library reload.
+    if (direct) enrichLibrary(state);
   }
 
   return { read, subscribe, update, reconcile, refreshAll };
@@ -1258,13 +1402,9 @@ function applyMedia(state: Backing, message: unknown): boolean {
       statistics.sizeOnDisk === undefined
     )
       return false;
-    if (
-      statistics.episodeFileCount > 0 &&
-      (!enrichment.episodeQualities.has(parsed.data.id) ||
-        previous?.targets[0].episodeFileCount !== statistics.episodeFileCount ||
-        previous.targets[0].sizeOnDisk !== statistics.sizeOnDisk)
-    )
-      return false;
+    // Episode quality is no longer gated here: the item is applied now with its
+    // counts, and libraryItems shows "Unknown" until the background sweep (kicked
+    // off after this apply) refetches the changed series' files from cache.
   }
   if (
     !previous &&
@@ -1283,7 +1423,6 @@ function applyMedia(state: Backing, message: unknown): boolean {
     state.instance,
     enrichment.profiles,
     enrichment.downloading,
-    enrichment.episodeQualities.get(parsed.data.id),
   );
   if (previous) {
     if (
