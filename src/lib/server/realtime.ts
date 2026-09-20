@@ -1,11 +1,6 @@
 import "server-only";
 
-import {
-  HttpTransportType,
-  type HubConnection,
-  HubConnectionBuilder,
-  LogLevel,
-} from "@microsoft/signalr";
+import type { HubConnection } from "@microsoft/signalr";
 import WebSocket from "ws";
 import type {
   RealtimeEvent,
@@ -55,6 +50,25 @@ const instanceTopics: RealtimeTopic[] = ["instances"];
 const optionTopics: RealtimeTopic[] = ["options", "library"];
 const pageTopics: RealtimeTopic[] = ["episodes", "calendar", "options"];
 const maxPendingHints = 64;
+
+// @microsoft/signalr is a Node-only external package whose transports resolve at
+// runtime. Importing it lazily (instead of at module eval) keeps the /api/events
+// route module loadable even where the bundler defers the external in dev, and a
+// load failure degrades to a disconnected realtime status rather than a 500. It
+// is loaded once, before the first connection, and cached.
+type SignalR = typeof import("@microsoft/signalr");
+let signalr: SignalR | undefined;
+let signalrLoad: Promise<SignalR | undefined> | undefined;
+function loadSignalR(): Promise<SignalR | undefined> {
+  if (signalr) return Promise.resolve(signalr);
+  signalrLoad ??= import("@microsoft/signalr").then(
+    (module) => (signalr = module),
+    // Never expose the error: it may carry the module path. The manager keeps
+    // instances "disconnected" and cached data stays visible over REST.
+    () => undefined,
+  );
+  return signalrLoad;
+}
 
 function messageTopics(message: unknown): readonly RealtimeTopic[] | undefined {
   const value = row(message);
@@ -205,6 +219,14 @@ function createManager() {
   function connect(entry: InstanceConnection) {
     const attempt: Attempt = { active: true };
     entry.attempt = attempt;
+    // reconcile() loads SignalR before connecting; if it is unavailable the
+    // instance simply stays disconnected and cached data is served over REST.
+    const runtime = signalr;
+    if (!runtime) {
+      failed(entry, attempt);
+      return;
+    }
+    const { HttpTransportType, HubConnectionBuilder, LogLevel } = runtime;
     // Explicit Node ws preserves X-Api-Key headers even when a native global
     // WebSocket exists. SignalR passes headers in its third constructor argument.
     class InstanceWebSocket extends WebSocket {
@@ -357,6 +379,11 @@ function createManager() {
         statusChanged = true;
       }
       if (statusChanged) publishStatus();
+      if (added.length) {
+        // Load the SignalR runtime once, before the first connection attempt.
+        await loadSignalR();
+        if (!listeners.size || generation !== startedGeneration) return;
+      }
       for (const entry of added) {
         if (current(entry)) connect(entry);
       }
