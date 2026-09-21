@@ -839,6 +839,59 @@ describe("Library integration", () => {
     await screen.findByText("Library up to date");
   });
 
+  it.each([
+    "arrives",
+    "absent",
+    "failed",
+  ])("handles the %s outcome after a partial library snapshot on a detail page", async (outcome) => {
+    queryClient.setQueryData(["instances"], { instances: [hd, uhd] });
+    queryClient.setQueryData(["library"], {
+      items: [],
+      errors: [],
+      loadingInstanceIds: [hd.id],
+    });
+    renderUI(
+      <LibraryProvider>
+        <MediaScreen kind="movie" mediaId={movie.id} />
+      </LibraryProvider>,
+    );
+    await screen.findByRole("heading", { name: "Loading title..." });
+    expect(
+      screen.queryByText("This title is no longer in your library."),
+    ).toBeNull();
+    await act(async () => {
+      if (outcome === "failed") {
+        queryClient
+          .getQueryCache()
+          .find({ queryKey: ["library"] })
+          ?.setState({
+            status: "error",
+            fetchStatus: "idle",
+            error: new Error("Library unavailable."),
+          });
+      } else {
+        queryClient.setQueryData(["library"], {
+          items: outcome === "arrives" ? [movie] : [],
+          errors: [],
+          // An available title should render even while other instances load.
+          ...(outcome === "arrives" ? { loadingInstanceIds: [uhd.id] } : {}),
+        });
+      }
+    });
+    if (outcome === "arrives") {
+      await screen.findByRole("heading", { level: 1, name: movie.title });
+    } else {
+      await screen.findByText(
+        outcome === "failed"
+          ? "Library unavailable."
+          : "This title is no longer in your library.",
+      );
+    }
+    expect(
+      screen.queryByRole("heading", { name: "Loading title..." }),
+    ).toBeNull();
+  });
+
   // Real dialog/select interactions take longer on shared CI runners.
   it("adds a target from its detail page and refreshes the library from the API", async () => {
     const seededMedia: MediaItem = {

@@ -43,7 +43,9 @@ export function MediaScreen({
   if (
     library.isPending ||
     (!library.isError && title.isLoading) ||
-    (!media && library.isFetching)
+    (!media &&
+      (library.isFetching ||
+        (!library.isError && !!library.data?.loadingInstanceIds?.length)))
   )
     return <PageHeader title="Loading title..." actions={<Spinner />} />;
   if (!media)
