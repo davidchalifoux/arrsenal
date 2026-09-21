@@ -27,7 +27,7 @@ import {
 } from "react";
 import { mediaHref } from "@/lib/client";
 import { useInstances, useLibrary, useSyncData } from "@/lib/client-data";
-import type { MediaItem } from "@/lib/types";
+import type { CatalogItem, MediaItem } from "@/lib/types";
 import { useCatalogSearch } from "@/lib/use-catalog-search";
 import { type RealtimeConnection, useRealtime } from "@/lib/use-realtime";
 import { AddMedia } from "./add-media";
@@ -58,7 +58,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const library = useLibrary();
   const instances = useInstances();
   const [addOpen, setAddOpen] = useState(false);
-  const [seed, setSeed] = useState<MediaItem | null>(null);
+  const [seed, setSeed] = useState<CatalogItem | MediaItem | null>(null);
   const [section, setSection] = useState<"library" | "catalog">("library");
   const [returnToSearch, setReturnToSearch] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -139,7 +139,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     }
   }, [focusedIndex]);
 
-  function selectItem(item: MediaItem) {
+  function selectItem(item: CatalogItem | MediaItem) {
     setSearchOpen(false);
     if (section === "library") router.push(mediaHref(item));
     else {
@@ -442,8 +442,10 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
                     >
                       {item.year} · {item.kind === "movie" ? "Movie" : "Show"}
                       {section === "library"
-                        ? ` · ${item.targets.length} targets`
-                        : items.some((entry) => entry.id === item.id)
+                        ? ` · ${"targets" in item ? item.targets.length : 0} targets`
+                        : items.some((entry) => entry.id === item.id) ||
+                            ("existingInstanceIds" in item &&
+                              item.existingInstanceIds.length > 0)
                           ? " · In library"
                           : ""}
                     </span>

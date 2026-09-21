@@ -140,14 +140,22 @@ async function setup(definitions = {}) {
       const endpoint = parts.slice(4).join("/");
       const raw = await req.text();
       const body = raw ? JSON.parse(raw) : undefined;
-      calls.push({
+      const call = {
         node: parts[1],
         endpoint,
         method: req.method,
         query: Object.fromEntries(url.searchParams),
         body,
         key: req.headers.get("x-api-key") ?? undefined,
-      });
+      };
+      calls.push(call);
+      req.signal.addEventListener(
+        "abort",
+        () => {
+          call.aborted = true;
+        },
+        { once: true },
+      );
       const send = (data, status = 200) => Response.json(data, { status });
       if (url.pathname === "/leak") return send({ leaked: true });
       if (!node || parts[2] !== "api" || parts[3] !== "v3")
@@ -2703,6 +2711,119 @@ test("live lookup merges available results, reports failed targets, and never cl
     env.calls.find((call) => call.endpoint === "movie/lookup").query.term,
     "Dune & friends",
   );
+});
+
+test("catalog discovery reads only lookup endpoints and merges metadata and membership independently of enrichment", async () => {
+  const env = await setup({
+    hd: { lookup: [movie, { ...movie, tmdbId: 101, id: 0 }] },
+    uhd: {
+      lookup: [
+        { ...movie, id: 22, overview: "Second overview", genres: ["Mystery"] },
+      ],
+    },
+    sonarr: { kind: "sonarr", lookup: [{ ...series, tvdbId: movie.tmdbId }] },
+  });
+  const hd = await env.connect("hd");
+  const uhd = await env.connect("uhd");
+  const sonarr = await env.connect("sonarr");
+  for (const node of Object.values(env.nodes))
+    node.fail = [
+      "qualityprofile",
+      "queue",
+      "movie",
+      "series",
+      "episodefile",
+      "rootfolder",
+    ];
+  env.calls.length = 0;
+  const response = await lookupRoute.GET(request("/api/lookup?term=dune"));
+  const body = await response.json();
+  expect(response.status).toBe(200);
+  expect(body.errors).toEqual([]);
+  expect(body.items).toHaveLength(3);
+  expect(env.calls.map((call) => call.endpoint).sort()).toEqual([
+    "movie/lookup",
+    "movie/lookup",
+    "series/lookup",
+  ]);
+  const found = body.items.find(
+    (item) => item.id === `movie:tmdb:${movie.tmdbId}`,
+  );
+  expect(new Set(found.existingInstanceIds)).toEqual(new Set([hd.id, uhd.id]));
+  expect(found.genres).toContain("Mystery");
+  expect(
+    body.items.find((item) => item.tmdbId === 101).existingInstanceIds,
+  ).toEqual([]);
+  expect(
+    body.items.find((item) => item.kind === "series").existingInstanceIds,
+  ).toEqual([sonarr.id]);
+  for (const item of body.items) {
+    expect(item).not.toHaveProperty("targets");
+    expect(item).not.toHaveProperty("status");
+    expect(item).not.toHaveProperty("added");
+  }
+});
+
+test("catalog discovery retains successful results when another lookup returns malformed data", async () => {
+  const env = await setup({
+    hd: { lookup: [{ ...movie, id: 0 }] },
+    bad: { lookup: [{ title: "  " }] },
+  });
+  await env.connect("hd");
+  const bad = await env.connect("bad");
+  const body = await (
+    await lookupRoute.GET(request("/api/lookup?term=dune"))
+  ).json();
+  expect(body.items).toHaveLength(1);
+  expect(body.errors).toEqual([
+    {
+      instanceId: bad.id,
+      instanceName: bad.name,
+      message: "Instance returned an invalid catalog record.",
+    },
+  ]);
+});
+
+for (const mode of ["slow", "slow-body"]) {
+  test(`catalog request cancellation stops all upstream lookups with ${mode} responses`, async () => {
+    const env = await setup({ hd: {}, sonarr: { kind: "sonarr" } });
+    await env.connect("hd");
+    await env.connect("sonarr");
+    env.nodes.hd.mode = mode;
+    env.nodes.sonarr.mode = mode;
+    env.calls.length = 0;
+    const controller = new AbortController();
+    const pending = lookupRoute.GET(
+      new Request(`${origin}/api/lookup?term=dune`, {
+        signal: controller.signal,
+      }),
+    );
+    await eventually(() => env.calls.length === 2);
+    controller.abort();
+    const response = await pending;
+    expect(response.status).toBe(499);
+    expect(await response.json()).toEqual({
+      error: "Catalog search canceled.",
+    });
+    await eventually(() => env.calls.every((call) => call.aborted));
+    expect(env.calls.map((call) => call.endpoint).sort()).toEqual([
+      "movie/lookup",
+      "series/lookup",
+    ]);
+  });
+}
+
+test("an already canceled catalog request never starts an upstream lookup", async () => {
+  const env = await setup({ hd: {} });
+  await env.connect("hd");
+  env.calls.length = 0;
+  const response = await lookupRoute.GET(
+    new Request(`${origin}/api/lookup?term=dune`, {
+      signal: AbortSignal.abort(),
+    }),
+  );
+  expect(response.status).toBe(499);
+  expect(env.calls).toEqual([]);
 });
 
 test("options and media add resolve trusted metadata per target and report partial success", async () => {

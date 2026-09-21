@@ -26,6 +26,13 @@ publication path. Complete upstream movie/series resources can avoid an upstream
 fetch; incomplete events share a targeted server-side refresh. A disconnected
 browser recovers through the existing reconnect/visibility/manual-refresh paths.
 
+Catalog discovery returns `CatalogResponse`: descriptive metadata and existing
+instance IDs, without library status, targets, queue progress, or quality profiles.
+The add dialog combines those IDs with the cached library to disable existing
+targets. Target options still load on hover/focus or selection, and adds send only
+provider identity plus the selected target options. Obsolete search requests pass
+the browser cancellation signal through the route to every upstream lookup.
+
 Catalog searches, instance options, episodes, and release searches remain
 parameterized TanStack queries. They use the same QueryClient with
 request-specific keys.

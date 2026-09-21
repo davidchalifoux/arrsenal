@@ -5,6 +5,7 @@ import { isPosterSource } from "../image-sources";
 import type {
   InstanceOptions,
   MediaItem,
+  MediaMetadata,
   MediaStatus,
   MediaTarget,
   QueueItem,
@@ -112,6 +113,52 @@ export function combinedStatus(targets: MediaTarget[]): MediaStatus {
   return "missing";
 }
 
+export function normalizeMediaMetadata(
+  media: Row,
+  instance: InstanceConfig,
+): MediaMetadata {
+  const kind = instance.kind === "radarr" ? "movie" : "series";
+  const tmdbId = num(media.tmdbId) > 0 ? num(media.tmdbId) : undefined;
+  const tvdbId = num(media.tvdbId) > 0 ? num(media.tvdbId) : undefined;
+  const identity = kind === "movie" ? tmdbId : tvdbId;
+  const remoteId = num(media.id);
+  const ratings = row(media.ratings);
+  const rating = num(
+    row(ratings.imdb).value,
+    num(row(ratings.tmdb).value, num(ratings.value)),
+  );
+  const fallback =
+    remoteId > 0
+      ? String(remoteId)
+      : createHash("sha256")
+          .update(
+            JSON.stringify([
+              media.title,
+              media.year,
+              media.titleSlug,
+              media.imdbId,
+            ]),
+          )
+          .digest("hex")
+          .slice(0, 16);
+  return {
+    id: identity
+      ? `${kind}:${kind === "movie" ? "tmdb" : "tvdb"}:${identity}`
+      : `${kind}:${instance.id}:${fallback}`,
+    kind,
+    title: str(media.title, "Untitled"),
+    year: num(media.year),
+    overview: str(media.overview),
+    poster: mediaImage(media, instance),
+    backdrop: mediaImage(media, instance, "fanart") || undefined,
+    genres: strings(media.genres),
+    rating: rating > 0 ? rating : undefined,
+    runtime: num(media.runtime) > 0 ? num(media.runtime) : undefined,
+    tmdbId,
+    tvdbId,
+  };
+}
+
 export function normalizeMedia(
   media: Row,
   instance: InstanceConfig,
@@ -120,9 +167,6 @@ export function normalizeMedia(
   episodeQualities?: string[],
 ): MediaItem {
   const kind = instance.kind === "radarr" ? "movie" : "series";
-  const tmdbId = num(media.tmdbId) > 0 ? num(media.tmdbId) : undefined;
-  const tvdbId = num(media.tvdbId) > 0 ? num(media.tvdbId) : undefined;
-  const identity = kind === "movie" ? tmdbId : tvdbId;
   const remoteId = num(media.id);
   const statistics = row(media.statistics);
   const file = row(media.movieFile);
@@ -172,44 +216,26 @@ export function normalizeMedia(
           },
         ]
       : [];
-  const ratings = row(media.ratings);
-  const rating = num(
-    row(ratings.imdb).value,
-    num(row(ratings.tmdb).value, num(ratings.value)),
-  );
-  const fallback =
-    remoteId > 0
-      ? String(remoteId)
-      : createHash("sha256")
-          .update(
-            JSON.stringify([
-              media.title,
-              media.year,
-              media.titleSlug,
-              media.imdbId,
-            ]),
-          )
-          .digest("hex")
-          .slice(0, 16);
   return {
-    id: identity
-      ? `${kind}:${kind === "movie" ? "tmdb" : "tvdb"}:${identity}`
-      : `${kind}:${instance.id}:${fallback}`,
-    kind,
-    title: str(media.title, "Untitled"),
-    year: num(media.year),
-    overview: str(media.overview),
-    poster: mediaImage(media, instance),
-    backdrop: mediaImage(media, instance, "fanart") || undefined,
-    genres: strings(media.genres),
-    rating: rating > 0 ? rating : undefined,
-    runtime: num(media.runtime) > 0 ? num(media.runtime) : undefined,
-    tmdbId,
-    tvdbId,
+    ...normalizeMediaMetadata(media, instance),
     added: str(media.added),
     status: combinedStatus(targets),
     targets,
   };
+}
+
+// Merge only descriptive fields; callers own library state or catalog membership.
+export function mergeMediaMetadata(
+  existing: MediaMetadata,
+  item: MediaMetadata,
+) {
+  existing.poster ||= item.poster;
+  existing.backdrop ||= item.backdrop;
+  existing.overview ||= item.overview;
+  existing.rating ??= item.rating;
+  existing.tmdbId ??= item.tmdbId;
+  existing.tvdbId ??= item.tvdbId;
+  existing.genres = [...new Set([...existing.genres, ...item.genres])];
 }
 
 export function mergeMedia(items: MediaItem[]): MediaItem[] {
@@ -230,14 +256,8 @@ export function mergeMedia(items: MediaItem[]): MediaItem[] {
       )
         existing.targets.push(target);
     }
-    existing.poster ||= item.poster;
-    existing.backdrop ||= item.backdrop;
-    existing.overview ||= item.overview;
-    existing.rating ??= item.rating;
-    existing.tmdbId ??= item.tmdbId;
-    existing.tvdbId ??= item.tvdbId;
+    mergeMediaMetadata(existing, item);
     if (item.added > existing.added) existing.added = item.added;
-    existing.genres = [...new Set([...existing.genres, ...item.genres])];
     existing.status = combinedStatus(existing.targets);
   }
   return [...merged.values()];

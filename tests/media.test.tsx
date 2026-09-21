@@ -286,7 +286,7 @@ describe("AddMedia", () => {
     expect(path).toBe("/api/media");
     const body: AddMediaRequest = JSON.parse(String(init?.body));
     expect(body).toEqual({
-      media: movie,
+      media: { kind: movie.kind, tmdbId: movie.tmdbId },
       search: false,
       targets: [
         {
@@ -331,7 +331,7 @@ describe("AddMedia", () => {
       "Radarr 4K: Disk is full.",
     );
     expect(JSON.parse(String(writes()[0][1]?.body))).toEqual({
-      media: movie,
+      media: { kind: movie.kind, tmdbId: movie.tmdbId },
       search: true,
       targets: [
         {
@@ -357,7 +357,7 @@ describe("AddMedia", () => {
     await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1));
     expect(writes()).toHaveLength(2);
     expect(JSON.parse(String(writes()[1][1]?.body))).toEqual({
-      media: movie,
+      media: { kind: movie.kind, tmdbId: movie.tmdbId },
       search: true,
       targets: [
         {
@@ -965,7 +965,10 @@ describe("Library integration", () => {
     );
     expect(writes()).toHaveLength(1);
     expect(writes()[0][0]).toBe("/api/media");
-    expect(JSON.parse(String(writes()[0][1]?.body)).media).toEqual(seededMedia);
+    expect(JSON.parse(String(writes()[0][1]?.body)).media).toEqual({
+      kind: seededMedia.kind,
+      tmdbId: seededMedia.tmdbId,
+    });
     expect(JSON.parse(String(writes()[0][1]?.body)).targets).toEqual([
       {
         instanceId: uhd.id,

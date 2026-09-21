@@ -10,7 +10,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
-import type { MediaItem } from "@/lib/types";
+import type { CatalogItem } from "@/lib/types";
 import { advanceTime } from "./timers";
 
 mock.module("@/lib/client", () => ({ api: mock() }));
@@ -118,7 +118,7 @@ it("cancels obsolete in-flight requests when the term changes", async () => {
 });
 
 it("ranks movies and shows together by title while retaining partial errors", async () => {
-  const items: MediaItem[] = (
+  const items: CatalogItem[] = (
     [
       { kind: "series", title: "The Dune Story" },
       { kind: "movie", title: "Dune: Part Two" },
@@ -134,9 +134,7 @@ it("ranks movies and shows together by title while retaining partial errors", as
     overview: "",
     poster: "",
     genres: [],
-    added: "",
-    status: "missing",
-    targets: [],
+    existingInstanceIds: [],
   }));
   const errors = [
     {

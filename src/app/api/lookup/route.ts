@@ -1,6 +1,6 @@
+import { searchCatalog } from "../../../lib/server/catalog";
 import { api, parseInput } from "../../../lib/server/http";
 import { lookupQuerySchema } from "../../../lib/server/schemas";
-import { lookup } from "../../../lib/server/services";
 
 export const runtime = "nodejs";
 
@@ -11,6 +11,6 @@ export function GET(request: Request) {
       term: query.get("term") ?? undefined,
       kind: query.get("kind") ?? undefined,
     });
-    return lookup(term, kind);
+    return searchCatalog(term, kind, request.signal);
   }, request);
 }

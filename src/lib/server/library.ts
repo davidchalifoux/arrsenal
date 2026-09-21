@@ -47,28 +47,26 @@ export type MediaDependencies = {
 
 export async function instanceMedia(
   instance: InstanceConfig,
-  term?: string,
   dependencies: MediaDependencies = {},
 ): Promise<LibraryResponse & { primarySucceeded: boolean }> {
   const errors: ServiceError[] = [];
   const signal = AbortSignal.timeout(30000);
   const endpoint = instance.kind === "radarr" ? "movie" : "series";
   const [mediaResult, profileResult, queueResult] = await Promise.allSettled([
-    arrRequest(instance, term === undefined ? endpoint : `${endpoint}/lookup`, {
+    arrRequest(instance, endpoint, {
       // A full library list for a large instance takes well beyond arrRequest's
       // 8s default; give it the whole instance budget so the list is never
       // dropped (which would drop every item, not just an optional label).
       timeoutMs: 30000,
       signal,
-      query: term === undefined ? undefined : { term },
     }).then((value) => {
       const items = rows(value);
       if (
         items.some(
           (item) =>
             !str(item.title).trim() ||
-            (term === undefined &&
-              (!Number.isInteger(item.id) || num(item.id) <= 0)),
+            !Number.isInteger(item.id) ||
+            num(item.id) <= 0,
         )
       ) {
         throw new ApiError(502, "Instance returned an invalid media record.");

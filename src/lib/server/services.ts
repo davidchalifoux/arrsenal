@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { LibraryResponse, MediaKind } from "../types";
+import type { MediaKind } from "../types";
 import {
   arrRequest,
   instanceOptions,
@@ -14,8 +14,7 @@ import {
 import { getInstance, type InstanceConfig, readInstances } from "./config";
 import { episodeFilesForRemoval, verifyEpisode } from "./episodes";
 import { ApiError, errorMessage, parseInput } from "./http";
-import { instanceMedia } from "./library";
-import { mergeMedia, normalizeRelease } from "./media";
+import { normalizeRelease } from "./media";
 import {
   actionResponse,
   executeMutation,
@@ -39,36 +38,6 @@ function requireKind(instance: InstanceConfig, kind: MediaKind): void {
       "The media kind does not match the selected instance.",
     );
   }
-}
-
-export async function lookup(
-  term: string,
-  kind?: MediaKind,
-): Promise<LibraryResponse> {
-  const instances = await readInstances();
-  if (!instances.length || !term) return { items: [], errors: [] };
-  const eligible = instances.filter(
-    (instance) =>
-      !kind || instance.kind === (kind === "movie" ? "radarr" : "sonarr"),
-  );
-  if (!eligible.length)
-    return {
-      items: [],
-      errors: [
-        {
-          instanceId: kind === "movie" ? "radarr" : "sonarr",
-          instanceName: kind === "movie" ? "Radarr" : "Sonarr",
-          message: `Connect a ${kind === "movie" ? "Radarr" : "Sonarr"} instance to search for this media kind.`,
-        },
-      ],
-    };
-  const results = await Promise.all(
-    eligible.map((instance) => instanceMedia(instance, term)),
-  );
-  return {
-    items: mergeMedia(results.flatMap((result) => result.items)),
-    errors: results.flatMap((result) => result.errors),
-  };
 }
 
 export async function addMedia(input: unknown): Promise<Response> {

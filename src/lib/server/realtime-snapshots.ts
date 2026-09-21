@@ -294,7 +294,7 @@ function createStore() {
   function libraryFor(state: Backing) {
     return load(state.library, async () => {
       let enrichment: MediaEnrichment | undefined;
-      const result = await instanceMedia(state.instance, undefined, {
+      const result = await instanceMedia(state.instance, {
         queue: async () => (await queueFor(state)).records,
         enrichment: (value) => {
           enrichment = value;
