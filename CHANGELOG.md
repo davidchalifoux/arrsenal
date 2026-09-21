@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.1](https://github.com/davidchalifoux/arrsenal/compare/v0.6.0...v0.6.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* centralize mutation reconciliation on the server ([#30](https://github.com/davidchalifoux/arrsenal/issues/30)) ([5573733](https://github.com/davidchalifoux/arrsenal/commit/55737333570574ae8ade201a7cb985e05be6ceb2))
+
+
+### Performance Improvements
+
+* stream incremental realtime field patches ([#28](https://github.com/davidchalifoux/arrsenal/issues/28)) ([cd9980a](https://github.com/davidchalifoux/arrsenal/commit/cd9980a204b8c98eeb978e8a85c610d938369c64))
+
 ## [0.6.0](https://github.com/davidchalifoux/arrsenal/compare/v0.5.1...v0.6.0) (2026-09-21)
 
 
