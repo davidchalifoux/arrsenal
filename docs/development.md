@@ -47,8 +47,7 @@ changes, with no subscription-control requests. Calendar, episode, and option
 changes arrive as scoped invalidation hints: matching active queries refresh
 through REST, while inactive caches become stale without background requests.
 Versioned snapshots and patches prevent older REST responses from overwriting
-newer updates. Patch revision gaps recover through a full REST read; old tabs
-continue receiving snapshots until they reload with the versioned stream URL.
+newer updates. Patch revision gaps recover through a full REST read.
 REST remains available for loading, manual refresh, and reconnect/tab-return recovery.
 Realtime-covered data does not poll on an interval. A disconnected stream or
 instance shows a persistent warning with manual refresh and connection settings;

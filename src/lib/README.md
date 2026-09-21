@@ -26,7 +26,7 @@ that need another collection cache.
 
 Library, instance, queue, calendar, and episode data do not poll on an interval.
 `useRealtime` is owned by the persistent layout's `LibraryProvider`. One
-`EventSource("/api/events?protocol=2")` remains open across navigation. Library, queue, and
+`EventSource("/api/events")` remains open across navigation. Library, queue, and
 instance snapshots and patches update existing caches, including inactive core queries.
 Calendar, episode, and instance-option changes arrive as small invalidation hints.
 Hints scope episodes by instance and series when known, options by instance, and
@@ -51,9 +51,6 @@ recovery for that existing core cache, including inactive queries. Hidden tabs
 wait until visible to issue recovery requests. Failed recovery retains cached
 rows; later events or visibility changes can retry. Full snapshots supersede
 patches, and error snapshots never overwrite last-good rows.
-
-The versioned stream URL enables patches. Older tabs using `/api/events` continue
-receiving full snapshots until reload. There are no per-page subscriptions.
 
 `realtime-query.ts` retains REST `_realtime` metadata and arbitrates older responses.
 A streamed snapshot or applicable patch cancels a matching in-flight browser

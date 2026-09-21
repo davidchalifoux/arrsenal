@@ -246,7 +246,7 @@ async function readThrough(
 
 async function openStream(signal?: AbortSignal) {
   const response = await events.GET(
-    new Request("http://arrsenal.test/api/events?protocol=2", { signal }),
+    new Request("http://arrsenal.test/api/events", { signal }),
   );
   expect(response.status).toBe(200);
   if (!response.body) throw new Error("Missing event stream");
@@ -440,37 +440,6 @@ it("falls back to a complete snapshot when a stream lacks a patch baseline", asy
   expect(received).not.toContain("event: patch");
 });
 
-it("keeps legacy tabs on full snapshots until they reload with the patch protocol", async () => {
-  const response = await events.GET(
-    new Request("http://arrsenal.test/api/events"),
-  );
-  if (!response.body) throw new Error("Missing stream");
-  const reader = response.body.getReader();
-  onTestFinished(() => reader.cancel());
-  await readThrough(reader, "event: status");
-  const initial: RealtimeSnapshot = {
-    queryKey: ["queue"],
-    version: { epoch: "test", revision: 1 },
-    data: { items: [], errors: [] },
-  };
-  for (const listener of listeners) listener.snapshot(initial);
-  await readThrough(reader, "event: snapshot");
-  const patch: RealtimePatch = {
-    queryKey: ["queue"],
-    version: { epoch: "test", revision: 2 },
-    baseRevision: 1,
-    added: [],
-    updated: [],
-    removed: [],
-    metadata: { errors: [] },
-  };
-  for (const listener of listeners)
-    listener.snapshot({ ...initial, version: patch.version }, patch);
-  const received = await readThrough(reader, '"revision":2');
-  expect(received).toContain("event: snapshot");
-  expect(received).not.toContain("event: patch");
-});
-
 it("disconnects a queued patch overflow rather than dropping part of its chain", async () => {
   const reader = await openStream();
   const snapshot: RealtimeSnapshot = {
@@ -500,7 +469,7 @@ it("disconnects a queued patch overflow rather than dropping part of its chain",
 it("rechecks authentication before forwarding a patch", async () => {
   const cookie = await enableAuth();
   const response = await events.GET(
-    new Request("http://arrsenal.test/api/events?protocol=2", {
+    new Request("http://arrsenal.test/api/events", {
       headers: { Cookie: cookie },
     }),
   );

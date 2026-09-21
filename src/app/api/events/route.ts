@@ -21,9 +21,6 @@ export async function GET(request: Request) {
     if (request.headers.get("sec-fetch-site") === "cross-site") {
       throw new ApiError(403, "Events are only available from the same site.");
     }
-    // Older open tabs keep receiving full snapshots through the original URL.
-    const patchesEnabled =
-      new URL(request.url).searchParams.get("protocol") === "2";
     const cookie = request.headers.get("cookie");
     let cleanup = () => {};
     const stream = new ReadableStream<Uint8Array>(
@@ -156,7 +153,6 @@ export async function GET(request: Request) {
               return;
             queuedVersions.set(key, snapshot.version);
             if (
-              patchesEnabled &&
               patch &&
               previous?.epoch === patch.version.epoch &&
               previous.revision === patch.baseRevision

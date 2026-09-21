@@ -61,7 +61,7 @@ export function useRealtime(): RealtimeConnection {
     const core: Record<string, true> = Object.fromEntries(
       realtimeCoreQueries.map((key) => [JSON.stringify(key), true]),
     );
-    const stream = new EventSource("/api/events?protocol=2");
+    const stream = new EventSource("/api/events");
     let epoch: string | undefined;
     let streamEpoch: string | undefined;
     let delivery = 0;

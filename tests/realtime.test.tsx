@@ -375,7 +375,7 @@ it("keeps one fixed stream and inactive core caches live across changing active 
     stream.emit("open");
   });
   await tick();
-  expect(stream.url).toBe("/api/events?protocol=2");
+  expect(stream.url).toBe("/api/events");
   rerender({ enabled: true, remoteId: 1 });
   rerender({ enabled: false, remoteId: 2 });
   rerender({ enabled: true, remoteId: 3 });
@@ -719,7 +719,7 @@ it("ignores malformed hints and shuts down timers and listeners on auth loss or 
   const { unmount } = renderHook(useRealtime, { wrapper });
   expect(result.current.data).toBe("old");
   const stream = Stream.instances[0];
-  expect(stream.url).toBe("/api/events?protocol=2");
+  expect(stream.url).toBe("/api/events");
   act(() => {
     stream.emit("invalidate", "not json");
     stream.emit("snapshot", "not json");

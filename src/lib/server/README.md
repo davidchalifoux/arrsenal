@@ -101,7 +101,7 @@ option checks, and per-target action errors retain their existing behavior.
 | `GET /api/releases` | Accepts `instanceId`, `remoteId`, `kind`, and an optional series-only `episodeId` or `seasonNumber`; uses the selected scope on the release endpoint. Returns safe release DTOs, including rejection reasons. |
 | `POST /api/releases` | Sends only `{guid, indexerId}` to the selected instance's release POST. |
 | `GET /api/queue` | Reads every queue page with `includeMovie`/`includeSeries`, includes unknown media downloads, preserves signed queue IDs, progress fields and warnings, and reports instance errors. |
-| `GET /api/events` | Fixed authenticated SSE: normalized library/queue/instance snapshots (field patches with `?protocol=2`), connection status, scoped calendar/episode/option invalidation hints, and recovery hints. No page-interest controls. |
+| `GET /api/events` | Fixed authenticated SSE: normalized library/queue/instance snapshots and field patches, connection status, scoped calendar/episode/option invalidation hints, and recovery hints. No page-interest controls. |
 | `DELETE /api/queue` | Requires `{instanceId, id, blocklist, removeFromClient}` with real booleans; forwards both deletion flags. Blocklisting can cause the instance to search for a replacement. |
 | `POST /api/queue` | Re-reads the queue, then selects the safe action described below. |
 | `GET /api/image` | Proxies raster filenames under `/MediaCover/<id>/` or `/api/v3/MediaCover/<id>/`, with an optional configured application base prefix. An optional `fallback` accepts only an allowed TMDB/TVDB CDN URL and is fetched if the local cover fails. Local paths still reject traversal, query parameters, encoded paths, SVG, and arbitrary API endpoints. |
@@ -284,13 +284,12 @@ replace a smoke test against an operator's actual Sonarr/Radarr installations.
 ## Incremental core publications
 
 `realtime-patches.ts` computes one allowlisted field delta per publication. Every
-subscriber shares that delta and its encoded SSE frame. `/api/events?protocol=2`
+subscriber shares that delta and its encoded SSE frame. `/api/events`
 starts each core query with a full snapshot and then sends ordered `patch`
 frames. Each patch names the exact prior revision in the same epoch; inserts,
 field updates, optional-field removals, row deletions and order changes preserve
 the REST response contract. Unchanged data retains its revision. Errors and
-recovery after errors use full snapshots. The unversioned endpoint keeps full
-snapshot delivery for older open tabs.
+recovery after errors use full snapshots.
 
 Queue progress is projected independently of the library. Only a change in the
 set of downloading media, or queue failure/recovery, schedules a library status
