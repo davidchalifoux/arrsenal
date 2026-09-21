@@ -101,7 +101,7 @@ option checks, and per-target action errors retain their existing behavior.
 | `GET /api/releases` | Accepts `instanceId`, `remoteId`, `kind`, and an optional series-only `episodeId` or `seasonNumber`; uses the selected scope on the release endpoint. Returns safe release DTOs, including rejection reasons. |
 | `POST /api/releases` | Sends only `{guid, indexerId}` to the selected instance's release POST. |
 | `GET /api/queue` | Reads every queue page with `includeMovie`/`includeSeries`, includes unknown media downloads, preserves signed queue IDs, progress fields and warnings, and reports instance errors. |
-| `GET /api/events` | Fixed authenticated SSE: normalized library/queue/instance snapshots, connection status, scoped calendar/episode/option invalidation hints, and recovery hints. No page-interest controls. |
+| `GET /api/events` | Fixed authenticated SSE: normalized library/queue/instance snapshots (field patches with `?protocol=2`), connection status, scoped calendar/episode/option invalidation hints, and recovery hints. No page-interest controls. |
 | `DELETE /api/queue` | Requires `{instanceId, id, blocklist, removeFromClient}` with real booleans; forwards both deletion flags. Blocklisting can cause the instance to search for a replacement. |
 | `POST /api/queue` | Re-reads the queue, then selects the safe action described below. |
 | `GET /api/image` | Proxies raster filenames under `/MediaCover/<id>/` or `/api/v3/MediaCover/<id>/`, with an optional configured application base prefix. An optional `fallback` accepts only an allowed TMDB/TVDB CDN URL and is fetched if the local cover fails. Local paths still reject traversal, query parameters, encoded paths, SVG, and arbitrary API endpoints. |
@@ -219,9 +219,10 @@ Only explicit DTO fields cross SSE, never raw resources or arbitrary upstream fi
 Partial failures preserve last-known instance contributions with diagnostics; total
 failures produce query errors rather than fabricated empty datasets.
 
-The browser cancels an older matching HTTP request before applying a pushed snapshot,
-rejects older revisions, and resyncs via REST after reconnecting or returning to a tab.
-Hidden tabs may receive snapshots but do not issue event-driven HTTP fetches.
+The browser cancels an older matching HTTP request before applying a pushed
+snapshot or applicable patch, rejects older revisions, and resyncs via REST after
+reconnecting or returning to a tab. Hidden tabs may receive snapshots and patches
+but do not issue event-driven HTTP fetches.
 Realtime-covered queries have no interval polling or fallback polling.
 Disconnections show a persistent browser warning identifying affected instances,
 while cached data and manual refresh remain available. Preferences load on demand
@@ -234,7 +235,8 @@ The stream has no capability registry, control POSTs, or per-tab page interests.
 Page hints coalesce by instance/series; bounded hint queues collapse overflow to a
 broad page-specific invalidation rather than losing updates. Configuration changes
 invalidate page caches as well as reconciling core snapshots and connections.
-Pending frames are coalesced per query and bounded to 32 MiB, with a separate
+Pending full snapshots are coalesced per query; patch chains are ordered.
+Pending frames are bounded to 32 MiB, with a separate
 32 MiB stream queue. Slow consumers are disconnected; reconnect restores data
 through snapshots and a recovery invalidation. No event replay history is retained.
 The shared store holds at most 256 query entries. Unobserved entries expire after
@@ -278,3 +280,28 @@ redirect and timeout protection, multi-process config serialization, file modes,
 invalid request/query/config schemas, aggregation, trusted adds, commands/releases, pagination,
 queue retry semantics, unconfigured reads, and image-proxy restrictions. It does not
 replace a smoke test against an operator's actual Sonarr/Radarr installations.
+
+## Incremental core publications
+
+`realtime-patches.ts` computes one allowlisted field delta per publication. Every
+subscriber shares that delta and its encoded SSE frame. `/api/events?protocol=2`
+starts each core query with a full snapshot and then sends ordered `patch`
+frames. Each patch names the exact prior revision in the same epoch; inserts,
+field updates, optional-field removals, row deletions and order changes preserve
+the REST response contract. Unchanged data retains its revision. Errors and
+recovery after errors use full snapshots. The unversioned endpoint keeps full
+snapshot delivery for older open tabs.
+
+Queue progress is projected independently of the library. Only a change in the
+set of downloading media, or queue failure/recovery, schedules a library status
+projection. Unchanged media contributions retain their merged and validated DTO
+identities; single-title updates do not re-merge or revalidate unrelated titles.
+Array/index traversal is still proportional to library size when a library
+projection is needed; no upstream transactional snapshot is assumed.
+
+Pending patches retain their chain rather than replacing each other. Both byte
+limits still apply, with an additional 1,024 pending-frame limit. A slow consumer
+is disconnected and recovers from full snapshots on reconnect. Full snapshots
+can replace a pending chain for their query. Per-stream authorization is checked
+before each batch, even when encoded frames are shared. No patch replay log or
+per-browser copy of the library is retained on the server.

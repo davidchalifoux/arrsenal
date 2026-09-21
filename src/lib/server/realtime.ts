@@ -9,6 +9,7 @@ import {
 import WebSocket from "ws";
 import type {
   RealtimeEvent,
+  RealtimePatch,
   RealtimeSnapshot,
   RealtimeStatus,
   RealtimeTopic,
@@ -409,7 +410,7 @@ const manager = state.__arrsenalRealtimeSnapshotsTransport;
 
 export function subscribeRealtime(
   onStatus: Listener["onStatus"],
-  onSnapshot: (snapshot: RealtimeSnapshot) => void,
+  onSnapshot: (snapshot: RealtimeSnapshot, patch?: RealtimePatch) => void,
   onInvalidate: Listener["onInvalidate"],
 ): () => void {
   const unsubscribeSnapshots = subscribeSnapshots(onSnapshot);

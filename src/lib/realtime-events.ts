@@ -62,7 +62,7 @@ const serviceError = z.object({
   message: z.string(),
 });
 const errors = z.array(serviceError);
-const media = z.object({
+export const realtimeMediaSchema = z.object({
   id: z.string(),
   kind,
   title: z.string(),
@@ -93,7 +93,7 @@ const media = z.object({
     }),
   ),
 });
-const queueItem = z.object({
+export const realtimeQueueItemSchema = z.object({
   id: z.number(),
   instanceId,
   instanceName: z.string(),
@@ -120,7 +120,7 @@ const activeCommand = z.object({
   message: z.string(),
   status: z.string(),
 });
-const instance = z.object({
+export const realtimeInstanceSchema = z.object({
   id: instanceId,
   name: z.string(),
   kind: z.enum(["radarr", "sonarr"]),
@@ -174,7 +174,7 @@ export const realtimeSnapshotSchema = z.union([
     queryKey: z.tuple([z.literal("library")]),
     version: realtimeVersionSchema,
     data: z.object({
-      items: z.array(media),
+      items: z.array(realtimeMediaSchema),
       errors,
       loadingInstanceIds: z.array(instanceId).max(32).optional(),
     }),
@@ -182,12 +182,12 @@ export const realtimeSnapshotSchema = z.union([
   z.object({
     queryKey: z.tuple([z.literal("queue")]),
     version: realtimeVersionSchema,
-    data: z.object({ items: z.array(queueItem), errors }),
+    data: z.object({ items: z.array(realtimeQueueItemSchema), errors }),
   }),
   z.object({
     queryKey: z.tuple([z.literal("instances")]),
     version: realtimeVersionSchema,
-    data: z.object({ instances: z.array(instance).max(32) }),
+    data: z.object({ instances: z.array(realtimeInstanceSchema).max(32) }),
   }),
   z.object({
     queryKey: calendarKey,
@@ -253,3 +253,69 @@ export const realtimeStatusSchema = z.object({
     .max(32),
 });
 export type RealtimeStatus = z.infer<typeof realtimeStatusSchema>;
+
+// Patches carry only allowlisted DTO fields. Identity fields cannot be changed;
+// replacing an identity is a removal followed by an insertion.
+const patchVersion = {
+  version: realtimeVersionSchema,
+  baseRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  removed: z.array(z.string()),
+  order: z.array(z.string()).optional(),
+};
+const mediaFields = realtimeMediaSchema.omit({ id: true });
+const queueFields = realtimeQueueItemSchema.omit({
+  id: true,
+  instanceId: true,
+});
+const instanceFields = realtimeInstanceSchema.omit({ id: true });
+export const realtimePatchSchema = z
+  .union([
+    z.object({
+      ...patchVersion,
+      queryKey: z.tuple([z.literal("library")]),
+      added: z.array(realtimeMediaSchema),
+      updated: z.array(
+        z.object({
+          key: z.string(),
+          set: mediaFields.partial(),
+          unset: z.array(
+            z.enum(["backdrop", "rating", "runtime", "tmdbId", "tvdbId"]),
+          ),
+        }),
+      ),
+      metadata: z.object({
+        errors,
+        loadingInstanceIds: z.array(instanceId).max(32).optional(),
+      }),
+    }),
+    z.object({
+      ...patchVersion,
+      queryKey: z.tuple([z.literal("queue")]),
+      added: z.array(realtimeQueueItemSchema),
+      updated: z.array(
+        z.object({
+          key: z.string(),
+          set: queueFields.partial(),
+          unset: z.array(
+            z.enum(["poster", "timeleft", "downloadClient", "downloadId"]),
+          ),
+        }),
+      ),
+      metadata: z.object({ errors }),
+    }),
+    z.object({
+      ...patchVersion,
+      queryKey: z.tuple([z.literal("instances")]),
+      added: z.array(realtimeInstanceSchema),
+      updated: z.array(
+        z.object({
+          key: z.string(),
+          set: instanceFields.partial(),
+          unset: z.array(z.enum(["version", "error", "commands"])),
+        }),
+      ),
+      metadata: z.object({}),
+    }),
+  ])
+  .refine((patch) => patch.version.revision > patch.baseRevision);
+export type RealtimePatch = z.infer<typeof realtimePatchSchema>;

@@ -11,13 +11,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
   RealtimeEvent,
+  RealtimePatch,
   RealtimeSnapshot,
   RealtimeStatus,
 } from "@/lib/realtime-events";
 
 mock.module("server-only", () => ({}));
 type Subscriber = {
-  snapshot: (event: RealtimeSnapshot) => void;
+  snapshot: (event: RealtimeSnapshot, patch?: RealtimePatch) => void;
   status: (status: RealtimeStatus) => void;
   invalidate: (event: RealtimeEvent) => void;
 };
@@ -245,7 +246,7 @@ async function readThrough(
 
 async function openStream(signal?: AbortSignal) {
   const response = await events.GET(
-    new Request("http://arrsenal.test/api/events", { signal }),
+    new Request("http://arrsenal.test/api/events?protocol=2", { signal }),
   );
   expect(response.status).toBe(200);
   if (!response.body) throw new Error("Missing event stream");
@@ -358,4 +359,185 @@ it.each([
   }
   expect((await reader.read()).done).toBe(true);
   expect(listeners.size).toBe(0);
+});
+
+it("sends a baseline to each tab, then preserves every patch in a synchronous burst", async () => {
+  const first = await openStream();
+  const second = await openStream();
+  const baseline: RealtimeSnapshot = {
+    queryKey: ["queue"],
+    version: { epoch: "test", revision: 1 },
+    data: { items: [], errors: [] },
+  };
+  for (const listener of listeners) {
+    listener.snapshot(baseline);
+    for (let revision = 2; revision <= 4; revision++) {
+      const patch: RealtimePatch = {
+        queryKey: ["queue"],
+        version: { epoch: "test", revision },
+        baseRevision: revision - 1,
+        added: [],
+        updated: [],
+        removed: [],
+        metadata: {
+          errors: [
+            {
+              instanceId: "a",
+              instanceName: "A",
+              message: `error-${revision}`,
+            },
+          ],
+        },
+      };
+      listener.snapshot(
+        {
+          ...baseline,
+          version: patch.version,
+          data: { items: [], errors: patch.metadata.errors },
+        },
+        patch,
+      );
+    }
+  }
+  for (const reader of [first, second]) {
+    const received = await readThrough(reader, "error-4");
+    const frames = received
+      .split("\n\n")
+      .filter((frame) => /^event: (snapshot|patch)/.test(frame));
+    expect(frames.map((frame) => frame.split("\n")[0])).toEqual([
+      "event: snapshot",
+      "event: patch",
+      "event: patch",
+      "event: patch",
+    ]);
+    expect(
+      frames.map(
+        (frame) => JSON.parse(frame.split("\ndata: ")[1]).version.revision,
+      ),
+    ).toEqual([1, 2, 3, 4]);
+  }
+});
+
+it("falls back to a complete snapshot when a stream lacks a patch baseline", async () => {
+  const reader = await openStream();
+  const snapshot: RealtimeSnapshot = {
+    queryKey: ["queue"],
+    version: { epoch: "test", revision: 5 },
+    data: { items: [], errors: [] },
+  };
+  const patch: RealtimePatch = {
+    queryKey: ["queue"],
+    version: snapshot.version,
+    baseRevision: 4,
+    added: [],
+    updated: [],
+    removed: [],
+    metadata: { errors: [] },
+  };
+  for (const listener of listeners) listener.snapshot(snapshot, patch);
+  const received = await readThrough(reader, '"revision":5');
+  expect(received).toContain("event: snapshot");
+  expect(received).not.toContain("event: patch");
+});
+
+it("keeps legacy tabs on full snapshots until they reload with the patch protocol", async () => {
+  const response = await events.GET(
+    new Request("http://arrsenal.test/api/events"),
+  );
+  if (!response.body) throw new Error("Missing stream");
+  const reader = response.body.getReader();
+  onTestFinished(() => reader.cancel());
+  await readThrough(reader, "event: status");
+  const initial: RealtimeSnapshot = {
+    queryKey: ["queue"],
+    version: { epoch: "test", revision: 1 },
+    data: { items: [], errors: [] },
+  };
+  for (const listener of listeners) listener.snapshot(initial);
+  await readThrough(reader, "event: snapshot");
+  const patch: RealtimePatch = {
+    queryKey: ["queue"],
+    version: { epoch: "test", revision: 2 },
+    baseRevision: 1,
+    added: [],
+    updated: [],
+    removed: [],
+    metadata: { errors: [] },
+  };
+  for (const listener of listeners)
+    listener.snapshot({ ...initial, version: patch.version }, patch);
+  const received = await readThrough(reader, '"revision":2');
+  expect(received).toContain("event: snapshot");
+  expect(received).not.toContain("event: patch");
+});
+
+it("disconnects a queued patch overflow rather than dropping part of its chain", async () => {
+  const reader = await openStream();
+  const snapshot: RealtimeSnapshot = {
+    queryKey: ["queue"],
+    version: { epoch: "test", revision: 1 },
+    data: { items: [], errors: [] },
+  };
+  for (const listener of listeners) {
+    listener.snapshot(snapshot);
+    for (let revision = 2; revision < 1100; revision++) {
+      const patch: RealtimePatch = {
+        queryKey: ["queue"],
+        version: { epoch: "test", revision },
+        baseRevision: revision - 1,
+        added: [],
+        updated: [],
+        removed: [],
+        metadata: { errors: [] },
+      };
+      listener.snapshot({ ...snapshot, version: patch.version }, patch);
+    }
+  }
+  expect((await reader.read()).done).toBe(true);
+  expect(listeners.size).toBe(0);
+});
+
+it("rechecks authentication before forwarding a patch", async () => {
+  const cookie = await enableAuth();
+  const response = await events.GET(
+    new Request("http://arrsenal.test/api/events?protocol=2", {
+      headers: { Cookie: cookie },
+    }),
+  );
+  if (!response.body) throw new Error("Missing stream");
+  const reader = response.body.getReader();
+  onTestFinished(() => reader.cancel());
+  await readThrough(reader, "event: status");
+  const baseline: RealtimeSnapshot = {
+    queryKey: ["queue"],
+    version: { epoch: "test", revision: 1 },
+    data: { items: [], errors: [] },
+  };
+  for (const listener of listeners) listener.snapshot(baseline);
+  await readThrough(reader, "event: snapshot");
+  await logout.POST(
+    new Request("http://arrsenal.test/api/auth/logout", {
+      method: "POST",
+      headers: {
+        Cookie: cookie,
+        Origin: "http://arrsenal.test",
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    }),
+  );
+  const patch: RealtimePatch = {
+    queryKey: ["queue"],
+    version: { epoch: "test", revision: 2 },
+    baseRevision: 1,
+    added: [],
+    updated: [],
+    removed: [],
+    metadata: { errors: [] },
+  };
+  for (const listener of listeners)
+    listener.snapshot({ ...baseline, version: patch.version }, patch);
+  const received = await readThrough(reader, "event: auth-required");
+  expect(received).not.toContain("event: patch");
+  expect((await reader.read()).done).toBe(true);
 });

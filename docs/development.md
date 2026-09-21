@@ -38,12 +38,17 @@ inactive queries remain cached for thirty minutes. Shared server-side SignalR
 connections receive Sonarr/Radarr updates. Complete movie/series resources update
 normalized server snapshots directly; other notifications trigger shared,
 affected-instance fetches. An authenticated `/api/events` stream pushes core
-library, queue, and instance snapshots without a follow-up browser request.
+library, queue, and instance updates without a follow-up browser request. Initial
+snapshots establish a baseline; subsequent updates send only inserted/deleted
+rows and changed fields. Queue progress does not rebuild the library unless
+media download status changes. Encoded frames are shared across subscribers.
 Each tab keeps one fixed SSE connection in the shared library layout across page
 changes, with no subscription-control requests. Calendar, episode, and option
 changes arrive as scoped invalidation hints: matching active queries refresh
 through REST, while inactive caches become stale without background requests.
-Versioned snapshots prevent older REST responses from overwriting newer updates.
+Versioned snapshots and patches prevent older REST responses from overwriting
+newer updates. Patch revision gaps recover through a full REST read; old tabs
+continue receiving snapshots until they reload with the versioned stream URL.
 REST remains available for loading, manual refresh, and reconnect/tab-return recovery.
 Realtime-covered data does not poll on an interval. A disconnected stream or
 instance shows a persistent warning with manual refresh and connection settings;

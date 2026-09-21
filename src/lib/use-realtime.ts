@@ -2,17 +2,21 @@
 
 import { type Query, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { instancesQuery, libraryQuery, queueQuery } from "./queries";
 import {
   type RealtimeEvent,
+  type RealtimePatch,
   type RealtimeSnapshot,
   type RealtimeStatus,
   type RealtimeVersion,
   realtimeCoreQueries,
   realtimeEventSchema,
+  realtimePatchSchema,
   realtimeSnapshotSchema,
   realtimeStatusSchema,
   realtimeTopics,
 } from "./realtime-events";
+import { applyRealtimePatch, type CoreData } from "./realtime-patches";
 import { realtimeVersion } from "./realtime-query";
 
 function matches(query: Query, event: RealtimeEvent) {
@@ -49,6 +53,7 @@ export function useRealtime(): RealtimeConnection {
 
     const cache = client.getQueryCache();
     const dirty = new Set<Query>();
+    const recovery = new Map<Query, RealtimeVersion>();
     const versions = new Map<string, RealtimeVersion>();
     const received = new Map<string, RealtimeVersion>();
     const pending = new Map<string, Promise<void>>();
@@ -56,7 +61,7 @@ export function useRealtime(): RealtimeConnection {
     const core: Record<string, true> = Object.fromEntries(
       realtimeCoreQueries.map((key) => [JSON.stringify(key), true]),
     );
-    const stream = new EventSource("/api/events");
+    const stream = new EventSource("/api/events?protocol=2");
     let epoch: string | undefined;
     let streamEpoch: string | undefined;
     let delivery = 0;
@@ -72,10 +77,59 @@ export function useRealtime(): RealtimeConnection {
 
     function flush() {
       timer = undefined;
+      for (const [query, required] of recovery) {
+        if (
+          query.state.fetchStatus !== "idle" ||
+          document.visibilityState === "hidden"
+        )
+          continue;
+        const options =
+          query.queryKey[0] === "library"
+            ? libraryQuery
+            : query.queryKey[0] === "queue"
+              ? queueQuery
+              : instancesQuery;
+        dirty.delete(query);
+        // A patch baseline is needed even for an inactive, existing core cache.
+        // fetchQuery also works for the disabled transport observers used by DB.
+        void client
+          .fetchQuery<unknown, Error, unknown, string[]>({
+            queryKey: options.queryKey,
+            queryFn: options.queryFn,
+            staleTime: 0,
+            retry: false,
+          })
+          .then(
+            () => {
+              if (stopped) return;
+              const latest =
+                realtimeVersion(query.state.error) ??
+                realtimeVersion(query.state.data);
+              const needed = recovery.get(query);
+              if (!needed) return;
+              if (
+                latest?.epoch === needed.epoch &&
+                latest.revision >= needed.revision
+              )
+                recovery.delete(query);
+              else if (needed !== required) schedule();
+              else {
+                recovery.delete(query);
+                query.invalidate();
+              }
+            },
+            () => {
+              if (stopped) return;
+              recovery.delete(query);
+              // Keep last-good rows; a later event or visibility change retries.
+              query.invalidate();
+            },
+          );
+      }
       for (const query of dirty) {
         // A hint received during a fetch must survive its response and trigger
         // one trailing read. A core snapshot instead clears this marker.
-        if (query.state.fetchStatus !== "idle") continue;
+        if (query.state.fetchStatus !== "idle" || recovery.has(query)) continue;
         dirty.delete(query);
         query.invalidate();
         if (document.visibilityState !== "hidden" && query.isActive()) {
@@ -132,16 +186,15 @@ export function useRealtime(): RealtimeConnection {
       }
     }
 
-    function onSnapshot(event: MessageEvent<string>) {
+    function recover(query: Query, version: RealtimeVersion) {
+      recovery.set(query, version);
+      query.invalidate();
+      schedule();
+    }
+
+    function receive(snapshot: RealtimeSnapshot | RealtimePatch) {
       if (stopped) return;
-      let snapshot: RealtimeSnapshot;
-      try {
-        const parsed = realtimeSnapshotSchema.safeParse(JSON.parse(event.data));
-        if (!parsed.success) return;
-        snapshot = parsed.data;
-      } catch {
-        return;
-      }
+      const isPatch = "baseRevision" in snapshot;
       const key = JSON.stringify(snapshot.queryKey);
       if (!core[key]) return;
       const query = cache.find({ queryKey: snapshot.queryKey, exact: true });
@@ -168,11 +221,20 @@ export function useRealtime(): RealtimeConnection {
         (cached?.epoch === version.epoch && cached.revision >= version.revision)
       )
         return;
+      // Do not cancel a recovery fetch for a delta we already know cannot be
+      // applied. Track the newest required revision for a trailing recovery.
+      const baseline = queued ?? cached;
+      if (
+        isPatch &&
+        (baseline?.epoch !== version.epoch ||
+          baseline.revision !== snapshot.baseRevision)
+      ) {
+        recover(query, version);
+        return;
+      }
       received.set(key, version);
       dirty.delete(query);
       const receivedDelivery = delivery;
-      // Cancel immediately, even if another update for this key is awaiting
-      // cancellation. Identity guards exclude obsolete deliveries and epochs.
       const canceled = client.cancelQueries({
         queryKey: snapshot.queryKey,
         exact: true,
@@ -182,7 +244,6 @@ export function useRealtime(): RealtimeConnection {
           stopped ||
           delivery !== receivedDelivery ||
           epoch !== version.epoch ||
-          received.get(key) !== version ||
           cache.find({ queryKey: snapshot.queryKey, exact: true }) !== query
         )
           return;
@@ -194,8 +255,17 @@ export function useRealtime(): RealtimeConnection {
           latest.revision >= version.revision
         )
           return;
-        versions.set(key, version);
-        if ("data" in snapshot) {
+        if (isPatch) {
+          const data = applyRealtimePatch(
+            query.state.data as CoreData | undefined,
+            snapshot,
+          );
+          if (!data || query.state.error) {
+            recover(query, version);
+            return;
+          }
+          client.setQueryData(snapshot.queryKey, data);
+        } else if ("data" in snapshot) {
           client.setQueryData(snapshot.queryKey, {
             ...snapshot.data,
             _realtime: version,
@@ -204,8 +274,6 @@ export function useRealtime(): RealtimeConnection {
           const error = Object.assign(new Error(snapshot.error), {
             _realtime: version,
           });
-          // A server refresh error is a query error, not an invitation for
-          // every browser to retry the same upstream request. Keep its rows.
           query.setState({
             error,
             errorUpdatedAt: Date.now(),
@@ -217,12 +285,39 @@ export function useRealtime(): RealtimeConnection {
             isInvalidated: false,
           });
         }
+        versions.set(key, version);
+        const needed = recovery.get(query);
+        if (
+          needed &&
+          (needed.epoch !== version.epoch ||
+            needed.revision <= version.revision)
+        )
+          recovery.delete(query);
       });
       pending.set(key, update);
       void update.finally(() => {
         if (pending.get(key) === update) pending.delete(key);
         if (received.get(key) === version) received.delete(key);
       });
+    }
+
+    function onSnapshot(event: MessageEvent<string>) {
+      try {
+        const parsed = realtimeSnapshotSchema.safeParse(JSON.parse(event.data));
+        if (parsed.success) receive(parsed.data);
+      } catch {
+        /* Ignore malformed envelopes. */
+      }
+    }
+
+    function onPatch(event: MessageEvent<string>) {
+      try {
+        const parsed = realtimePatchSchema.safeParse(JSON.parse(event.data));
+        if (parsed.success) receive(parsed.data);
+        else reset();
+      } catch {
+        reset();
+      }
     }
 
     function onInvalidate(event: MessageEvent<string>) {
@@ -245,9 +340,13 @@ export function useRealtime(): RealtimeConnection {
     const unsubscribe = cache.subscribe((event) => {
       if (event.type === "removed") {
         dirty.delete(event.query);
+        recovery.delete(event.query);
         versions.delete(JSON.stringify(event.query.queryKey));
       }
-      if (dirty.has(event.query) && event.query.state.fetchStatus === "idle")
+      if (
+        (dirty.has(event.query) || recovery.has(event.query)) &&
+        event.query.state.fetchStatus === "idle"
+      )
         schedule();
     });
 
@@ -263,6 +362,7 @@ export function useRealtime(): RealtimeConnection {
       stream.removeEventListener("error", onError);
       stream.removeEventListener("status", onStatus);
       stream.removeEventListener("snapshot", onSnapshot);
+      stream.removeEventListener("patch", onPatch);
       stream.removeEventListener("invalidate", onInvalidate);
       stream.removeEventListener("auth-required", onAuthRequired);
       document.removeEventListener("visibilitychange", onVisible);
@@ -273,12 +373,14 @@ export function useRealtime(): RealtimeConnection {
       versions.clear();
       received.clear();
       pending.clear();
+      recovery.clear();
     }
 
     stream.addEventListener("open", onOpen);
     stream.addEventListener("error", onError);
     stream.addEventListener("status", onStatus);
     stream.addEventListener("snapshot", onSnapshot);
+    stream.addEventListener("patch", onPatch);
     stream.addEventListener("invalidate", onInvalidate);
     stream.addEventListener("auth-required", onAuthRequired);
     document.addEventListener("visibilitychange", onVisible);

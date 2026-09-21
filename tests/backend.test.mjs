@@ -3576,3 +3576,150 @@ test("library publishes healthy instances before a slow list finishes", async ()
       !snapshots.at(-1)?.data.loadingInstanceIds?.length,
   );
 });
+
+test("queue progress emits field patches without library publications; download transitions update library status", async () => {
+  const env = await setup({
+    hd: {
+      media: [movie],
+      queue: [
+        {
+          id: -12,
+          movieId: movie.id,
+          movie,
+          title: "Download",
+          status: "downloading",
+          size: 100,
+          sizeleft: 90,
+        },
+      ],
+    },
+  });
+  const instance = { ...(await env.connect("hd")), apiKey: secret };
+  const publications = [];
+  const unsubscribe = subscribeSnapshots((snapshot, patch) =>
+    publications.push({ snapshot, patch }),
+  );
+  onTestFinished(unsubscribe);
+  await eventually(
+    () =>
+      publications.some(
+        ({ snapshot }) =>
+          snapshot.queryKey[0] === "library" &&
+          snapshot.data?.items[0]?.status === "downloading",
+      ) &&
+      publications.some(
+        ({ snapshot }) =>
+          snapshot.queryKey[0] === "queue" &&
+          snapshot.data?.items[0]?.sizeleft === 90,
+      ),
+  );
+  publications.length = 0;
+  const calls = env.calls.length;
+  env.nodes.hd.queue[0].sizeleft = 80;
+  updateSnapshots(instance, { name: "queue" }, [
+    "queue",
+    "library",
+    "episodes",
+  ]);
+  await eventually(() =>
+    publications.some(
+      ({ snapshot }) =>
+        snapshot.queryKey[0] === "queue" &&
+        snapshot.data?.items[0]?.sizeleft === 80,
+    ),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(
+    publications.filter(({ snapshot }) => snapshot.queryKey[0] === "library"),
+  ).toHaveLength(0);
+  expect(
+    publications.find(({ snapshot }) => snapshot.queryKey[0] === "queue").patch
+      .updated,
+  ).toEqual([
+    {
+      key: JSON.stringify([instance.id, -12]),
+      set: { sizeleft: 80 },
+      unset: [],
+    },
+  ]);
+  expect(env.calls.slice(calls).map((call) => call.endpoint)).toEqual([
+    "queue",
+  ]);
+  env.nodes.hd.queue = [];
+  updateSnapshots(instance, { name: "queue" }, [
+    "queue",
+    "library",
+    "episodes",
+  ]);
+  await eventually(() =>
+    publications.some(
+      ({ snapshot }) =>
+        snapshot.queryKey[0] === "library" &&
+        snapshot.data?.items[0]?.status === "available",
+    ),
+  );
+  const change = publications.find(
+    ({ snapshot }) => snapshot.queryKey[0] === "library",
+  );
+  expect(change.patch.updated[0].set.title).toBeUndefined();
+  expect(change.patch.updated[0].set.overview).toBeUndefined();
+  expect(change.patch.updated[0].set.status).toBe("available");
+  expect(
+    env.calls.slice(calls).every((call) => call.endpoint === "queue"),
+  ).toBe(true);
+});
+
+test("media patches preserve merged targets, no-op revisions, removals and new-subscriber baselines", async () => {
+  const env = await setup({ hd: { media: [movie] }, uhd: { media: [movie] } });
+  const hd = { ...(await env.connect("hd")), apiKey: secret };
+  const uhd = { ...(await env.connect("uhd")), apiKey: secret };
+  const publications = [];
+  const unsubscribe = subscribeSnapshots((snapshot, patch) => {
+    if (snapshot.queryKey[0] === "library")
+      publications.push({ snapshot, patch });
+  });
+  onTestFinished(unsubscribe);
+  await eventually(
+    () => publications.at(-1)?.snapshot.data?.items[0]?.targets.length === 2,
+  );
+  const original = publications.at(-1).snapshot;
+  updateSnapshots(
+    hd,
+    { name: "movie", body: { action: "updated", resource: movie } },
+    ["library"],
+  );
+  await new Promise((resolve) => setTimeout(resolve, 180));
+  expect(publications.at(-1).snapshot.version).toEqual(original.version);
+  updateSnapshots(
+    hd,
+    { name: "movie", body: { action: "deleted", resource: { id: movie.id } } },
+    ["library"],
+  );
+  await eventually(
+    () => publications.at(-1)?.snapshot.data?.items[0]?.targets.length === 1,
+  );
+  const change = publications.at(-1);
+  expect(change.patch.baseRevision).toBe(original.version.revision);
+  expect(change.patch.updated[0].set.targets[0].instanceId).toBe(uhd.id);
+  expect(change.patch.removed).toEqual([]);
+  const late = [];
+  const close = subscribeSnapshots((snapshot, patch) => {
+    if (snapshot.queryKey[0] === "library") late.push({ snapshot, patch });
+  });
+  onTestFinished(close);
+  await eventually(() => late.length > 0);
+  expect(late[0].patch).toBeUndefined();
+  expect(late[0].snapshot).toEqual(change.snapshot);
+  updateSnapshots(
+    uhd,
+    { name: "movie", body: { action: "deleted", resource: { id: movie.id } } },
+    ["library"],
+  );
+  await eventually(
+    () => publications.at(-1)?.snapshot.data?.items.length === 0,
+  );
+  expect(publications.at(-1).patch.removed).toEqual([
+    original.data.items[0].id,
+  ]);
+  expect(late.at(-1).patch).toBe(publications.at(-1).patch);
+});
