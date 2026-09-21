@@ -36,13 +36,13 @@ import { advanceTime } from "./timers";
 mock.module("@/lib/client", () => ({ api: mock() }));
 const { api } = await import("@/lib/client");
 const {
-  getCollections,
   useClientReady,
   useInstances,
   useLibrary,
+  useLibraryMedia,
   useQueue,
   useSyncData,
-} = await import("@/lib/collections");
+} = await import("@/lib/client-data");
 const { calendarQuery, instancesQuery, libraryQuery, queueQuery } =
   await import("@/lib/queries");
 
@@ -102,11 +102,6 @@ beforeEach(() => {
 afterEach(async () => {
   cleanup();
   for (const client of clients.splice(0)) {
-    await Promise.all(
-      Object.values(getCollections(client)).map((collection) =>
-        collection.cleanup(),
-      ),
-    );
     client.clear();
   }
   jest.useRealTimers();
@@ -115,8 +110,8 @@ afterEach(async () => {
   mock.restore();
 });
 
-describe("collections", () => {
-  it("does not start collections or fetch during server rendering, then loads on hydration", async () => {
+describe("client data", () => {
+  it("does not fetch during server rendering, then loads on hydration", async () => {
     const { client, wrapper: Wrapper } = setup();
     (
       api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
@@ -156,8 +151,12 @@ describe("collections", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(api).not.toHaveBeenCalled();
-    for (const collection of Object.values(getCollections(client))) {
-      expect(collection.status).toBe("idle");
+    for (const key of [
+      libraryQuery.queryKey,
+      instancesQuery.queryKey,
+      queueQuery.queryKey,
+    ]) {
+      expect(client.getQueryState(key)?.fetchStatus).toBe("idle");
     }
     const onRecoverableError = mock();
     render(content, { container, hydrate: true, onRecoverableError });
@@ -237,20 +236,80 @@ describe("collections", () => {
     expect(api).not.toHaveBeenCalled();
   });
 
-  it("uses live DB rows rather than the envelope's row array", async () => {
+  it("shares the canonical Query response and rows across observers", async () => {
     const { client, wrapper } = setup();
     client.setQueryData(libraryQuery.queryKey, { items: [movie], errors: [] });
-    const { result } = renderHook(useLibrary, { wrapper });
-    await waitFor(() => expect(result.current.data?.items).toEqual([movie]));
+    const first = renderHook(useLibrary, { wrapper });
+    const second = renderHook(useLibrary, { wrapper });
+    const original = client.getQueryData(libraryQuery.queryKey);
+    expect(first.result.current.data).toBe(original);
+    expect(second.result.current.data).toBe(original);
     act(() =>
-      getCollections(client).library.utils.writeUpdate({
-        id: movie.id,
-        title: "Live title",
+      client.setQueryData(libraryQuery.queryKey, {
+        items: [movie],
+        errors: [serviceError],
       }),
     );
     await waitFor(() =>
-      expect(result.current.data?.items[0].title).toBe("Live title"),
+      expect(first.result.current.data?.errors).toEqual([serviceError]),
     );
+    expect(first.result.current.data).toBe(
+      client.getQueryData(libraryQuery.queryKey),
+    );
+    expect(second.result.current.data).toBe(first.result.current.data);
+    expect(first.result.current.data?.items).toBe(original?.items);
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it("selects details from the shared response and updates selection when the route changes", async () => {
+    const { client, wrapper } = setup();
+    const other: MediaItem = { ...movie, id: "series:2", kind: "series" };
+    client.setQueryData(libraryQuery.queryKey, {
+      items: [movie, other],
+      errors: [],
+      loadingInstanceIds: ["slow"],
+    });
+    const { result, rerender } = renderHook(
+      ({ id, kind }: { id: string; kind: MediaItem["kind"] }) => ({
+        library: useLibrary(),
+        detail: useLibraryMedia(id, kind),
+      }),
+      { wrapper, initialProps: { id: movie.id, kind: "movie" } },
+    );
+    expect(result.current.detail.data?.media).toBe(
+      result.current.library.data?.items[0],
+    );
+    expect(result.current.detail.data?.loadingInstanceIds).toEqual(["slow"]);
+    rerender({ id: other.id, kind: "series" });
+    expect(result.current.detail.data?.media).toEqual(
+      result.current.library.data?.items[1],
+    );
+    rerender({ id: other.id, kind: "movie" });
+    expect(result.current.detail.data?.media).toBeUndefined();
+    rerender({ id: movie.id, kind: "movie" });
+    act(() =>
+      client.setQueryData(libraryQuery.queryKey, {
+        items: [{ ...movie, title: "Updated" }, other],
+        errors: [serviceError],
+      }),
+    );
+    await waitFor(() =>
+      expect(result.current.detail.data?.media?.title).toBe("Updated"),
+    );
+    expect(result.current.detail.data?.errors).toEqual(
+      result.current.library.data?.errors,
+    );
+    expect(result.current.detail.data?.loadingInstanceIds).toBeUndefined();
+    act(() =>
+      client.setQueryData(libraryQuery.queryKey, {
+        items: [other],
+        errors: [],
+      }),
+    );
+    await waitFor(() =>
+      expect(result.current.detail.data?.media).toBeUndefined(),
+    );
+    expect(api).not.toHaveBeenCalled();
   });
 
   it("keeps equal queue IDs from different instances and preserves server order", async () => {
@@ -321,7 +380,7 @@ describe("collections", () => {
     const envelope = { items: [movie], errors: [serviceError] };
     client.setQueryData(libraryQuery.queryKey, envelope);
     const { result, unmount } = renderHook(
-      () => ({ library: useLibrary(), sync: useSyncData() }),
+      () => ({ library: { ...useLibrary() }, sync: useSyncData() }),
       { wrapper },
     );
     await waitFor(() => expect(result.current.library.data).toEqual(envelope));
@@ -357,14 +416,13 @@ describe("collections", () => {
         .find({ queryKey: libraryQuery.queryKey })
         ?.getObserversCount(),
     ).toBe(0);
-    await getCollections(client).library.cleanup();
     expect(api).toHaveBeenCalledTimes(1);
     expect(runtimeError).not.toHaveBeenCalled();
   });
 
   it("unmounts and cleans up after an unrecovered initial error", async () => {
     spyOn(console, "error").mockImplementation(() => {});
-    const { client, wrapper } = setup();
+    const { wrapper } = setup();
     (
       api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
     ).mockRejectedValue(new Error("Initial failure"));
@@ -373,7 +431,6 @@ describe("collections", () => {
     expect(result.current.data).toBeUndefined();
     expect(result.current.isPending).toBe(false);
     unmount();
-    await getCollections(client).library.cleanup();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(api).toHaveBeenCalledTimes(1);
   });
@@ -472,7 +529,7 @@ describe("collections", () => {
       items: [download],
       errors: [],
     });
-    const { result } = renderHook(() => useQueue(), { wrapper });
+    const { result } = renderHook(() => ({ ...useQueue() }), { wrapper });
     await waitFor(() => expect(result.current.data?.items).toEqual([download]));
     (
       api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>

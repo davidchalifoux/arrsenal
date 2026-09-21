@@ -84,7 +84,7 @@ Connections and preferences persist in the `arrsenal-config` volume. API keys st
 | [Security and account recovery](docs/security.md) | Authentication, public artwork, HTTPS, sessions, and forgotten credentials |
 | [Development](docs/development.md) | Bun setup, application structure, tests, and CI |
 | [Release automation](docs/releases.md) | Contributor commit conventions and maintainer publishing procedures |
-| [Client data reference](src/lib/README.md) | Query caches, collections, and browser realtime behavior |
+| [Client data reference](src/lib/README.md) | Query cache, selectors, and browser realtime behavior |
 | [Backend reference](src/lib/server/README.md) | API contracts, validation, storage, and upstream limits |
 
 For version history, see [GitHub Releases](https://github.com/davidchalifoux/arrsenal/releases) or the [changelog](CHANGELOG.md). **Settings > About** shows your installed version and checks for the latest stable release. Report problems through [GitHub Issues](https://github.com/davidchalifoux/arrsenal/issues).

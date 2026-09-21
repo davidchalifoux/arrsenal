@@ -26,7 +26,7 @@ import {
   useState,
 } from "react";
 import { mediaHref } from "@/lib/client";
-import { useInstances, useLibrary, useSyncData } from "@/lib/collections";
+import { useInstances, useLibrary, useSyncData } from "@/lib/client-data";
 import type { MediaItem } from "@/lib/types";
 import { useCatalogSearch } from "@/lib/use-catalog-search";
 import { type RealtimeConnection, useRealtime } from "@/lib/use-realtime";

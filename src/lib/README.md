@@ -1,16 +1,19 @@
 # Client data
 
-`queries.ts` defines the REST fetches and cache freshness. `collections.ts`
-materializes library, instance, and queue responses into TanStack DB collections,
-scoped to the application's QueryClient. Queue keys include the instance ID.
+`queries.ts` defines REST fetches and cache freshness. TanStack Query is the
+sole client store for library, instance, and queue responses. `client-data.ts`
+provides `useLibrary`, `useLibraryMedia`, `useInstances`, and `useQueue`; their
+observers share requests and read rows, response metadata, and transport state
+from the same cache. Existing data remains visible after a failed background
+refresh. `useClientReady` disables reads during server rendering and the first
+hydration render.
 
-Components read shared rows through `useLibrary`, `useInstances`, `useQueue`, or
-live queries from `useCollections`. Collections share fetches; disabled Query
-observers expose transport status and response-level partial-failure warnings
-without adding fetch schedules. Existing rows remain visible after a failed
-background refresh. `useClientReady` prevents live subscriptions from fetching
-during server rendering or hydration. Strip DB virtual properties with
-`collectionRow` before passing direct live-query rows to API mutation flows.
+`library-selectors.ts` derives media details and library filters, counts, quality
+choices, and ordering without maintaining another store. Detail observers use
+Query's `select`; library views memoize the selector over the cached rows and
+filter values. Sorting preserves server order for ties without modifying cached
+arrays. Data and its derived views become available together, with no separate
+collection readiness or row serialization step.
 
 `useSyncData` handles explicit user refreshes. Upstream mutation reconciliation
 belongs to the server: `mutations.ts` records attempted and acknowledged writes,
@@ -18,14 +21,14 @@ then `changes.ts` updates shared snapshots and emits scoped page hints through
 `/api/events`. Screens display outcomes without mutation-specific refetch
 callbacks. Connection saves use the existing server configuration notifications.
 Sonarr/Radarr commands are asynchronous and can partially succeed, so they are
-not optimistic collection CRUD. SignalR completion notifications use the same
+not optimistic cache edits. SignalR completion notifications use the same
 publication path. Complete upstream movie/series resources can avoid an upstream
 fetch; incomplete events share a targeted server-side refresh. A disconnected
 browser recovers through the existing reconnect/visibility/manual-refresh paths.
 
 Catalog searches, instance options, episodes, and release searches remain
-parameterized TanStack queries. They are request-specific, not shared datasets
-that need another collection cache.
+parameterized TanStack queries. They use the same QueryClient with
+request-specific keys.
 
 Library, instance, queue, calendar, and episode data do not poll on an interval.
 `useRealtime` is owned by the persistent layout's `LibraryProvider`. One

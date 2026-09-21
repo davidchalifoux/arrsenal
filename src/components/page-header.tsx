@@ -8,7 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import { css } from "@styled-system/css";
 import type { ReactNode } from "react";
-import { useInstances } from "@/lib/collections";
+import { useInstances } from "@/lib/client-data";
 import { useLibraryActions } from "./library-provider";
 import { Button } from "./ui";
 

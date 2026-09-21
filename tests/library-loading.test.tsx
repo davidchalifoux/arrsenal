@@ -51,7 +51,6 @@ mock.module("next/image", () => ({
 const { default: LibraryError } = await import("@/app/(library)/error");
 const { LibraryLoading } = await import("@/components/library-loading");
 const { api } = await import("@/lib/client");
-const { getCollections } = await import("@/lib/collections");
 
 const names = ["library", "instances", "queue"] as const;
 const movie: MediaItem = {
@@ -144,11 +143,6 @@ beforeEach(() => {
 afterEach(async () => {
   cleanup();
   for (const client of clients.splice(0)) {
-    await Promise.all(
-      Object.values(getCollections(client)).map((collection) =>
-        collection.cleanup(),
-      ),
-    );
     await client.cancelQueries();
     client.clear();
   }
@@ -319,8 +313,8 @@ describe("LibraryLoading", () => {
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(api).not.toHaveBeenCalled();
-    for (const collection of Object.values(getCollections(client)))
-      expect(collection.status).toBe("idle");
+    for (const name of names)
+      expect(client.getQueryState([name])?.fetchStatus).toBe("idle");
     const onRecoverableError = mock();
     const view = render(content, {
       container,

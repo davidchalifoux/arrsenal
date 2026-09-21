@@ -31,8 +31,10 @@ and global dialogs mounted between pages; it does not select or render screens.
 
 Pages render their shell without waiting for Sonarr/Radarr. Client components
 fetch unified data through Next.js API routes using one persistent TanStack
-Query client. The library categories share a cached library query; episode
-details, queue activity, and instance options load independently. Library and
+Query client, which is the sole client data store. Shared selectors derive
+filtered lists and media details directly from cached responses. The library
+categories share a cached library query; episode details, queue activity, and
+instance options load independently. Library and
 connection data remain fresh for one minute, queue data for ten seconds, and
 inactive queries remain cached for thirty minutes. Shared server-side SignalR
 connections receive Sonarr/Radarr updates. Complete movie/series resources update

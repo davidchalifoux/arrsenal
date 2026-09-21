@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { z } from "zod";
 import { mediaHref } from "@/lib/client";
-import { useInstances, useLibrary } from "@/lib/collections";
+import { useInstances, useLibrary } from "@/lib/client-data";
 import { useLibraryActions } from "./library-provider";
 import { LibraryToolbar } from "./library-toolbar";
 import { MediaCard, MediaList } from "./media-card";
@@ -190,25 +190,26 @@ function LibrarySection({
   }, []);
   const items = library.data?.items ?? [];
   const instances = instanceQuery.data?.instances ?? [];
-  const { filtered, totalCount, qualities, filterCount, isReady } =
-    useLibraryView(items, {
+  const { filtered, totalCount, qualities, filterCount } = useLibraryView(
+    items,
+    {
       category,
       status,
       instanceFilter,
       quality,
       sort,
       sortDirection,
-    });
+    },
+  );
   useEffect(() => {
-    if (!snapshotLoaded || !library.data || !isReady || scrollRestored.current)
-      return;
-    // Wait for the restored layout and live query to commit before scrolling.
+    if (!snapshotLoaded || !library.data || scrollRestored.current) return;
+    // Wait for the restored layout and selected rows to commit before scrolling.
     const frame = requestAnimationFrame(() => {
       window.scrollTo({ top: scrollPosition.current, behavior: "instant" });
       scrollRestored.current = true;
     });
     return () => cancelAnimationFrame(frame);
-  }, [snapshotLoaded, library.data, isReady]);
+  }, [snapshotLoaded, library.data]);
 
   const loadingInstances = library.data?.loadingInstanceIds?.length ?? 0;
   const hasCompleteData =
@@ -259,7 +260,7 @@ function LibrarySection({
         onResetFilters={resetFilters}
         count={
           <>
-            {hasCompleteData && isReady && snapshotLoaded && (
+            {hasCompleteData && snapshotLoaded && (
               <span
                 className={css({
                   color: "muted",

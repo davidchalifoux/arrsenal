@@ -1,7 +1,7 @@
 "use client";
 
 import { css } from "@styled-system/css";
-import { useQueue, useSyncData } from "@/lib/collections";
+import { useQueue, useSyncData } from "@/lib/client-data";
 import { useLibraryActions } from "./library-provider";
 import { DownloadQueue } from "./queue";
 import { Notice } from "./ui";
