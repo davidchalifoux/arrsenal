@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { matchSorter } from "match-sorter";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./client";
-import type { LibraryResponse } from "./types";
+import type { CatalogResponse } from "./types";
 
 export function useCatalogSearch(term: string, enabled: boolean) {
   const query = term.trim();
@@ -20,7 +20,7 @@ export function useCatalogSearch(term: string, enabled: boolean) {
   const results = useQuery({
     queryKey: ["lookup", query],
     queryFn: ({ signal }) =>
-      api<LibraryResponse>(`/api/lookup?term=${encodeURIComponent(query)}`, {
+      api<CatalogResponse>(`/api/lookup?term=${encodeURIComponent(query)}`, {
         signal,
       }),
     enabled: canSearch,

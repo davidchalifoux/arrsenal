@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, mock } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
 
-import type { InstanceSummary, MediaItem } from "@/lib/types";
+import type { CatalogItem, InstanceSummary, MediaItem } from "@/lib/types";
 
 mock.module("@/components/media-card", () => ({
   Poster: () => null,
@@ -19,7 +19,11 @@ afterEach(() => {
   client.clear();
 });
 
-it("preserves catalog targets before the library refreshes", () => {
+it.each([
+  "library seed",
+  "catalog membership",
+  "cached library",
+] as const)("preserves existing targets from %s without enrichment", (source) => {
   const radarr: InstanceSummary = {
     id: "radarr",
     name: "Movies",
@@ -52,13 +56,23 @@ it("preserves catalog targets before the library refreshes", () => {
       },
     ],
   };
+  const catalog: CatalogItem = {
+    id: item.id,
+    kind: item.kind,
+    title: item.title,
+    year: item.year,
+    overview: item.overview,
+    poster: item.poster,
+    genres: item.genres,
+    existingInstanceIds: source === "catalog membership" ? [radarr.id] : [],
+  };
   render(
     <QueryClientProvider client={client}>
       <AddMedia
         open
-        seed={item}
+        seed={source === "library seed" ? item : catalog}
         instances={[radarr]}
-        library={[]}
+        library={source === "cached library" ? [item] : []}
         onClose={mock()}
         notify={mock()}
         onConnect={mock()}

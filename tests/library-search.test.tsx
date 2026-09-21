@@ -10,7 +10,7 @@ import {
 import type { ComponentProps } from "react";
 import type { AddMedia } from "@/components/add-media";
 
-import type { MediaItem } from "@/lib/types";
+import type { CatalogItem, MediaItem } from "@/lib/types";
 
 const { push } = { push: mock() };
 mock.module("next/navigation", () => ({ useRouter: () => ({ push }) }));
@@ -283,3 +283,28 @@ it.each([
   );
   await waitFor(() => expect(document.activeElement).toBe(reopened));
 }, 15_000);
+
+it("hands a metadata-only catalog result to the add dialog and shows known membership without a library row", async () => {
+  const catalog: CatalogItem = {
+    id: "movie:tmdb:438631",
+    kind: "movie",
+    tmdbId: 438631,
+    title: "Dune",
+    year: 2021,
+    overview: "",
+    poster: "",
+    genres: [],
+    existingInstanceIds: ["radarr"],
+  };
+  client.setQueryDefaults(["lookup"], { staleTime: 60000 });
+  client.setQueryData(["lookup", "Dune"], { items: [catalog], errors: [] });
+  renderSearch([]);
+  fireEvent.change(openSearch(), { target: { value: "Dune" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add media" }));
+  const result = await screen.findByRole("button", {
+    name: /Dune.*In library/,
+  });
+  fireEvent.click(result);
+  expect(await screen.findByText("Seed: Dune")).toBeTruthy();
+  expect(push).not.toHaveBeenCalled();
+});

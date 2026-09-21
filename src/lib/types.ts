@@ -36,7 +36,7 @@ export interface MediaTarget {
   episodeFileCount?: number;
 }
 
-export interface MediaItem {
+export interface MediaMetadata {
   id: string;
   kind: MediaKind;
   title: string;
@@ -49,6 +49,18 @@ export interface MediaItem {
   runtime?: number;
   tmdbId?: number;
   tvdbId?: number;
+}
+
+export interface CatalogItem extends MediaMetadata {
+  existingInstanceIds: string[];
+}
+
+export interface CatalogResponse {
+  items: CatalogItem[];
+  errors: ServiceError[];
+}
+
+export interface MediaItem extends MediaMetadata {
   added: string;
   status: MediaStatus;
   targets: MediaTarget[];
@@ -109,7 +121,7 @@ export interface Release {
 }
 
 export interface AddMediaRequest {
-  media: MediaItem;
+  media: Pick<MediaMetadata, "kind" | "tmdbId" | "tvdbId">;
   targets: {
     instanceId: string;
     qualityProfileId: number;

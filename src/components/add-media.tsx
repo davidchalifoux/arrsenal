@@ -15,6 +15,7 @@ import { instanceOptionsQuery } from "@/lib/instance-options-query";
 import type {
   ActionResponse,
   AddMediaRequest,
+  CatalogItem,
   InstanceSummary,
   MediaItem,
 } from "@/lib/types";
@@ -48,7 +49,7 @@ export function AddMedia({
 }: {
   open: boolean;
   onClose: () => void;
-  seed: MediaItem | null;
+  seed: CatalogItem | MediaItem | null;
   instances: InstanceSummary[];
   library: MediaItem[];
   notify: (message: string, error?: boolean) => void;
@@ -90,7 +91,7 @@ function AddMediaContent({
   onConnect,
   onBack,
 }: Omit<Parameters<typeof AddMedia>[0], "open" | "seed"> & {
-  seed: MediaItem;
+  seed: CatalogItem | MediaItem;
 }) {
   const [choices, setChoices] = useState<Record<string, TargetChoice>>({});
   const [confirmedIds, setConfirmedIds] = useState<string[]>([]);
@@ -102,11 +103,13 @@ function AddMediaContent({
     (instance) =>
       instance.kind === (selected.kind === "series" ? "sonarr" : "radarr"),
   );
-  const existing =
-    library.find((item) => item.id === selected.id)?.targets ??
-    selected.targets;
   const existingIds = [
-    ...existing.map((target) => target.instanceId),
+    ...(library.find((item) => item.id === selected.id)?.targets ?? []).map(
+      (target) => target.instanceId,
+    ),
+    ...("existingInstanceIds" in selected
+      ? selected.existingInstanceIds
+      : selected.targets.map((target) => target.instanceId)),
     ...confirmedIds,
   ];
   const targets = Object.entries(choices).filter(
@@ -134,7 +137,11 @@ function AddMediaContent({
     setSaving(true);
     try {
       const payload: AddMediaRequest = {
-        media: selected,
+        media: {
+          kind: selected.kind,
+          tmdbId: selected.tmdbId,
+          tvdbId: selected.tvdbId,
+        },
         targets: requestTargets,
         search,
       };
