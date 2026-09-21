@@ -162,6 +162,39 @@ search behavior is unchanged when both `episodeId` and `seasonNumber` are omitte
   paths; its optimized cache lifetime is at least the upstream max-age and may be longer.
   Public artwork URLs and cached responses are not revoked by logout or library removal.
 
+## Mutation reconciliation
+
+`mutations.ts` owns upstream write execution and resource effects for adds,
+media/file deletion, searches, release grabs, and queue removal/retry. Preflight
+reads and validation run before its writer is called. Once a write is attempted,
+the executor reconciles that target in `finally`, including failures and partial
+season deletions. It never retries a write. Each add target reconciles as soon as
+it settles, without waiting for other targets.
+
+Action responses include per-instance `outcomes`: `accepted` (all writes
+acknowledged), `rejected` (no write attempted), `uncertain` (a write was attempted
+but none acknowledged), or `partial` (some writes acknowledged before failure).
+`attemptedWrites` and `confirmedWrites` count upstream write requests, not files
+or completed downloads. A failed upstream response is conservatively uncertain;
+input/security/configuration errors can still return the ordinary `{error}`.
+Existing `success`, `message`, `errors`, and multi-target HTTP statuses remain.
+
+`changes.ts` is the shared publication boundary for local writes and upstream
+notifications. It invalidates server snapshots and emits episode/calendar/option
+hints; `realtime.ts` coalesces and delivers those hints to all subscribers. Known
+series IDs scope episode hints; queue/grab/add operations with unknown identities
+invalidate the affected instance's page data. Configuration writes keep their
+existing committed-write notifications. No component refresh callback is needed
+for these writes, and closing the initiating screen does not stop reconciliation.
+`library.ts` contains the read/enrichment functions used by the snapshot store,
+so read models do not import mutation services or the realtime transport.
+
+Snapshot refresh failures retain the existing last-good data and error behavior;
+they do not change an acknowledged write into a failed action. Async commands
+may change data again later, when SignalR completion notifications reconcile it.
+Reconnect, visibility recovery, and manual refresh remain available when events
+are missed. This does not introduce polling, durable jobs, or write retries.
+
 ## Realtime Updates
 
 `realtime.ts` maintains one SignalR WebSocket connection per configured instance

@@ -52,8 +52,10 @@ REST remains available for loading, manual refresh, and reconnect/tab-return rec
 Realtime-covered data does not poll on an interval. A disconnected stream or
 instance shows a persistent warning with manual refresh and connection settings;
 automatic reconnect continues while cached data stays visible. Background
-refetches retain existing content; mutations invalidate affected queries rather
-than refreshing the entire Next.js route.
+refetches retain existing content. A server mutation executor reconciles affected
+snapshots and emits scoped page hints after accepted, uncertain, or partial writes;
+screens do not own mutation refetch callbacks. Upstream completion events use the
+same publication path.
 Preferences load on demand and update after saving. They do not poll or refresh
 on window focus.
 

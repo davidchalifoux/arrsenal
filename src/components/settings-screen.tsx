@@ -39,7 +39,7 @@ export function SettingsScreen({ autoOpen = false }: { autoOpen?: boolean }) {
       )}
       <Settings
         instances={instances.data?.instances ?? []}
-        onChanged={() => {
+        onRefresh={() => {
           void sync("all");
         }}
         notify={notify}

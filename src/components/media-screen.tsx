@@ -8,7 +8,6 @@ import {
   collectionRow,
   useClientReady,
   useCollections,
-  useSyncData,
 } from "@/lib/collections";
 import { libraryQuery } from "@/lib/queries";
 import type { MediaKind } from "@/lib/types";
@@ -27,7 +26,6 @@ export function MediaScreen({
   const collections = useCollections();
   const clientReady = useClientReady();
   const library = useQuery({ ...libraryQuery, enabled: false });
-  const sync = useSyncData();
   const { add, notify, refresh } = useLibraryActions();
   const title = useLiveQuery({
     query: (q) =>
@@ -94,9 +92,6 @@ export function MediaScreen({
         media={media}
         onAddTarget={add}
         notify={notify}
-        onChanged={() => {
-          void sync("media", media.targets);
-        }}
       />
     </>
   );

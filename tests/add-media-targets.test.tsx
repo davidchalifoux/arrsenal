@@ -60,7 +60,6 @@ it("preserves catalog targets before the library refreshes", () => {
         instances={[radarr]}
         library={[]}
         onClose={mock()}
-        onAdded={mock()}
         notify={mock()}
         onConnect={mock()}
       />

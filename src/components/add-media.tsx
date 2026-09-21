@@ -42,7 +42,6 @@ export function AddMedia({
   seed,
   instances,
   library,
-  onAdded,
   notify,
   onConnect,
   onBack,
@@ -52,7 +51,6 @@ export function AddMedia({
   seed: MediaItem | null;
   instances: InstanceSummary[];
   library: MediaItem[];
-  onAdded: () => void;
   notify: (message: string, error?: boolean) => void;
   onConnect: () => void;
   onBack?: () => void;
@@ -73,7 +71,6 @@ export function AddMedia({
           seed={seed}
           instances={instances}
           library={library}
-          onAdded={onAdded}
           notify={notify}
           onClose={onClose}
           onConnect={onConnect}
@@ -88,7 +85,6 @@ function AddMediaContent({
   seed: selected,
   instances,
   library,
-  onAdded,
   notify,
   onClose,
   onConnect,
@@ -146,7 +142,6 @@ function AddMediaContent({
         method: "POST",
         body: JSON.stringify(payload),
       });
-      onAdded();
       if (!result.success) {
         const failed =
           result.errors?.map((item) => item.instanceId) ??

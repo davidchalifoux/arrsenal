@@ -16,7 +16,6 @@ import { instancesQuery, libraryQuery, queueQuery } from "./queries";
 import type {
   InstanceSummary,
   LibraryResponse,
-  MediaTarget,
   QueueItem,
   QueueResponse,
 } from "./types";
@@ -189,32 +188,17 @@ export function useQueue() {
   };
 }
 
+// Explicit user refreshes only. Mutation reconciliation belongs to the server.
 export function useSyncData() {
   const queryClient = useQueryClient();
-  return async (
-    scope: "library" | "queue" | "media" | "all",
-    targets: readonly MediaTarget[] = [],
-  ): Promise<void> => {
+  return async (scope: "library" | "queue" | "all"): Promise<void> => {
     if (scope === "all") {
       await queryClient.invalidateQueries();
       return;
     }
-    const keys =
-      scope === "media"
-        ? [
-            libraryQuery.queryKey,
-            queueQuery.queryKey,
-            ...targets.map((target) => [
-              "episodes",
-              target.instanceId,
-              target.remoteId,
-            ]),
-          ]
-        : [scope === "library" ? libraryQuery.queryKey : queueQuery.queryKey];
-    await Promise.all(
-      [...new Map(keys.map((key) => [JSON.stringify(key), key])).values()].map(
-        (queryKey) => queryClient.invalidateQueries({ queryKey }),
-      ),
-    );
+    await queryClient.invalidateQueries({
+      queryKey:
+        scope === "library" ? libraryQuery.queryKey : queueQuery.queryKey,
+    });
   };
 }

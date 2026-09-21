@@ -6,6 +6,7 @@ import {
   it,
   jest,
   mock,
+  onTestFinished,
   spyOn,
 } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -153,7 +154,6 @@ function renderAdd(overrides: Partial<ComponentProps<typeof AddMedia>> = {}) {
     instances: [hd, uhd, archive, sonarr],
     library: [],
     onClose: mock(),
-    onAdded: mock(),
     onConnect: mock(),
     notify: mock(),
     ...overrides,
@@ -166,7 +166,6 @@ function renderDetails() {
   const props = {
     media: { ...movie, targets: [hdTarget, uhdTarget] },
     onAddTarget: mock(),
-    onChanged: mock(),
     notify: mock(),
   };
   renderUI(<MediaDetails {...props} />);
@@ -297,15 +296,12 @@ describe("AddMedia", () => {
         },
       ],
     });
-    expect(props.onAdded).not.toHaveBeenCalled();
     await act(async () =>
       pending.resolve(
         Response.json({ success: true, message: "Added to Radarr 4K." }),
       ),
     );
     await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1));
-    expect(props.onAdded).toHaveBeenCalledTimes(1);
-    expect(props.onAdded).toHaveBeenCalledWith();
     expect(props.notify).toHaveBeenCalledWith("Added to Radarr 4K.");
   });
 
@@ -352,7 +348,6 @@ describe("AddMedia", () => {
     });
     expect(screen.queryByRole("checkbox", { name: hd.name })).toBeNull();
     expect(screen.getByText("Already added")).toBeTruthy();
-    expect(props.onAdded).toHaveBeenCalledTimes(1);
     expect(props.onClose).not.toHaveBeenCalled();
     expect(props.notify).not.toHaveBeenCalled();
     fetchMock.mockResolvedValueOnce(
@@ -372,7 +367,6 @@ describe("AddMedia", () => {
         },
       ],
     });
-    expect(props.onAdded).toHaveBeenCalledTimes(2);
   });
 
   it("surfaces option and add server failures without losing the user's choices", async () => {
@@ -396,7 +390,6 @@ describe("AddMedia", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Root folder is read-only.",
     );
-    expect(props.onAdded).not.toHaveBeenCalled();
     expect(props.onClose).not.toHaveBeenCalled();
     expect(
       screen.getByRole("combobox", { name: `${hd.name} root folder` })
@@ -893,7 +886,24 @@ describe("Library integration", () => {
   });
 
   // Real dialog/select interactions take longer on shared CI runners.
-  it("adds a target from its detail page and refreshes the library from the API", async () => {
+  it("adds a target and receives the updated library through realtime without a REST refresh", async () => {
+    class Stream extends EventTarget {
+      static current: Stream;
+      constructor() {
+        super();
+        Stream.current = this;
+      }
+      close() {}
+    }
+    const original = Object.getOwnPropertyDescriptor(globalThis, "EventSource");
+    Object.defineProperty(globalThis, "EventSource", {
+      configurable: true,
+      value: Stream,
+    });
+    onTestFinished(() => {
+      if (original) Object.defineProperty(globalThis, "EventSource", original);
+      else Reflect.deleteProperty(globalThis, "EventSource");
+    });
     const seededMedia: MediaItem = {
       ...movie,
       status: "available",
@@ -933,6 +943,20 @@ describe("Library integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add to 1 target" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByRole("status").textContent).toContain("Target added.");
+    expect(
+      fetchMock.mock.calls.filter(([path]) => path === "/api/library"),
+    ).toHaveLength(1);
+    await act(async () => {
+      Stream.current.dispatchEvent(
+        new MessageEvent("snapshot", {
+          data: JSON.stringify({
+            queryKey: ["library"],
+            version: { epoch: "mutation-test", revision: 1 },
+            data: library,
+          }),
+        }),
+      );
+    });
     await waitFor(() =>
       expect(
         queryClient.getQueryData<LibraryResponse>(["library"])?.items[0]
@@ -972,13 +996,14 @@ describe("MediaDetails searches", () => {
       remoteId: 22,
       kind: "movie",
     });
-    expect(props.onChanged).not.toHaveBeenCalled();
     expect(props.notify).not.toHaveBeenCalled();
     fetchMock.mockResolvedValueOnce(
       Response.json({ success: true, message: "Search was queued." }),
     );
     fireEvent.click(screen.getAllByRole("button", { name: "Auto search" })[1]);
-    await waitFor(() => expect(props.onChanged).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(props.notify).toHaveBeenCalledWith("Search was queued."),
+    );
     expect(props.notify).toHaveBeenCalledWith("Search was queued.");
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -1020,7 +1045,6 @@ describe("MediaDetails searches", () => {
         true,
       ),
     );
-    expect(props.onChanged).not.toHaveBeenCalled();
     expect(
       within(dialog)
         .getByRole("button", { name: "Confirm grab" })
@@ -1038,7 +1062,6 @@ describe("MediaDetails searches", () => {
         true,
       ),
     );
-    expect(props.onChanged).not.toHaveBeenCalled();
 
     const pending = Promise.withResolvers<Response>();
     fetchMock.mockImplementationOnce(() => pending.promise);
@@ -1069,7 +1092,6 @@ describe("MediaDetails searches", () => {
         within(dialog).queryByRole("button", { name: "Confirm grab" }),
       ).toBeNull(),
     );
-    expect(props.onChanged).toHaveBeenCalledTimes(1);
     expect(props.notify).toHaveBeenLastCalledWith(
       "Release sent to download client.",
     );
@@ -1165,7 +1187,6 @@ describe("Episode actions", () => {
         media={{ ...movie, kind: "series", targets }}
         onAddTarget={mock()}
         notify={mock()}
-        onChanged={mock()}
       />,
     );
     await screen.findByRole("alert");
@@ -1230,7 +1251,6 @@ describe("Episode actions", () => {
       targets,
     };
     const notify = mock();
-    const onChanged = mock();
     fetchMock.mockImplementation(async (path, init) => {
       const url = new URL(String(path), "http://localhost");
       if (url.pathname === "/api/episodes") {
@@ -1274,12 +1294,7 @@ describe("Episode actions", () => {
       throw new Error(`Unexpected request: ${path}`);
     });
     renderUI(
-      <MediaDetails
-        media={show}
-        onAddTarget={mock()}
-        notify={notify}
-        onChanged={onChanged}
-      />,
+      <MediaDetails media={show} onAddTarget={mock()} notify={notify} />,
     );
     const season = (
       await screen.findByText("Season 1", { exact: true })
@@ -1318,7 +1333,7 @@ describe("Episode actions", () => {
         name: "Auto search S01E01 on Sonarr 4K",
       }),
     );
-    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(notify).toHaveBeenCalled());
     expect(screen.queryByRole("dialog")).toBeNull();
     const write = writes()[0];
     expect(JSON.parse(String(write[1]?.body))).toEqual({

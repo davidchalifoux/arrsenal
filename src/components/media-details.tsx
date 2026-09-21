@@ -79,12 +79,10 @@ export function MediaDetails({
   media,
   onAddTarget,
   notify,
-  onChanged,
 }: {
   media: MediaItem;
   onAddTarget: (item: MediaItem) => void;
   notify: (message: string, error?: boolean) => void;
-  onChanged: () => void;
 }) {
   const router = useRouter();
   const [removeTarget, setRemoveTarget] = useState<MediaTarget | null>(null);
@@ -117,7 +115,6 @@ export function MediaDetails({
       });
       if (!result.success) throw new Error(result.message);
       notify(result.message);
-      onChanged();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Search failed.");
     } finally {
@@ -155,13 +152,11 @@ export function MediaDetails({
       if (!result.success) throw new Error(result.message);
       notify(result.message);
       if (media.targets.length === 1) {
-        // Leave the detail route before refreshing its now-removed library row.
+        // Return to the list after the upstream removal is acknowledged.
         router.replace(media.kind === "movie" ? "/movies" : "/shows");
-        onChanged();
         return;
       }
       setRemoveTarget(null);
-      onChanged();
     } catch (cause) {
       setRemoveError(
         cause instanceof Error ? cause.message : "Removal failed.",
@@ -941,7 +936,6 @@ export function MediaDetails({
           <SeriesEpisodes
             media={media}
             notify={notify}
-            onChanged={onChanged}
             onManualSearch={(target, episode, code) => {
               setSearchScope({ kind: "episode", id: episode.id, code });
               setReleaseTarget(target);
@@ -1062,7 +1056,6 @@ export function MediaDetails({
           onClose={() => setReleaseTarget(null)}
           onTarget={setReleaseTarget}
           notify={notify}
-          onChanged={onChanged}
           searchScope={searchScope}
         />
       )}
@@ -1077,7 +1070,6 @@ function ReleaseSearch({
   onClose,
   onTarget,
   notify,
-  onChanged,
   searchScope,
 }: {
   media: MediaItem;
@@ -1086,7 +1078,6 @@ function ReleaseSearch({
   onClose: () => void;
   onTarget: (target: MediaTarget) => void;
   notify: (message: string, error?: boolean) => void;
-  onChanged: () => void;
   searchScope?: {
     kind: "episode" | "season";
     id: number;
@@ -1127,7 +1118,6 @@ function ReleaseSearch({
       if (!result.success) throw new Error(result.message);
       notify(result.message);
       setConfirm(null);
-      onChanged();
     } catch (cause) {
       notify(
         cause instanceof Error ? cause.message : "Unable to grab release.",

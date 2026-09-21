@@ -865,6 +865,7 @@ test("season removal reports partial writes and retries only remaining current f
     },
   });
   const instance = await env.connect("sonarr");
+  const browsers = await watchMutationChanges();
   const remove = () =>
     episodesRoute.DELETE(
       request("/api/episodes", "DELETE", {
@@ -886,6 +887,25 @@ test("season removal reports partial writes and retries only remaining current f
   const body = await response.json();
   expect(body.success).toBe(false);
   expect(body.message).toMatch(/1 of 2/);
+  expect(body.outcomes).toEqual([
+    {
+      instanceId: instance.id,
+      state: "partial",
+      attemptedWrites: 2,
+      confirmedWrites: 1,
+    },
+  ]);
+  await eventually(() =>
+    browsers.every(({ hints }) =>
+      hints.some(
+        (event) =>
+          event.instanceId === instance.id &&
+          event.remoteId === 22 &&
+          event.topics.includes("episodes") &&
+          event.topics.includes("calendar"),
+      ),
+    ),
+  );
   expect(body.errors[0]).toMatchObject({ instanceId: instance.id });
   expect(body.errors[0].message).toMatch(/HTTP 503/);
   expect(env.nodes.sonarr.files).toEqual([
@@ -3722,4 +3742,380 @@ test("media patches preserve merged targets, no-op revisions, removals and new-s
     original.data.items[0].id,
   ]);
   expect(late.at(-1).patch).toBe(publications.at(-1).patch);
+});
+
+// These subscribers represent other open browsers. The mock instances expose
+// HTTP only: there are no SignalR notifications and no client refresh callbacks.
+async function watchMutationChanges() {
+  const { subscribeRealtime } = await import("../src/lib/server/realtime.ts");
+  const subscribers = Array.from({ length: 2 }, () => ({
+    data: new Map(),
+    hints: [],
+    statuses: [],
+  }));
+  for (const subscriber of subscribers) {
+    const unsubscribe = subscribeRealtime(
+      (status) => subscriber.statuses.push(status),
+      (snapshot) => {
+        if ("data" in snapshot)
+          subscriber.data.set(snapshot.queryKey[0], snapshot.data);
+      },
+      (event) => subscriber.hints.push(event),
+    );
+    onTestFinished(unsubscribe);
+  }
+  await eventually(() =>
+    subscribers.every(
+      (subscriber) =>
+        subscriber.data.has("library") &&
+        subscriber.data.has("queue") &&
+        subscriber.data.has("instances") &&
+        subscriber.hints.length > 0,
+    ),
+  );
+  for (const subscriber of subscribers) subscriber.hints.length = 0;
+  return subscribers;
+}
+
+for (const operation of [
+  "add",
+  "remove",
+  "search",
+  "grab",
+  "removeQueue",
+  "retryQueue",
+  "grabQueue",
+]) {
+  test(`local ${operation} reconciles both browsers without upstream events or browser refreshes`, async () => {
+    const queued = {
+      id: 42,
+      movieId: 11,
+      title: "Dune download",
+      status: "completed",
+      downloadId: "download-id",
+      outputPath: "/downloads/dune",
+      size: 100,
+      sizeleft: 0,
+    };
+    const env = await setup({
+      hd: {
+        media: operation === "add" ? [] : [movie],
+        lookup: [{ ...movie, id: 0 }],
+        queue: [
+          operation === "grabQueue"
+            ? { ...queued, status: "delay", downloadId: undefined }
+            : queued,
+        ],
+      },
+    });
+    const instance = await env.connect("hd");
+    const browsers = await watchMutationChanges();
+    env.nodes.hd.respond = (endpoint, req) => {
+      if (req.method === "GET") return;
+      if (endpoint === "movie") env.nodes.hd.media = [movie];
+      if (endpoint === "queue/42") env.nodes.hd.queue = [];
+      if (endpoint === "release" || endpoint === "queue/grab/42")
+        env.nodes.hd.queue = [
+          { ...queued, status: "downloading", sizeleft: 50 },
+        ];
+      if (endpoint === "command")
+        env.nodes.hd.commands = [
+          { id: 501, name: "SearchOrImport", status: "queued" },
+        ];
+      return Response.json({ id: 501 });
+    };
+    const input = { instanceId: instance.id, remoteId: 11, kind: "movie" };
+    let response;
+    switch (operation) {
+      case "add":
+        response = await mediaRoute.POST(
+          request("/api/media", "POST", {
+            media: { kind: "movie", tmdbId: movie.tmdbId },
+            search: false,
+            targets: [
+              {
+                instanceId: instance.id,
+                qualityProfileId: 1,
+                rootFolderPath: "/media",
+              },
+            ],
+          }),
+        );
+        break;
+      case "remove":
+        response = await mediaRoute.DELETE(
+          request("/api/media", "DELETE", { ...input, deleteFiles: false }),
+        );
+        break;
+      case "search":
+        response = await searchRoute.POST(
+          request("/api/search", "POST", input),
+        );
+        break;
+      case "grab":
+        response = await releasesRoute.POST(
+          request("/api/releases", "POST", {
+            instanceId: instance.id,
+            guid: "release-guid",
+            indexerId: 4,
+          }),
+        );
+        break;
+      case "removeQueue":
+        response = await queueRoute.DELETE(
+          request("/api/queue", "DELETE", {
+            instanceId: instance.id,
+            id: 42,
+            removeFromClient: true,
+            blocklist: false,
+          }),
+        );
+        break;
+      default:
+        response = await queueRoute.POST(
+          request("/api/queue", "POST", { instanceId: instance.id, id: 42 }),
+        );
+    }
+    expect(response.status).toBe(200);
+    expect((await response.json()).outcomes).toEqual([
+      {
+        instanceId: instance.id,
+        state: "accepted",
+        attemptedWrites: 1,
+        confirmedWrites: 1,
+      },
+    ]);
+    await eventually(() =>
+      browsers.every(({ data, hints }) => {
+        const updated =
+          operation === "add"
+            ? data.get("library").items.length === 1
+            : operation === "remove"
+              ? data.get("library").items.length === 0
+              : operation === "removeQueue"
+                ? data.get("queue").items.length === 0
+                : operation === "grab" || operation === "grabQueue"
+                  ? data.get("queue").items[0]?.status === "downloading"
+                  : data
+                      .get("instances")
+                      .instances[0]?.commands.some(
+                        (command) => command.id === 501,
+                      );
+        return (
+          updated &&
+          hints.some(
+            (event) =>
+              event.instanceId === instance.id &&
+              event.topics.includes("calendar") &&
+              event.topics.includes("episodes"),
+          )
+        );
+      }),
+    );
+    if (operation === "remove" || operation === "search") {
+      expect(browsers[0].hints).toContainEqual({
+        instanceId: instance.id,
+        remoteId: 11,
+        topics: expect.arrayContaining(["calendar", "episodes"]),
+      });
+    }
+  });
+}
+
+test("an accepted queue write with a broken response still reconciles peers and is not retried", async () => {
+  const env = await setup({
+    hd: {
+      media: [movie],
+      queue: [{ id: 42, title: "Dune", movieId: 11, status: "downloading" }],
+    },
+  });
+  const instance = await env.connect("hd");
+  const browsers = await watchMutationChanges();
+  env.nodes.hd.respond = (endpoint, req) => {
+    if (endpoint === "queue/42" && req.method === "DELETE") {
+      env.nodes.hd.queue = [];
+      return new Response("broken json", {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  };
+  const response = await queueRoute.DELETE(
+    request("/api/queue", "DELETE", {
+      instanceId: instance.id,
+      id: 42,
+      removeFromClient: true,
+      blocklist: false,
+    }),
+  );
+  expect(response.status).toBe(502);
+  expect((await response.json()).outcomes).toEqual([
+    {
+      instanceId: instance.id,
+      state: "uncertain",
+      attemptedWrites: 1,
+      confirmedWrites: 0,
+    },
+  ]);
+  await eventually(() =>
+    browsers.every(
+      ({ data, hints }) =>
+        data.get("queue").items.length === 0 &&
+        hints.some((event) => event.instanceId === instance.id),
+    ),
+  );
+  expect(
+    env.calls.filter(
+      (call) => call.endpoint === "queue/42" && call.method === "DELETE",
+    ),
+  ).toHaveLength(1);
+});
+
+test("a successful add target reconciles before another target settles, then reports partial success", async () => {
+  const env = await setup({
+    hd: { lookup: [{ ...movie, id: 0 }] },
+    uhd: { lookup: [{ ...movie, id: 0 }] },
+  });
+  const hd = await env.connect("hd");
+  const uhd = await env.connect("uhd");
+  const browsers = await watchMutationChanges();
+  const pending = Promise.withResolvers();
+  onTestFinished(() => pending.resolve(Response.json({}, { status: 503 })));
+  env.nodes.hd.respond = (endpoint, req) => {
+    if (endpoint === "movie" && req.method === "POST") {
+      env.nodes.hd.media = [movie];
+      return Response.json(movie);
+    }
+  };
+  env.nodes.uhd.respond = (endpoint, req) => {
+    if (endpoint === "movie" && req.method === "POST") return pending.promise;
+  };
+  const addition = mediaRoute.POST(
+    request("/api/media", "POST", {
+      media: { kind: "movie", tmdbId: movie.tmdbId },
+      search: false,
+      targets: [hd, uhd].map((instance) => ({
+        instanceId: instance.id,
+        qualityProfileId: 1,
+        rootFolderPath: "/media",
+      })),
+    }),
+  );
+  await eventually(() =>
+    browsers.every(({ data }) =>
+      data
+        .get("library")
+        .items[0]?.targets.some((target) => target.instanceId === hd.id),
+    ),
+  );
+  pending.resolve(Response.json({}, { status: 503 }));
+  const response = await addition;
+  expect(response.status).toBe(207);
+  const body = await response.json();
+  expect(body.success).toBe(false);
+  expect(body.outcomes).toEqual([
+    {
+      instanceId: hd.id,
+      state: "accepted",
+      attemptedWrites: 1,
+      confirmedWrites: 1,
+    },
+    {
+      instanceId: uhd.id,
+      state: "uncertain",
+      attemptedWrites: 1,
+      confirmedWrites: 0,
+    },
+  ]);
+  await eventually(() =>
+    browsers.every(({ hints }) =>
+      hints.some((event) => event.instanceId === uhd.id),
+    ),
+  );
+});
+
+test("a disconnected initiating request does not cancel mutation reconciliation for other browsers", async () => {
+  const env = await setup({
+    hd: {
+      media: [movie],
+      queue: [{ id: 42, movieId: 11, title: "Dune", status: "downloading" }],
+    },
+  });
+  const instance = await env.connect("hd");
+  const browsers = await watchMutationChanges();
+  const started = Promise.withResolvers();
+  const finish = Promise.withResolvers();
+  onTestFinished(() => finish.resolve());
+  env.nodes.hd.respond = async (endpoint, req) => {
+    if (endpoint === "queue/42" && req.method === "DELETE") {
+      started.resolve();
+      await finish.promise;
+      env.nodes.hd.queue = [];
+      return Response.json({});
+    }
+  };
+  const controller = new AbortController();
+  const pending = queueRoute.DELETE(
+    new Request(`${origin}/api/queue`, {
+      method: "DELETE",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instanceId: instance.id,
+        id: 42,
+        blocklist: false,
+        removeFromClient: true,
+      }),
+    }),
+  );
+  await started.promise;
+  controller.abort();
+  finish.resolve();
+  expect((await pending).status).toBe(200);
+  await eventually(() =>
+    browsers.every(
+      ({ data, hints }) =>
+        data.get("queue").items.length === 0 &&
+        hints.some((event) => event.instanceId === instance.id),
+    ),
+  );
+});
+
+test("connection edits and removal reconcile subscribers through committed configuration notifications", async () => {
+  const env = await setup({ hd: { media: [movie] } });
+  const instance = await env.connect("hd");
+  const browsers = await watchMutationChanges();
+  const response = await instanceRoute.PATCH(
+    request(`/api/instances/${instance.id}`, "PATCH", {
+      ...env.input("hd"),
+      name: "Renamed instance",
+    }),
+    { params: Promise.resolve({ id: instance.id }) },
+  );
+  expect(response.status).toBe(200);
+  await eventually(() =>
+    browsers.every(
+      ({ data, hints }) =>
+        data.get("instances").instances[0]?.name === "Renamed instance" &&
+        data.get("library").items[0]?.targets[0].instanceName ===
+          "Renamed instance" &&
+        hints.some((event) => event.topics.includes("options")),
+    ),
+  );
+  for (const browser of browsers) browser.hints.length = 0;
+  expect(
+    (
+      await instanceRoute.DELETE(
+        request(`/api/instances/${instance.id}`, "DELETE"),
+        { params: Promise.resolve({ id: instance.id }) },
+      )
+    ).status,
+  ).toBe(200);
+  await eventually(() =>
+    browsers.every(
+      ({ data, hints }) =>
+        data.get("instances").instances.length === 0 &&
+        data.get("library").items.length === 0 &&
+        hints.some((event) => event.topics.includes("episodes")),
+    ),
+  );
 });
