@@ -20,7 +20,6 @@ import type { LibraryResponse, MediaItem } from "@/lib/types";
 const mocks = {
   add: mock(),
   replace: mock(),
-  ready: true,
   data: { items: [] as MediaItem[], errors: [] } as LibraryResponse,
   pending: false,
 };
@@ -30,7 +29,7 @@ mock.module("next/navigation", () => ({
 mock.module("@/components/library-provider", () => ({
   useLibraryActions: () => ({ add: mocks.add, refresh: mock() }),
 }));
-mock.module("@/lib/collections", () => ({
+mock.module("@/lib/client-data", () => ({
   useLibrary: () => ({
     data: mocks.pending ? undefined : mocks.data,
     isPending: mocks.pending,
@@ -43,7 +42,6 @@ mock.module("@/components/use-library-view", () => ({
     totalCount: mocks.data.items.length,
     qualities: ["HD"],
     filterCount: 0,
-    isReady: mocks.ready,
   }),
 }));
 mock.module("@/components/media-card", () => ({
@@ -66,7 +64,6 @@ beforeEach(() => {
   mock.clearAllMocks();
   spyOn(window, "scrollTo").mockImplementation(() => {});
   mocks.pending = false;
-  mocks.ready = true;
   mocks.data.items = [];
 });
 afterEach(() => {
@@ -82,7 +79,6 @@ describe("LibraryBrowser", () => {
       JSON.stringify(saved),
     );
     mocks.pending = true;
-    mocks.ready = false;
     const view = render(<LibraryBrowser category="movies" />);
     expect(
       screen.getByRole("combobox", { name: "Filter by availability" })
@@ -98,9 +94,6 @@ describe("LibraryBrowser", () => {
     ).toBe("true");
     expect(window.scrollTo).not.toHaveBeenCalled();
     mocks.pending = false;
-    view.rerender(<LibraryBrowser category="movies" />);
-    expect(window.scrollTo).not.toHaveBeenCalled();
-    mocks.ready = true;
     view.rerender(<LibraryBrowser category="movies" />);
     await waitFor(() =>
       expect(window.scrollTo).toHaveBeenCalledWith({

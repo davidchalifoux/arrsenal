@@ -33,7 +33,7 @@ mock.module("next/navigation", () => ({
     throw new Error(`REDIRECT:${url}`);
   },
 }));
-mock.module("@/lib/collections", () => ({
+mock.module("@/lib/client-data", () => ({
   useInstances: () => ({ isPending: state.pending, data: { instances: [] } }),
   useSyncData: () => state.sync,
 }));

@@ -10,7 +10,7 @@ import {
   useEffect,
   useState,
 } from "react";
-import { useInstances, useLibrary, useQueue } from "@/lib/collections";
+import { useInstances, useLibrary, useQueue } from "@/lib/client-data";
 
 const StartupContext = createContext<(() => void) | null>(null);
 

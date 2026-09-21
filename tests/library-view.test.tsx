@@ -7,7 +7,7 @@ import type { MediaItem, MediaTarget } from "@/lib/types";
 
 mock.module("@/lib/client", () => ({ api: mock() }));
 const { useLibraryView } = await import("@/components/use-library-view");
-const { getCollections, useLibrary } = await import("@/lib/collections");
+const { useLibrary } = await import("@/lib/client-data");
 const { libraryQuery } = await import("@/lib/queries");
 
 const target: MediaTarget = {
@@ -59,14 +59,9 @@ function setup(items: MediaItem[]) {
   return { client, ...hook };
 }
 
-afterEach(async () => {
+afterEach(() => {
   cleanup();
   for (const client of clients.splice(0)) {
-    await Promise.all(
-      Object.values(getCollections(client)).map((collection) =>
-        collection.cleanup(),
-      ),
-    );
     client.clear();
   }
 });
@@ -189,6 +184,23 @@ describe("useLibraryView", () => {
       ]),
     );
     expect(result.current.totalCount).toBe(4);
+  });
+
+  it("memoizes derived views and never sorts or clones cached rows", () => {
+    const other = { ...movie, id: "movie:2", title: "Dune" };
+    const { client, result, rerender } = setup([movie, other]);
+    const cached = client.getQueryData(libraryQuery.queryKey);
+    const initial = result.current;
+    rerender({ ...defaults });
+    expect(result.current).toBe(initial);
+    rerender({ ...defaults, sort: "title", sortDirection: "desc" });
+    expect(result.current.filtered.map((item) => item.id)).toEqual([
+      other.id,
+      movie.id,
+    ]);
+    expect(result.current.filtered[0] === cached?.items[1]).toBe(true);
+    expect(client.getQueryData(libraryQuery.queryKey) === cached).toBe(true);
+    expect(cached?.items.map((item) => item.id)).toEqual([movie.id, other.id]);
   });
 
   it.each([

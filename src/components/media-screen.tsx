@@ -1,15 +1,8 @@
 "use client";
 
 import { css } from "@styled-system/css";
-import { eq, useLiveQuery } from "@tanstack/react-db";
-import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import {
-  collectionRow,
-  useClientReady,
-  useCollections,
-} from "@/lib/collections";
-import { libraryQuery } from "@/lib/queries";
+import { useLibraryMedia } from "@/lib/client-data";
 import type { MediaKind } from "@/lib/types";
 import { useLibraryActions } from "./library-provider";
 import { MediaDetails } from "./media-details";
@@ -23,24 +16,11 @@ export function MediaScreen({
   mediaId: string;
   kind: MediaKind;
 }) {
-  const collections = useCollections();
-  const clientReady = useClientReady();
-  const library = useQuery({ ...libraryQuery, enabled: false });
+  const library = useLibraryMedia(mediaId, kind);
   const { add, notify, refresh } = useLibraryActions();
-  const title = useLiveQuery({
-    query: (q) =>
-      clientReady
-        ? q
-            .from({ item: collections.library })
-            .where(({ item }) => eq(item.id, mediaId))
-            .where(({ item }) => eq(item.kind, kind))
-            .findOne()
-        : undefined,
-  });
-  const media = title.data && collectionRow(title.data);
+  const media = library.data?.media;
   if (
     library.isPending ||
-    (!library.isError && title.isLoading) ||
     (!media &&
       (library.isFetching ||
         (!library.isError && !!library.data?.loadingInstanceIds?.length)))

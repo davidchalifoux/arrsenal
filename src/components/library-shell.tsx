@@ -15,7 +15,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useState } from "react";
-import { useInstances, useQueue, useSyncData } from "@/lib/collections";
+import { useInstances, useQueue, useSyncData } from "@/lib/client-data";
 import { useLibraryActions } from "./library-provider";
 import { LibraryUtilities, TaskStatus } from "./page-header";
 import { Button } from "./ui";

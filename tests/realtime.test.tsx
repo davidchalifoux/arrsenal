@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-query";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
-import { getCollections, useLibrary } from "@/lib/collections";
+import { useLibrary } from "@/lib/client-data";
 import { libraryQuery } from "@/lib/queries";
 import type {
   EpisodesResponse,
@@ -108,11 +108,6 @@ beforeEach(() => {
 afterEach(async () => {
   cleanup();
   for (const client of clients.splice(0)) {
-    await Promise.all(
-      Object.values(getCollections(client)).map((collection) =>
-        collection.cleanup(),
-      ),
-    );
     client.clear();
   }
   jest.restoreAllMocks();
@@ -138,7 +133,7 @@ const movie: MediaItem = {
   targets: [],
 };
 
-it("pushes core snapshots to mounted DB rows but ignores parameter snapshots without HTTP", async () => {
+it("pushes core snapshots to mounted Query observers but ignores parameter snapshots without HTTP", async () => {
   const { client, wrapper } = setup();
   client.setQueryData<LibraryResponse>(["library"], {
     items: [movie],
@@ -956,7 +951,7 @@ function emitPatch(patch: ReturnType<typeof libraryPatch>) {
   latestStream().emit("patch", JSON.stringify(patch));
 }
 
-it("applies an ordered burst of patches after a queued baseline into live DB rows without HTTP", async () => {
+it("applies an ordered burst of patches after a queued baseline into Query observers without HTTP", async () => {
   const { client, wrapper } = setup();
   client.setQueryData(["library"], { items: [movie], errors: [] });
   const { result } = renderHook(

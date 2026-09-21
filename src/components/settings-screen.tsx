@@ -2,7 +2,7 @@
 
 import { css } from "@styled-system/css";
 import { useRouter } from "next/navigation";
-import { useInstances, useSyncData } from "@/lib/collections";
+import { useInstances, useSyncData } from "@/lib/client-data";
 import { useLibraryActions } from "./library-provider";
 import { PageHeader } from "./page-header";
 import { Settings } from "./settings";

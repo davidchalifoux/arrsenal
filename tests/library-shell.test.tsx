@@ -49,7 +49,7 @@ mock.module("next/link", () => ({
     />
   ),
 }));
-mock.module("@/lib/collections", () => ({
+mock.module("@/lib/client-data", () => ({
   useQueue: () => mocks.queue,
   useInstances: () => mocks.instances,
   useSyncData: () => mocks.sync,
