@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/davidchalifoux/arrsenal/compare/v0.5.1...v0.6.0) (2026-09-21)
+
+
+### Features
+
+* dense downloads table, Sonarr-matched queue order, and live task status ([#21](https://github.com/davidchalifoux/arrsenal/issues/21)) ([db5f96c](https://github.com/davidchalifoux/arrsenal/commit/db5f96c73f27a89b78ca5d98765a6464c531322d))
+
+
+### Bug Fixes
+
+* enrich Sonarr episode quality in the background ([#24](https://github.com/davidchalifoux/arrsenal/issues/24)) ([8b92527](https://github.com/davidchalifoux/arrsenal/commit/8b92527c4936cdc2f36b86397ecb100d1610ecd9))
+* wait for pending instances on title detail pages ([#27](https://github.com/davidchalifoux/arrsenal/issues/27)) ([8cb66e0](https://github.com/davidchalifoux/arrsenal/commit/8cb66e081f2c8f04870ab8b04034f70e874ccbcd))
+
 ## [0.5.1](https://github.com/davidchalifoux/arrsenal/compare/v0.5.0...v0.5.1) (2026-09-09)
 
 
