@@ -201,8 +201,6 @@ export function DownloadQueue({
     } finally {
       actionLock.current = false;
       setBusy(null);
-      // A timed-out mutation may still have been accepted by the instance.
-      onRefresh();
     }
   }
 

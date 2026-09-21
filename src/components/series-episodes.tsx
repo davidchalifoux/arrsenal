@@ -158,13 +158,11 @@ function EpisodeAvailability({
 export function SeriesEpisodes({
   media,
   notify,
-  onChanged,
   onManualSearch,
   onSeasonManualSearch,
 }: {
   media: MediaItem;
   notify: (message: string, error?: boolean) => void;
-  onChanged: () => void;
   onManualSearch: (target: MediaTarget, episode: Episode, code: string) => void;
   onSeasonManualSearch: (target: MediaTarget, seasonNumber: number) => void;
 }) {
@@ -310,11 +308,8 @@ export function SeriesEpisodes({
         cause instanceof Error ? cause.message : "File deletion failed.",
       );
     } finally {
-      // A failed season deletion may still have removed some files.
-      await Promise.allSettled(queries.map((query) => query.refetch()));
       actionLock.current = false;
       setPending(null);
-      onChanged();
     }
   }
 
@@ -346,7 +341,6 @@ export function SeriesEpisodes({
       });
       if (!result.success) throw new Error(result.message);
       notify(result.message);
-      onChanged();
     } catch (cause) {
       notify(cause instanceof Error ? cause.message : "Search failed.", true);
     } finally {

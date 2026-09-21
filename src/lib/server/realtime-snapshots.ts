@@ -43,6 +43,11 @@ import { instanceCalendar, mergeCalendar } from "./calendar";
 import { type InstanceConfig, readInstances } from "./config";
 import { instanceEpisodes } from "./episodes";
 import { ApiError, errorMessage, parseInput } from "./http";
+import {
+  instanceMedia,
+  type MediaEnrichment,
+  seriesEpisodeQuality,
+} from "./library";
 import { createLibraryMerger } from "./library-projection";
 import {
   combinedStatus,
@@ -50,17 +55,11 @@ import {
   normalizeQueue,
   qualityName,
 } from "./media";
-
 import {
   createRealtimePatch,
   parseSnapshot,
   unchangedPatch,
 } from "./realtime-patches";
-import {
-  instanceMedia,
-  type MediaEnrichment,
-  seriesEpisodeQuality,
-} from "./services";
 
 type Data =
   | LibraryResponse

@@ -318,11 +318,11 @@ describe("DownloadQueue", () => {
       pending.resolve({ success: true, message: "Queue item removed." }),
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(onRefresh).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith("Queue item removed.");
   });
 
-  it("treats success:false as failure, preserves the confirmation, and refreshes after uncertainty", async () => {
+  it("treats success:false as failure, preserves the confirmation, and leaves reconciliation to the server after uncertainty", async () => {
     (
       api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
     ).mockResolvedValue({
@@ -365,7 +365,7 @@ describe("DownloadQueue", () => {
       expect.stringContaining("not confirmed"),
       true,
     );
-    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(onRefresh).not.toHaveBeenCalled();
   });
 
   it("only offers import retry and delayed-release grab when the DTO supports them", () => {
@@ -453,7 +453,8 @@ describe("DownloadQueue", () => {
         name: status === "completed" ? "Retry import" : "Grab now",
       }),
     );
-    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(notify).toHaveBeenCalled());
+    expect(onRefresh).not.toHaveBeenCalled();
     expect(api).toHaveBeenCalledWith("/api/queue", {
       method: "POST",
       body: JSON.stringify({ instanceId: "sonarr-hd", id: -42 }),

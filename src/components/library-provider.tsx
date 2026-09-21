@@ -227,9 +227,6 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         }
         instances={instances.data?.instances ?? []}
         library={items}
-        onAdded={() => {
-          void sync("media");
-        }}
         notify={notify}
         onConnect={connect}
       />

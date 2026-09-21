@@ -12,13 +12,16 @@ background refresh. `useClientReady` prevents live subscriptions from fetching
 during server rendering or hydration. Strip DB virtual properties with
 `collectionRow` before passing direct live-query rows to API mutation flows.
 
-`useSyncData` owns reconciliation after commands: library refresh, queue refresh,
-media changes (library, queue, affected episode queries), or all data after a
-connection changes. Sonarr/Radarr commands are asynchronous and can partially
-succeed, so they are not optimistic collection CRUD. SignalR notifications update
-shared server snapshots, delivered through `/api/events` directly into the Query
-cache and its DB collections. Complete upstream movie/series resources can avoid
-an upstream fetch; incomplete events share a targeted server-side refresh.
+`useSyncData` handles explicit user refreshes. Upstream mutation reconciliation
+belongs to the server: `mutations.ts` records attempted and acknowledged writes,
+then `changes.ts` updates shared snapshots and emits scoped page hints through
+`/api/events`. Screens display outcomes without mutation-specific refetch
+callbacks. Connection saves use the existing server configuration notifications.
+Sonarr/Radarr commands are asynchronous and can partially succeed, so they are
+not optimistic collection CRUD. SignalR completion notifications use the same
+publication path. Complete upstream movie/series resources can avoid an upstream
+fetch; incomplete events share a targeted server-side refresh. A disconnected
+browser recovers through the existing reconnect/visibility/manual-refresh paths.
 
 Catalog searches, instance options, episodes, and release searches remain
 parameterized TanStack queries. They are request-specific, not shared datasets

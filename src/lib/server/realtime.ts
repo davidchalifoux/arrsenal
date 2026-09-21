@@ -15,6 +15,7 @@ import type {
   RealtimeTopic,
 } from "../realtime-events";
 import { row } from "./arr";
+import { publishInstanceChange, subscribeResourceChanges } from "./changes";
 import {
   type InstanceConfig,
   readInstances,
@@ -24,7 +25,6 @@ import {
   reconcileSnapshots,
   refreshSnapshots,
   subscribeSnapshots,
-  updateSnapshots,
 } from "./realtime-snapshots";
 
 type Listener = {
@@ -100,6 +100,7 @@ function createManager() {
   const listeners = new Set<Listener>();
   const connections = new Map<string, InstanceConnection>();
   let unsubscribeConfig: (() => void) | undefined;
+  let unsubscribeChanges: (() => void) | undefined;
   let reconciling = false;
   let reconcileRequested = false;
   let generation = 0;
@@ -278,14 +279,7 @@ function createManager() {
           candidate <= 2147483647
             ? candidate
             : undefined;
-        updateSnapshots(entry.instance, message, topics, remoteId);
-        const affected = topics.filter((topic) => pageTopics.includes(topic));
-        if (affected.length)
-          invalidate({
-            instanceId: entry.instance.id,
-            ...(remoteId === undefined ? {} : { remoteId }),
-            topics: affected,
-          });
+        publishInstanceChange(entry.instance, message, topics, remoteId);
       });
       attempt.deadline = setTimeout(
         () => failed(entry, attempt),
@@ -382,6 +376,7 @@ function createManager() {
       }
       if (listeners.size === 1) {
         generation++;
+        unsubscribeChanges = subscribeResourceChanges(invalidate);
         unsubscribeConfig = subscribeInstanceChanges(() => {
           void reconcile();
         });
@@ -392,6 +387,8 @@ function createManager() {
         generation++;
         unsubscribeConfig?.();
         unsubscribeConfig = undefined;
+        unsubscribeChanges?.();
+        unsubscribeChanges = undefined;
         reconcileRequested = false;
         clearTimeout(hintTimer);
         hintTimer = undefined;

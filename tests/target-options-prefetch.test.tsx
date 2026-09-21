@@ -67,7 +67,6 @@ function renderAdd(overrides: Partial<ComponentProps<typeof AddMedia>> = {}) {
         instances={[instance, sonarr]}
         library={[]}
         onClose={mock()}
-        onAdded={mock()}
         onConnect={mock()}
         notify={mock()}
         {...overrides}

@@ -55,7 +55,7 @@ afterEach(cleanup);
 
 describe("Settings", () => {
   it("prefills edits, tests with the saved key, and updates the same instance", async () => {
-    const onChanged = mock();
+    const onRefresh = mock();
     const notify = mock();
     (
       api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
@@ -64,7 +64,7 @@ describe("Settings", () => {
       version: "4.0.1",
     });
     render(
-      <Settings instances={[instance]} onChanged={onChanged} notify={notify} />,
+      <Settings instances={[instance]} onRefresh={onRefresh} notify={notify} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Edit Sonarr HD" }));
     const dialog = await screen.findByRole("dialog", { name: "Edit instance" });
@@ -104,7 +104,7 @@ describe("Settings", () => {
       name: "Renamed Sonarr",
       url: instance.url,
     });
-    expect(onChanged).not.toHaveBeenCalled();
+    expect(onRefresh).not.toHaveBeenCalled();
 
     const pending = Promise.withResolvers<{ instance: InstanceSummary }>();
     (
@@ -125,7 +125,7 @@ describe("Settings", () => {
       pending.resolve({ instance: { ...instance, name: "Renamed Sonarr" } }),
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(onRefresh).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith("Renamed Sonarr updated.");
     fireEvent.click(screen.getByRole("button", { name: "Add instance" }));
     await screen.findByRole("dialog", { name: "Connect an instance" });
@@ -140,9 +140,9 @@ describe("Settings", () => {
     (
       api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
     ).mockRejectedValueOnce(new Error("Connection failed."));
-    const onChanged = mock();
+    const onRefresh = mock();
     render(
-      <Settings instances={[instance]} onChanged={onChanged} notify={mock()} />,
+      <Settings instances={[instance]} onRefresh={onRefresh} notify={mock()} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Edit Sonarr HD" }));
     await screen.findByRole("dialog");
@@ -175,7 +175,7 @@ describe("Settings", () => {
     expect((screen.getByLabelText("API key") as HTMLInputElement).value).toBe(
       "replacement-key",
     );
-    expect(onChanged).not.toHaveBeenCalled();
+    expect(onRefresh).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "Edit Sonarr HD" }));
@@ -189,7 +189,7 @@ describe("Settings", () => {
   });
 
   it("shows an honest empty state and validates required fields before a request", async () => {
-    render(<Settings instances={[]} onChanged={mock()} notify={mock()} />);
+    render(<Settings instances={[]} onRefresh={mock()} notify={mock()} />);
     expect(screen.getByText("Bring your library together")).toBeTruthy();
     expect(screen.queryByText("Connected")).toBeNull();
     fireEvent.click(
@@ -211,7 +211,7 @@ describe("Settings", () => {
     "http://localhost:8989\\sonarr",
   ])("rejects the invalid instance URL %s without throwing or contacting the server", async (url) => {
     render(
-      <Settings instances={[]} onChanged={mock()} notify={mock()} autoOpen />,
+      <Settings instances={[]} onRefresh={mock()} notify={mock()} autoOpen />,
     );
     await screen.findByRole("dialog");
     fillForm(url);
@@ -228,11 +228,11 @@ describe("Settings", () => {
       version: "4.0.1",
       message: "Connection successful.",
     });
-    const onChanged = mock();
+    const onRefresh = mock();
     render(
       <Settings
         instances={[]}
-        onChanged={onChanged}
+        onRefresh={onRefresh}
         notify={mock()}
         autoOpen
       />,
@@ -252,7 +252,7 @@ describe("Settings", () => {
       url: "http://host.docker.internal:8989/sonarr",
       apiKey: "test-secret-key",
     });
-    expect(onChanged).not.toHaveBeenCalled();
+    expect(onRefresh).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText("Instance name"), {
       target: { value: "Another instance" },
     });
@@ -267,7 +267,7 @@ describe("Settings", () => {
       api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
     ).mockReturnValue(pending.promise);
     render(
-      <Settings instances={[]} onChanged={mock()} notify={mock()} autoOpen />,
+      <Settings instances={[]} onRefresh={mock()} notify={mock()} autoOpen />,
     );
     await screen.findByRole("dialog");
     fillForm();
@@ -295,17 +295,17 @@ describe("Settings", () => {
     expect(screen.queryByText(/Connection verified/)).toBeNull();
   });
 
-  it("saves once, prevents dismissal while saving, and refreshes connections on success", async () => {
+  it("saves once, prevents dismissal while saving, and leaves connection reconciliation to the server", async () => {
     const pending = Promise.withResolvers<{ instance: InstanceSummary }>();
     (
       api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
     ).mockReturnValue(pending.promise);
-    const onChanged = mock();
+    const onRefresh = mock();
     const notify = mock();
     render(
       <Settings
         instances={[]}
-        onChanged={onChanged}
+        onRefresh={onRefresh}
         notify={notify}
         autoOpen
       />,
@@ -325,7 +325,7 @@ describe("Settings", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
     await act(async () => pending.resolve({ instance }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(onRefresh).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith("Sonarr HD connected.");
     fireEvent.click(screen.getByRole("button", { name: "Add instance" }));
     await screen.findByRole("dialog");
@@ -341,11 +341,11 @@ describe("Settings", () => {
       new Error("An instance with this URL already exists."),
     );
     const notify = mock();
-    const onChanged = mock();
+    const onRefresh = mock();
     render(
       <Settings
         instances={[]}
-        onChanged={onChanged}
+        onRefresh={onRefresh}
         notify={notify}
         autoOpen
       />,
@@ -365,7 +365,7 @@ describe("Settings", () => {
       "An instance with this URL already exists.",
       true,
     );
-    expect(onChanged).not.toHaveBeenCalled();
+    expect(onRefresh).not.toHaveBeenCalled();
   });
 
   it("switches instance type through the shared select and sends the selected kind", async () => {
@@ -376,7 +376,7 @@ describe("Settings", () => {
       message: "Connection successful.",
     });
     render(
-      <Settings instances={[]} onChanged={mock()} notify={mock()} autoOpen />,
+      <Settings instances={[]} onRefresh={mock()} notify={mock()} autoOpen />,
     );
     await screen.findByRole("dialog");
     fireEvent.click(screen.getByRole("combobox", { name: "Instance type" }));
@@ -410,7 +410,7 @@ describe("Settings", () => {
       message: "This is Radarr, not Sonarr.",
     });
     render(
-      <Settings instances={[]} onChanged={mock()} notify={mock()} autoOpen />,
+      <Settings instances={[]} onRefresh={mock()} notify={mock()} autoOpen />,
     );
     await screen.findByRole("dialog");
     fillForm();
@@ -423,7 +423,7 @@ describe("Settings", () => {
 
   it("handles each auto-open request once, even when the parent callback changes", async () => {
     const onAutoOpened = mock();
-    const props = { instances: [], onChanged: mock(), notify: mock() };
+    const props = { instances: [], onRefresh: mock(), notify: mock() };
     const { rerender } = render(
       <Settings {...props} autoOpen onAutoOpened={onAutoOpened} />,
     );
@@ -451,14 +451,14 @@ describe("Settings", () => {
       success: true,
       message: "Instance disconnected. No remote media or files were deleted.",
     });
-    const onChanged = mock();
+    const onRefresh = mock();
     const notify = mock();
     render(
       <Settings
         instances={[
           { ...instance, connected: false, error: "Connection timed out." },
         ]}
-        onChanged={onChanged}
+        onRefresh={onRefresh}
         notify={notify}
       />,
     );
@@ -468,7 +468,7 @@ describe("Settings", () => {
       "Connection timed out",
     );
     fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
-    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
     expect(api).not.toHaveBeenCalled();
     fireEvent.click(
       screen.getByRole("button", { name: "Disconnect Sonarr HD" }),
@@ -487,6 +487,6 @@ describe("Settings", () => {
     expect(api).toHaveBeenCalledWith("/api/instances/sonarr-hd", {
       method: "DELETE",
     });
-    expect(onChanged).toHaveBeenCalledTimes(2);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 });

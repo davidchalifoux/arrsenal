@@ -81,14 +81,14 @@ const fieldErrorStyle = css({ color: "negative", fontSize: "12px" });
 
 export function Settings({
   instances,
-  onChanged,
+  onRefresh,
   notify,
   autoOpen = false,
   onAutoOpened,
   onDismiss,
 }: {
   instances: InstanceSummary[];
-  onChanged: () => void;
+  onRefresh: () => void;
   notify: (message: string, error?: boolean) => void;
   autoOpen?: boolean;
   onAutoOpened?: () => void;
@@ -226,7 +226,6 @@ export function Settings({
           );
         request.current = null;
         changeOpen(false);
-        onChanged();
         notify(`${result.instance.name} ${editing ? "updated" : "connected"}.`);
       }
     } catch (cause) {
@@ -257,7 +256,6 @@ export function Settings({
       );
       if (!result.success) throw new Error(result.message);
       setRemoving(null);
-      onChanged();
       notify(result.message);
     } catch (cause) {
       const message =
@@ -266,7 +264,6 @@ export function Settings({
           : "Could not disconnect the instance.";
       setRemoveError(message);
       notify(message, true);
-      onChanged();
     } finally {
       removeLock.current = false;
       setRemoveBusy(false);
@@ -452,7 +449,7 @@ export function Settings({
                       size="sm"
                       variant="ghost"
                       title="Refresh all instance statuses"
-                      onClick={() => onChanged()}
+                      onClick={() => onRefresh()}
                     >
                       <ArrowClockwiseIcon size={14} /> Refresh status
                     </Button>

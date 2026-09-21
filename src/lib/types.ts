@@ -118,10 +118,19 @@ export interface AddMediaRequest {
   search: boolean;
 }
 
+export interface MutationOutcome {
+  instanceId: string;
+  // Accepted means acknowledged by upstream, not that an async command completed.
+  state: "accepted" | "rejected" | "uncertain" | "partial";
+  attemptedWrites: number;
+  confirmedWrites: number;
+}
+
 export interface ActionResponse {
   success: boolean;
   message: string;
   errors?: ServiceError[];
+  outcomes?: MutationOutcome[];
 }
 
 export type EpisodeStatus =

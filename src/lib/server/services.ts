@@ -1,17 +1,10 @@
 import "server-only";
 
-import type {
-  ActionResponse,
-  InstanceOptions,
-  LibraryResponse,
-  MediaKind,
-  ServiceError,
-} from "../types";
+import type { LibraryResponse, MediaKind } from "../types";
 import {
   arrRequest,
   instanceOptions,
   num,
-  profiles,
   queueRecords,
   type Row,
   row,
@@ -21,13 +14,14 @@ import {
 import { getInstance, type InstanceConfig, readInstances } from "./config";
 import { episodeFilesForRemoval, verifyEpisode } from "./episodes";
 import { ApiError, errorMessage, parseInput } from "./http";
+import { instanceMedia } from "./library";
+import { mergeMedia, normalizeRelease } from "./media";
 import {
-  mergeMedia,
-  normalizeMedia,
-  normalizeRelease,
-  qualityName,
-} from "./media";
-import { updateSnapshots } from "./realtime-snapshots";
+  actionResponse,
+  executeMutation,
+  mutationFailure,
+  runAction,
+} from "./mutations";
 import {
   addMediaSchema,
   grabReleaseSchema,
@@ -38,17 +32,6 @@ import {
   searchSchema,
 } from "./schemas";
 
-function serviceError(
-  instance: Pick<InstanceConfig, "id" | "name">,
-  error: unknown,
-): ServiceError {
-  return {
-    instanceId: instance.id,
-    instanceName: instance.name,
-    message: errorMessage(error),
-  };
-}
-
 function requireKind(instance: InstanceConfig, kind: MediaKind): void {
   if (instance.kind !== (kind === "movie" ? "radarr" : "sonarr")) {
     throw new ApiError(
@@ -56,132 +39,6 @@ function requireKind(instance: InstanceConfig, kind: MediaKind): void {
       "The media kind does not match the selected instance.",
     );
   }
-}
-
-export type MediaEnrichment = {
-  profiles: InstanceOptions["profiles"];
-  downloading: Set<number>;
-  complete: boolean;
-};
-
-// Sonarr exposes real per-episode quality only through per-series episodefile
-// calls, an unavoidable N+1 (there is no bulk endpoint). The snapshot store
-// fills these in the background and caches them per series, so the library
-// itself never blocks on the sweep and an unreachable series just keeps its
-// "Unknown" labels until a later pass. Returns the distinct file qualities.
-export async function seriesEpisodeQuality(
-  instance: InstanceConfig,
-  seriesId: number,
-  signal?: AbortSignal,
-): Promise<string[]> {
-  const files = rows(
-    await arrRequest(instance, "episodefile", {
-      signal,
-      query: { seriesId },
-    }),
-  );
-  return files.map((file) => qualityName(file.quality));
-}
-
-export type MediaDependencies = {
-  queue?: () => Promise<Row[]>;
-  enrichment?: (value: MediaEnrichment) => void;
-};
-
-export async function instanceMedia(
-  instance: InstanceConfig,
-  term?: string,
-  dependencies: MediaDependencies = {},
-): Promise<LibraryResponse & { primarySucceeded: boolean }> {
-  const errors: ServiceError[] = [];
-  const signal = AbortSignal.timeout(30000);
-  const endpoint = instance.kind === "radarr" ? "movie" : "series";
-  const [mediaResult, profileResult, queueResult] = await Promise.allSettled([
-    arrRequest(instance, term === undefined ? endpoint : `${endpoint}/lookup`, {
-      // A full library list for a large instance takes well beyond arrRequest's
-      // 8s default; give it the whole instance budget so the list is never
-      // dropped (which would drop every item, not just an optional label).
-      timeoutMs: 30000,
-      signal,
-      query: term === undefined ? undefined : { term },
-    }).then((value) => {
-      const items = rows(value);
-      if (
-        items.some(
-          (item) =>
-            !str(item.title).trim() ||
-            (term === undefined &&
-              (!Number.isInteger(item.id) || num(item.id) <= 0)),
-        )
-      ) {
-        throw new ApiError(502, "Instance returned an invalid media record.");
-      }
-      return items;
-    }),
-    profiles(instance, signal),
-    dependencies.queue ? dependencies.queue() : queueRecords(instance, signal),
-  ]);
-  if (mediaResult.status === "rejected")
-    return {
-      primarySucceeded: false,
-      items: [],
-      errors: [serviceError(instance, mediaResult.reason)],
-    };
-  if (profileResult.status === "rejected")
-    errors.push(
-      serviceError(
-        instance,
-        new ApiError(
-          502,
-          `Quality profiles unavailable: ${errorMessage(profileResult.reason)}`,
-        ),
-      ),
-    );
-  if (queueResult.status === "rejected")
-    errors.push(
-      serviceError(
-        instance,
-        new ApiError(
-          502,
-          `Download status unavailable: ${errorMessage(queueResult.reason)}`,
-        ),
-      ),
-    );
-  const qualityProfiles =
-    profileResult.status === "fulfilled" ? profileResult.value : [];
-  const queue = queueResult.status === "fulfilled" ? queueResult.value : [];
-  const downloading = new Set(
-    queue
-      .filter(
-        (item) =>
-          !["failed", "delay", "downloadclientunavailable"].includes(
-            str(item.status).toLowerCase(),
-          ),
-      )
-      .map((item) =>
-        num(instance.kind === "radarr" ? item.movieId : item.seriesId),
-      )
-      .filter((id) => id > 0),
-  );
-  const media = mediaResult.value;
-  // Episode-level quality (Sonarr) is not fetched here: it is a per-series N+1
-  // that would block the whole library and time out on large instances. The
-  // snapshot store fills and caches it in the background instead; series items
-  // start with "Unknown" episode quality and are enriched without a reload.
-  dependencies.enrichment?.({
-    profiles: qualityProfiles,
-    downloading,
-    complete:
-      profileResult.status === "fulfilled" &&
-      queueResult.status === "fulfilled",
-  });
-  return {
-    primarySucceeded: true,
-    items: media.map((item) =>
-      normalizeMedia(item, instance, qualityProfiles, downloading),
-    ),
-    errors,
-  };
 }
 
 export async function lookup(
@@ -214,34 +71,6 @@ export async function lookup(
   };
 }
 
-function actionResponse(body: ActionResponse, status = 200): Response {
-  return Response.json(body, {
-    status,
-    headers: {
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
-}
-
-async function runAction(
-  instance: InstanceConfig,
-  work: () => Promise<string>,
-): Promise<Response> {
-  try {
-    return actionResponse({ success: true, message: await work() });
-  } catch (error) {
-    return actionResponse(
-      {
-        success: false,
-        message: errorMessage(error),
-        errors: [serviceError(instance, error)],
-      },
-      error instanceof ApiError ? error.status : 500,
-    );
-  }
-}
-
 export async function addMedia(input: unknown): Promise<Response> {
   const { media, search, targets } = parseInput(addMediaSchema, input);
   const kind = media.kind;
@@ -258,9 +87,12 @@ export async function addMedia(input: unknown): Promise<Response> {
       const instance = instances.find(
         (entry) => entry.id === target.instanceId,
       );
-      try {
-        if (!instance)
-          throw new ApiError(404, "Selected instance no longer exists.");
+      if (!instance)
+        return mutationFailure(
+          { id: target.instanceId, name: "Unknown instance" },
+          new ApiError(404, "Selected instance no longer exists."),
+        );
+      return executeMutation(instance, { operation: "add" }, async (write) => {
         requireKind(instance, kind);
         const [options, matches] = await Promise.all([
           instanceOptions(instance),
@@ -339,17 +171,9 @@ export async function addMedia(input: unknown): Promise<Response> {
             searchForCutoffUnmetEpisodes: false,
           };
         }
-        await arrRequest(instance, kind, { method: "POST", body: payload });
-        return { error: undefined, status: 200 };
-      } catch (error) {
-        return {
-          error: serviceError(
-            instance ?? { id: target.instanceId, name: "Unknown instance" },
-            error,
-          ),
-          status: error instanceof ApiError ? error.status : 500,
-        };
-      }
+        await write(kind, { method: "POST", body: payload });
+        return "Addition accepted.";
+      });
     }),
   );
   const errors = results.flatMap((result) =>
@@ -359,6 +183,7 @@ export async function addMedia(input: unknown): Promise<Response> {
   return actionResponse(
     {
       success: errors.length === 0,
+      outcomes: results.map((result) => result.outcome),
       message: added
         ? `Added to ${added} of ${targets.length} selected instance${targets.length === 1 ? "" : "s"}.${search ? " Automatic search was requested." : " Media is monitored; no immediate search was requested."}${errors.length ? " Some targets failed; review the errors before retrying." : ""}`
         : "No additions were confirmed. Review the errors and refresh before retrying.",
@@ -375,26 +200,20 @@ export async function removeMedia(input: unknown): Promise<Response> {
   );
   const instance = await getInstance(instanceId);
   requireKind(instance, kind);
-  return runAction(instance, async () => {
-    const media = row(await arrRequest(instance, `${kind}/${remoteId}`));
-    if (media.id !== remoteId)
-      throw new ApiError(502, "Instance returned an invalid media identity.");
-    try {
-      await arrRequest(instance, `${kind}/${remoteId}`, {
+  return runAction(
+    instance,
+    { operation: "remove", remoteId },
+    async (write) => {
+      const media = row(await arrRequest(instance, `${kind}/${remoteId}`));
+      if (media.id !== remoteId)
+        throw new ApiError(502, "Instance returned an invalid media identity.");
+      await write(`${kind}/${remoteId}`, {
         method: "DELETE",
         query: { deleteFiles },
       });
-    } finally {
-      // Failed requests may still have changed upstream state.
-      updateSnapshots(
-        instance,
-        null,
-        ["library", "instances", "calendar", "episodes"],
-        remoteId,
-      );
-    }
-    return `Removed from ${instance.name}.${deleteFiles ? " Files were deleted from disk." : " Files were kept on disk."}`;
-  });
+      return `Removed from ${instance.name}.${deleteFiles ? " Files were deleted from disk." : " Files were kept on disk."}`;
+    },
+  );
 }
 
 export async function removeEpisodeFiles(input: unknown): Promise<Response> {
@@ -404,36 +223,33 @@ export async function removeEpisodeFiles(input: unknown): Promise<Response> {
   );
   const instance = await getInstance(instanceId);
   requireKind(instance, "series");
-  return runAction(instance, async () => {
-    const fileIds = await episodeFilesForRemoval(
-      instance,
-      remoteId,
-      episodeId,
-      seasonNumber,
-    );
-    let deleted = 0;
-    try {
-      for (const fileId of fileIds) {
-        await arrRequest(instance, `episodefile/${fileId}`, {
-          method: "DELETE",
-        });
-        deleted++;
-      }
-    } catch (error) {
-      throw new ApiError(
-        error instanceof ApiError ? error.status : 500,
-        `${deleted} of ${fileIds.length} file deletions confirmed. ${errorMessage(error)} Refresh before retrying; the failed deletion may have been accepted.`,
-      );
-    } finally {
-      updateSnapshots(
+  return runAction(
+    instance,
+    { operation: "removeFiles", remoteId },
+    async (write) => {
+      const fileIds = await episodeFilesForRemoval(
         instance,
-        null,
-        ["library", "instances", "calendar", "episodes"],
         remoteId,
+        episodeId,
+        seasonNumber,
       );
-    }
-    return `Deleted ${deleted} file${deleted === 1 ? "" : "s"} from disk. Monitoring was not changed; monitored episodes may download again.`;
-  });
+      let deleted = 0;
+      try {
+        for (const fileId of fileIds) {
+          await write(`episodefile/${fileId}`, {
+            method: "DELETE",
+          });
+          deleted++;
+        }
+      } catch (error) {
+        throw new ApiError(
+          error instanceof ApiError ? error.status : 500,
+          `${deleted} of ${fileIds.length} file deletions confirmed. ${errorMessage(error)} Refresh before retrying; the failed deletion may have been accepted.`,
+        );
+      }
+      return `Deleted ${deleted} file${deleted === 1 ? "" : "s"} from disk. Monitoring was not changed; monitored episodes may download again.`;
+    },
+  );
 }
 
 export async function automaticSearch(input: unknown): Promise<Response> {
@@ -443,23 +259,27 @@ export async function automaticSearch(input: unknown): Promise<Response> {
   );
   const instance = await getInstance(instanceId);
   requireKind(instance, kind);
-  return runAction(instance, async () => {
-    if (episodeId !== undefined)
-      await verifyEpisode(instance, remoteId, episodeId);
-    else await arrRequest(instance, `${kind}/${remoteId}`);
-    await arrRequest(instance, "command", {
-      method: "POST",
-      body:
-        episodeId !== undefined
-          ? { name: "EpisodeSearch", episodeIds: [episodeId] }
-          : seasonNumber !== undefined
-            ? { name: "SeasonSearch", seriesId: remoteId, seasonNumber }
-            : kind === "movie"
-              ? { name: "MoviesSearch", movieIds: [remoteId] }
-              : { name: "SeriesSearch", seriesId: remoteId },
-    });
-    return "Automatic search was queued on the instance.";
-  });
+  return runAction(
+    instance,
+    { operation: "search", remoteId },
+    async (write) => {
+      if (episodeId !== undefined)
+        await verifyEpisode(instance, remoteId, episodeId);
+      else await arrRequest(instance, `${kind}/${remoteId}`);
+      await write("command", {
+        method: "POST",
+        body:
+          episodeId !== undefined
+            ? { name: "EpisodeSearch", episodeIds: [episodeId] }
+            : seasonNumber !== undefined
+              ? { name: "SeasonSearch", seriesId: remoteId, seasonNumber }
+              : kind === "movie"
+                ? { name: "MoviesSearch", movieIds: [remoteId] }
+                : { name: "SeriesSearch", seriesId: remoteId },
+      });
+      return "Automatic search was queued on the instance.";
+    },
+  );
 }
 
 export async function releases(
@@ -490,8 +310,8 @@ export async function releases(
 export async function grabRelease(input: unknown): Promise<Response> {
   const { guid, indexerId, instanceId } = parseInput(grabReleaseSchema, input);
   const instance = await getInstance(instanceId);
-  return runAction(instance, async () => {
-    await arrRequest(instance, "release", {
+  return runAction(instance, { operation: "grab" }, async (write) => {
+    await write("release", {
       method: "POST",
       timeoutMs: 30000,
       body: { guid, indexerId },
@@ -506,8 +326,8 @@ export async function removeQueueItem(input: unknown): Promise<Response> {
     input,
   );
   const instance = await getInstance(instanceId);
-  return runAction(instance, async () => {
-    await arrRequest(instance, `queue/${id}`, {
+  return runAction(instance, { operation: "removeQueue" }, async (write) => {
+    await write(`queue/${id}`, {
       method: "DELETE",
       query: { blocklist, removeFromClient },
     });
@@ -518,7 +338,7 @@ export async function removeQueueItem(input: unknown): Promise<Response> {
 export async function retryQueueItem(input: unknown): Promise<Response> {
   const { id, instanceId } = parseInput(retryQueueSchema, input);
   const instance = await getInstance(instanceId);
-  return runAction(instance, async () => {
+  return runAction(instance, { operation: "retryQueue" }, async (write) => {
     const item = (await queueRecords(instance)).find(
       (entry) => entry.id === id,
     );
@@ -529,7 +349,7 @@ export async function retryQueueItem(input: unknown): Promise<Response> {
       ["delay", "downloadclientunavailable"].includes(status) &&
       !str(item.downloadId)
     ) {
-      await arrRequest(instance, `queue/grab/${id}`, { method: "POST" });
+      await write(`queue/grab/${id}`, { method: "POST" });
       return "Pending release grab requested, bypassing its delay. This starts a download; it is not an import retry.";
     }
     const state = str(item.trackedDownloadState).toLowerCase();
@@ -552,7 +372,7 @@ export async function retryQueueItem(input: unknown): Promise<Response> {
       instance.kind === "radarr"
         ? "DownloadedMoviesScan"
         : "DownloadedEpisodesScan";
-    await arrRequest(instance, "command", {
+    await write("command", {
       method: "POST",
       body: {
         name: command,
