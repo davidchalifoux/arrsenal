@@ -1,12 +1,15 @@
 import {
   type RealtimeEvent,
+  type RealtimePatch,
   type RealtimeSnapshot,
   type RealtimeStatus,
+  type RealtimeVersion,
   realtimeTopics,
 } from "@/lib/realtime-events";
 import { authorize } from "@/lib/server/auth";
 import { ApiError, api } from "@/lib/server/http";
 import { subscribeRealtime } from "@/lib/server/realtime";
+import { encodeRealtimeFrame } from "@/lib/server/realtime-patches";
 
 export const runtime = "nodejs";
 const encoder = new TextEncoder();
@@ -30,7 +33,9 @@ export async function GET(request: Request) {
           let unsubscribe: (() => void) | undefined;
           let timer: NodeJS.Timeout | undefined;
           let pendingBytes = 0;
-          const pending = new Map<string, Uint8Array>();
+          const pending = new Map<string, Uint8Array[]>();
+          const queuedVersions = new Map<string, RealtimeVersion>();
+          let pendingFrames = 0;
           const hints = new Map<string, RealtimeEvent>();
 
           cleanup = () => {
@@ -39,6 +44,8 @@ export async function GET(request: Request) {
             pending.clear();
             hints.clear();
             pendingBytes = 0;
+            pendingFrames = 0;
+            queuedVersions.clear();
             clearInterval(timer);
             request.signal.removeEventListener("abort", abort);
             unsubscribe?.();
@@ -65,17 +72,28 @@ export async function GET(request: Request) {
               ),
             );
           }
-          function buffer(key: string, event: string, data: unknown) {
-            const bytes = encoder.encode(
-              `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
-            );
-            pendingBytes +=
-              bytes.byteLength - (pending.get(key)?.byteLength ?? 0);
-            if (pendingBytes > maxBufferedBytes) {
+          function buffer(
+            key: string,
+            event: string,
+            data: object,
+            append = false,
+          ) {
+            const bytes = encodeRealtimeFrame(event, data);
+            const previous = pending.get(key) ?? [];
+            if (!append) {
+              for (const frame of previous) pendingBytes -= frame.byteLength;
+              pendingFrames -= previous.length;
+            }
+            pendingBytes += bytes.byteLength;
+            pendingFrames++;
+            // Patches are an ordered chain, so they cannot be coalesced by
+            // replacing the preceding patch. Disconnect bounded slow consumers;
+            // reconnect sends a fresh baseline before any more patches.
+            if (pendingBytes > maxBufferedBytes || pendingFrames > 1024) {
               abort();
               return;
             }
-            pending.set(key, bytes);
+            pending.set(key, append ? [...previous, bytes] : [bytes]);
             void flush();
           }
           async function flush() {
@@ -98,10 +116,12 @@ export async function GET(request: Request) {
                     reset: true,
                   });
                 }
-                for (const frame of pending.values()) enqueue(frame);
+                for (const frames of pending.values())
+                  for (const frame of frames) enqueue(frame);
                 pending.clear();
                 hints.clear();
                 pendingBytes = 0;
+                pendingFrames = 0;
                 if (heartbeat) {
                   heartbeat = false;
                   enqueue(encoder.encode(": heartbeat\n\n"));
@@ -114,7 +134,10 @@ export async function GET(request: Request) {
               flushing = false;
             }
           }
-          function receiveSnapshot(snapshot: RealtimeSnapshot) {
+          function receiveSnapshot(
+            snapshot: RealtimeSnapshot,
+            patch?: RealtimePatch,
+          ) {
             if (closed) return;
             const [key] = snapshot.queryKey;
             if (
@@ -122,7 +145,20 @@ export async function GET(request: Request) {
               (key !== "library" && key !== "queue" && key !== "instances")
             )
               return;
-            buffer(key, "snapshot", snapshot);
+            const previous = queuedVersions.get(key);
+            if (
+              previous?.epoch === snapshot.version.epoch &&
+              previous.revision >= snapshot.version.revision
+            )
+              return;
+            queuedVersions.set(key, snapshot.version);
+            if (
+              patch &&
+              previous?.epoch === patch.version.epoch &&
+              previous.revision === patch.baseRevision
+            )
+              buffer(key, "patch", patch, true);
+            else buffer(key, "snapshot", snapshot);
           }
           function receiveStatus(status: RealtimeStatus) {
             if (!closed) buffer("status", "status", status);
@@ -139,7 +175,9 @@ export async function GET(request: Request) {
             if (key === "*" || (!hints.has(key) && hints.size >= 64)) {
               for (const scope of hints.keys()) {
                 const frameKey = `hint:${scope}`;
-                pendingBytes -= pending.get(frameKey)?.byteLength ?? 0;
+                const frames = pending.get(frameKey) ?? [];
+                for (const frame of frames) pendingBytes -= frame.byteLength;
+                pendingFrames -= frames.length;
                 pending.delete(frameKey);
               }
               hints.clear();
@@ -161,7 +199,8 @@ export async function GET(request: Request) {
                 });
               }
             }
-            buffer(`hint:${key}`, "invalidate", hints.get(key));
+            const hint = hints.get(key);
+            if (hint) buffer(`hint:${key}`, "invalidate", hint);
           }
           request.signal.addEventListener("abort", abort, { once: true });
           if (request.signal.aborted) {

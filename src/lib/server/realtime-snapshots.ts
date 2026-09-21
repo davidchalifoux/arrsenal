@@ -4,13 +4,13 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   MAX_ACTIVE_COMMANDS,
+  type RealtimePatch,
   type RealtimeQueryKey,
   type RealtimeSnapshot,
   type RealtimeTopic,
   type RealtimeVersion,
   realtimeCoreQueries,
   realtimeQueryKeySchema,
-  realtimeSnapshotSchema,
   type Versioned,
 } from "../realtime-events";
 import type {
@@ -43,13 +43,19 @@ import { instanceCalendar, mergeCalendar } from "./calendar";
 import { type InstanceConfig, readInstances } from "./config";
 import { instanceEpisodes } from "./episodes";
 import { ApiError, errorMessage, parseInput } from "./http";
+import { createLibraryMerger } from "./library-projection";
 import {
   combinedStatus,
-  mergeMedia,
   normalizeMedia,
   normalizeQueue,
   qualityName,
 } from "./media";
+
+import {
+  createRealtimePatch,
+  parseSnapshot,
+  unchangedPatch,
+} from "./realtime-patches";
 import {
   instanceMedia,
   type MediaEnrichment,
@@ -63,7 +69,7 @@ type Data =
   | EpisodesResponse
   | InstanceOptions
   | { instances: InstanceSummary[] };
-type Listener = (snapshot: RealtimeSnapshot) => void;
+type Listener = (snapshot: RealtimeSnapshot, patch?: RealtimePatch) => void;
 type Slot<T> = {
   generation: number;
   committed: number;
@@ -96,6 +102,8 @@ type Backing = {
   episodes: Map<number, Slot<EpisodesResponse>>;
   episodeQuality: Map<number, EpisodeQuality>;
   enriching: boolean;
+  downloadSignature?: string;
+  projected: WeakMap<MediaItem, { signature: string; item: MediaItem }>;
   qualityRetry?: NodeJS.Timeout;
   qualityAbort?: AbortController;
 };
@@ -120,6 +128,7 @@ function createStore() {
   let configRead: Promise<void> | undefined;
   let configGeneration = 0;
   const entries = new Map<string, Entry>();
+  const mergeLibrary = createLibraryMerger();
   const backing = new Map<string, Backing>();
   const version = (): RealtimeVersion => ({ epoch, revision: ++revision });
   const slot = <T>(): Slot<T> => ({
@@ -212,7 +221,7 @@ function createStore() {
   }
 
   function queueFor(state: Backing) {
-    return load(state.queue, async () => {
+    const pending = load(state.queue, async () => {
       const records = await queueRecords(state.instance);
       return {
         items: records.map((item) => normalizeQueue(item, state.instance)),
@@ -234,6 +243,41 @@ function createStore() {
         })),
       };
     });
+    // A queue progress tick does not change library membership/status. Only
+    // transitions into/out of downloading (or queue failure/recovery) require
+    // projecting the library again. Queue and library loads share this promise.
+    const reconcileDownloads = () => {
+      const ids = state.queue.value?.records
+        .filter(
+          (item) =>
+            !["failed", "delay", "downloadclientunavailable"].includes(
+              str(item.status).toLowerCase(),
+            ),
+        )
+        .map((item) =>
+          num(state.instance.kind === "radarr" ? item.movieId : item.seriesId),
+        );
+      const signature = state.queue.error
+        ? "error"
+        : JSON.stringify([...new Set(ids)].sort((a, b) => a - b));
+      if (state.downloadSignature === signature || state.queue.retired) return;
+      const previous = state.downloadSignature;
+      state.downloadSignature = signature;
+      if (previous !== undefined) {
+        const entry = entries.get('["library"]');
+        if (entry) schedule(entry);
+      }
+    };
+    return pending.then(
+      (value) => {
+        reconcileDownloads();
+        return value;
+      },
+      (error) => {
+        reconcileDownloads();
+        throw error;
+      },
+    );
   }
 
   // A failed command lookup must never take down the instance summary; the
@@ -323,57 +367,63 @@ function createStore() {
     return "Unknown";
   }
 
-  function withSeriesQuality(
-    state: Backing,
-    item: MediaItem,
-    target: MediaTarget,
-  ): MediaTarget {
-    return item.kind === "series"
-      ? { ...target, quality: seriesQuality(state, target) }
-      : target;
-  }
-
   function libraryItems(state: Backing, value: LibraryBacking): MediaItem[] {
-    const records = state.queue.value?.records;
-    // Even when download status is unavailable, series still get their cached
-    // episode quality applied; only the live downloading status is skipped.
-    if (!records || state.queue.error)
-      return value.items.map((item) => ({
-        ...item,
-        targets: item.targets.map((target) =>
-          withSeriesQuality(state, item, target),
-        ),
-      }));
-    const downloading = new Set(
-      records
-        .filter(
-          (item) =>
-            !["failed", "delay", "downloadclientunavailable"].includes(
-              str(item.status).toLowerCase(),
+    const records = state.queue.error ? undefined : state.queue.value?.records;
+    const downloading =
+      records &&
+      new Set(
+        records
+          .filter(
+            (item) =>
+              !["failed", "delay", "downloadclientunavailable"].includes(
+                str(item.status).toLowerCase(),
+              ),
+          )
+          .map((item) =>
+            num(
+              state.instance.kind === "radarr" ? item.movieId : item.seriesId,
             ),
-        )
-        .map((item) =>
-          num(state.instance.kind === "radarr" ? item.movieId : item.seriesId),
-        ),
-    );
+          ),
+      );
     return value.items.map((item) => {
-      const targets = item.targets.map((target) => ({
-        ...withSeriesQuality(state, item, target),
-        instanceName: state.instance.name,
-        status: downloading.has(target.remoteId)
-          ? ("downloading" as const)
-          : item.kind === "movie"
-            ? target.quality === "Not downloaded"
-              ? ("missing" as const)
-              : ("available" as const)
-            : (target.episodeFileCount ?? 0) > 0
-              ? (target.episodeCount ?? 0) > 0 &&
-                (target.episodeFileCount ?? 0) >= (target.episodeCount ?? 0)
-                ? ("available" as const)
-                : ("partial" as const)
-              : ("missing" as const),
-      }));
-      return { ...item, targets, status: combinedStatus(targets) };
+      const targets = item.targets.map((target) => {
+        const quality =
+          item.kind === "series"
+            ? seriesQuality(state, target)
+            : target.quality;
+        const status = !downloading
+          ? target.status
+          : downloading.has(target.remoteId)
+            ? ("downloading" as const)
+            : item.kind === "movie"
+              ? target.quality === "Not downloaded"
+                ? ("missing" as const)
+                : ("available" as const)
+              : (target.episodeFileCount ?? 0) > 0
+                ? (target.episodeCount ?? 0) > 0 &&
+                  (target.episodeFileCount ?? 0) >= (target.episodeCount ?? 0)
+                  ? ("available" as const)
+                  : ("partial" as const)
+                : ("missing" as const);
+        return {
+          ...target,
+          quality,
+          status,
+          instanceName: state.instance.name,
+        };
+      });
+      const signature = JSON.stringify(
+        targets.map((target) => [
+          target.status,
+          target.quality,
+          target.instanceName,
+        ]),
+      );
+      const cached = state.projected.get(item);
+      if (cached?.signature === signature) return cached.item;
+      const projected = { ...item, targets, status: combinedStatus(targets) };
+      state.projected.set(item, { signature, item: projected });
+      return projected;
     });
   }
 
@@ -401,9 +451,9 @@ function createStore() {
     return pending;
   }
 
-  // Quality updates share one throttle across instances. Each publication is a
-  // full snapshot, so never send one per series/batch. Ordinary media changes
-  // retain their existing low-latency scheduling.
+  // Quality updates share one throttle across instances. Batch changed series
+  // into one publication/patch rather than re-projecting the library per file
+  // request. Ordinary media changes retain their low-latency scheduling.
   function scheduleQuality(entry: Entry) {
     if (entry.retired || entry.qualityTimer) return;
     entry.qualityTimer = setTimeout(() => {
@@ -568,11 +618,11 @@ function createStore() {
       });
       publish(
         entry,
-        realtimeSnapshotSchema.parse({
+        parseSnapshot({
           queryKey: ["library"],
           version: version(),
           data: {
-            items: mergeMedia(items),
+            items: mergeLibrary(items),
             errors: [...completed.values()].flatMap((result) => [
               ...((result.data as LibraryResponse | undefined)?.errors ?? []),
               ...(result.failure ? [result.failure] : []),
@@ -718,7 +768,7 @@ function createStore() {
     switch (key[0]) {
       case "library":
         return {
-          items: mergeMedia(
+          items: mergeLibrary(
             (values as LibraryResponse[]).flatMap((value) => value.items),
           ),
           errors: [
@@ -748,15 +798,19 @@ function createStore() {
   }
 
   function publish(entry: Entry, snapshot: RealtimeSnapshot) {
-    if (entry.retired) return;
+    if (entry.retired) return snapshot;
+    const patch = createRealtimePatch(entry.snapshot, snapshot);
+    if (entry.snapshot && patch && unchangedPatch(entry.snapshot, patch))
+      return entry.snapshot;
     entry.snapshot = snapshot;
     for (const listener of entry.listeners) {
       try {
-        listener(snapshot);
+        listener(snapshot, patch);
       } catch {
         /* One closed stream cannot interrupt peers. */
       }
     }
+    return snapshot;
   }
 
   function refresh(entry: Entry): Promise<RealtimeSnapshot> {
@@ -782,18 +836,16 @@ function createStore() {
             version: version(),
             error: errorMessage(error),
           };
-          publish(entry, snapshot);
-          return snapshot;
+          return publish(entry, snapshot);
         }
         if (entry.generation !== generation) continue;
         entry.failure = undefined;
-        const snapshot = realtimeSnapshotSchema.parse({
+        const snapshot = parseSnapshot({
           queryKey: entry.key,
           version: version(),
           data,
         });
-        publish(entry, snapshot);
-        return snapshot;
+        return publish(entry, snapshot);
       }
       throw new ApiError(409, "The realtime subscription has closed.");
     })().finally(() => {
@@ -814,6 +866,7 @@ function createStore() {
   }
 
   function prune() {
+    if (!entries.has('["library"]')) mergeLibrary([]);
     for (const [id, state] of backing) {
       const interested = [...entries.values()].filter((entry) =>
         relevant(entry, id),
@@ -954,6 +1007,7 @@ function createStore() {
             episodes: new Map(),
             episodeQuality: new Map(),
             enriching: false,
+            projected: new WeakMap(),
           });
           changed = true;
         }
@@ -1011,7 +1065,7 @@ function createStore() {
 
   function subscribe(listener: Listener) {
     const subscribed: Entry[] = [];
-    const forward: Listener = (snapshot) => listener(snapshot);
+    const forward: Listener = (snapshot, patch) => listener(snapshot, patch);
     try {
       for (const key of realtimeCoreQueries) {
         const entry = obtain(key);
@@ -1127,6 +1181,7 @@ function createStore() {
         (entry.key[0] !== "episodes" ||
           remoteId === undefined ||
           entry.key[2] === remoteId) &&
+        !(queueMessage && entry.key[0] === "library") &&
         (topics.includes(topic(entry.key)) ||
           (entry.key[0] === "library" &&
             (topics.includes("queue") || topics.includes("options"))) ||
@@ -1596,13 +1651,9 @@ function applyMedia(state: Backing, message: unknown): boolean {
   }
   state.library.value = {
     ...current,
-    items: [
-      ...current.items.filter(
-        (entry) =>
-          !entry.targets.some((target) => target.remoteId === parsed.data.id),
-      ),
-      item,
-    ],
+    items: previous
+      ? current.items.map((entry) => (entry === previous ? item : entry))
+      : [...current.items, item],
   };
   state.library.generation++;
   state.library.committed = state.library.generation;

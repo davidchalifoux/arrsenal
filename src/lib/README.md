@@ -27,7 +27,7 @@ that need another collection cache.
 Library, instance, queue, calendar, and episode data do not poll on an interval.
 `useRealtime` is owned by the persistent layout's `LibraryProvider`. One
 `EventSource("/api/events")` remains open across navigation. Library, queue, and
-instance snapshots update existing caches, including inactive core queries.
+instance snapshots and patches update existing caches, including inactive core queries.
 Calendar, episode, and instance-option changes arrive as small invalidation hints.
 Hints scope episodes by instance and series when known, options by instance, and
 calendar updates to cached ranges. Matching active queries refresh through REST;
@@ -39,10 +39,23 @@ fetch does not imply live updates have reconnected. Reconnect and tab visibility
 recovery resync data. Changes missed without a detected disconnect wait for the
 next event, visibility refresh, or user refresh; no periodic reconciliation runs.
 
-Snapshots contain an allowlisted normalized DTO and `{epoch, revision}` metadata.
+Initial/recovery snapshots contain an allowlisted normalized DTO and
+`{epoch, revision}` metadata. Subsequent core updates carry field patches with an
+exact `baseRevision`, inserted rows, removed identities, changed fields, and
+optional response ordering. Queue identities include the instance ID. Metadata
+(errors and progressive-loading markers) is replaced as a unit. A no-op does not
+publish a new revision; revision numbers need not be consecutive across queries.
+The browser applies each patch in order and retains unchanged row identities.
+A missing baseline, revision gap, or invalid operation triggers a coalesced REST
+recovery for that existing core cache, including inactive queries. Hidden tabs
+wait until visible to issue recovery requests. Failed recovery retains cached
+rows; later events or visibility changes can retry. Full snapshots supersede
+patches, and error snapshots never overwrite last-good rows.
+
 `realtime-query.ts` retains REST `_realtime` metadata and arbitrates older responses.
-A streamed snapshot cancels a matching in-flight browser request before updating
-the cache; older snapshots and obsolete streams cannot overwrite newer data.
+A streamed snapshot or applicable patch cancels a matching in-flight browser
+request before updating the cache; older revisions and obsolete streams cannot
+overwrite newer data.
 Snapshot errors retain cached rows and expose a query error without triggering
 per-browser retries. Hidden tabs can receive data without making event-driven
 HTTP requests; returning to the tab still performs a recovery refresh.

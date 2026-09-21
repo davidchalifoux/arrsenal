@@ -935,3 +935,234 @@ it("applies partial library snapshots and clears the loading marker on completio
   expect(view.result.current.data?.loadingInstanceIds).toBeUndefined();
   expect(globalThis.fetch).not.toHaveBeenCalled();
 });
+
+function libraryPatch(
+  baseRevision: number,
+  revision: number,
+  title: string,
+  epoch = "server-a",
+) {
+  return {
+    queryKey: ["library"],
+    version: { epoch, revision },
+    baseRevision,
+    added: [],
+    removed: [],
+    updated: [{ key: movie.id, set: { title }, unset: [] }],
+    metadata: { errors: [] },
+  };
+}
+function emitPatch(patch: ReturnType<typeof libraryPatch>) {
+  latestStream().emit("patch", JSON.stringify(patch));
+}
+
+it("applies an ordered burst of patches after a queued baseline into live DB rows without HTTP", async () => {
+  const { client, wrapper } = setup();
+  client.setQueryData(["library"], { items: [movie], errors: [] });
+  const { result } = renderHook(
+    () => {
+      useRealtime();
+      return useLibrary();
+    },
+    { wrapper },
+  );
+  await tick();
+  act(() => {
+    latestStream().snapshot(["library"], { items: [movie], errors: [] }, 1);
+    emitPatch(libraryPatch(1, 3, "Intermediate"));
+    emitPatch(libraryPatch(3, 7, "Final"));
+    emitPatch(libraryPatch(1, 3, "Duplicate"));
+  });
+  await tick();
+  expect(result.current.data?.items[0].title).toBe("Final");
+  expect(fetch).not.toHaveBeenCalled();
+  act(() =>
+    latestStream().emit(
+      "patch",
+      JSON.stringify({
+        ...libraryPatch(7, 9, ""),
+        updated: [],
+        removed: [movie.id],
+      }),
+    ),
+  );
+  await tick();
+  expect(result.current.data?.items).toEqual([]);
+});
+
+it("cancels in-flight REST for a matching patch and prevents stale REST from rolling it back", async () => {
+  const { wrapper } = setup();
+  const pending = Promise.withResolvers<Response>();
+  const envelope = (revision: number, title: string) => ({
+    items: [{ ...movie, title }],
+    errors: [],
+    _realtime: { epoch: "server-a", revision },
+  });
+  const fetcher = spyOn(globalThis, "fetch").mockImplementationOnce(
+    Object.assign(() => pending.promise, { preconnect: fetch.preconnect }),
+  );
+  const { result } = renderHook(
+    () => {
+      useRealtime();
+      return useQuery({
+        ...libraryQuery,
+        staleTime: Infinity,
+        initialData: envelope(1, "Before"),
+      });
+    },
+    { wrapper },
+  );
+  expect(result.current.data?.items[0].title).toBe("Before");
+  let request: Promise<unknown> | undefined;
+  act(() => {
+    request = result.current.refetch();
+  });
+  const signal = fetcher.mock.calls[0]?.[1]?.signal;
+  act(() => emitPatch(libraryPatch(1, 2, "Patched")));
+  await tick();
+  expect(signal?.aborted).toBe(true);
+  expect(result.current.data?.items[0].title).toBe("Patched");
+  await act(async () => {
+    pending.resolve(Response.json(envelope(1, "Old")));
+    await request;
+  });
+  fetcher.mockResolvedValueOnce(Response.json(envelope(1, "Still old")));
+  await act(async () => {
+    await result.current.refetch();
+  });
+  expect(result.current.data?.items[0].title).toBe("Patched");
+});
+
+it("recovers a missing patch revision once, including an inactive core query", async () => {
+  const { client, wrapper } = setup();
+  client.setQueryData(["library"], {
+    items: [movie],
+    errors: [],
+    _realtime: { epoch: "server-a", revision: 1 },
+  });
+  const fetcher = spyOn(globalThis, "fetch").mockResolvedValue(
+    Response.json({
+      items: [{ ...movie, title: "Recovered" }],
+      errors: [],
+      _realtime: { epoch: "server-a", revision: 5 },
+    }),
+  );
+  renderHook(() => useRealtime(), { wrapper });
+  act(() => {
+    emitPatch(libraryPatch(2, 3, "Gap"));
+    emitPatch(libraryPatch(3, 5, "Following gap"));
+  });
+  await tick();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(
+    client.getQueryData<LibraryResponse>(["library"])?.items[0].title,
+  ).toBe("Recovered");
+  act(() => emitPatch(libraryPatch(5, 6, "Live again")));
+  await tick();
+  expect(
+    client.getQueryData<LibraryResponse>(["library"])?.items[0].title,
+  ).toBe("Live again");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it("recovers a trailing gap received during a recovery read without canceling that read", async () => {
+  const { client, wrapper } = setup();
+  client.setQueryData(["library"], {
+    items: [movie],
+    errors: [],
+    _realtime: { epoch: "server-a", revision: 1 },
+  });
+  const pending = Promise.withResolvers<Response>();
+  const fetcher = spyOn(globalThis, "fetch").mockImplementationOnce(
+    Object.assign(() => pending.promise, { preconnect: fetch.preconnect }),
+  );
+  renderHook(() => useRealtime(), { wrapper });
+  act(() => emitPatch(libraryPatch(2, 3, "Gap")));
+  await tick();
+  const signal = fetcher.mock.calls[0]?.[1]?.signal;
+  act(() => emitPatch(libraryPatch(3, 4, "While recovering")));
+  await tick();
+  expect(signal?.aborted).toBe(false);
+  fetcher.mockResolvedValueOnce(
+    Response.json({
+      items: [{ ...movie, title: "Current" }],
+      errors: [],
+      _realtime: { epoch: "server-a", revision: 4 },
+    }),
+  );
+  await act(async () =>
+    pending.resolve(
+      Response.json({
+        items: [movie],
+        errors: [],
+        _realtime: { epoch: "server-a", revision: 3 },
+      }),
+    ),
+  );
+  await tick();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(
+    client.getQueryData<LibraryResponse>(["library"])?.items[0].title,
+  ).toBe("Current");
+});
+
+it("updates hidden caches via patches and defers gap recovery until visible", async () => {
+  const { client, wrapper } = setup();
+  client.setQueryData(["library"], {
+    items: [movie],
+    errors: [],
+    _realtime: { epoch: "server-a", revision: 1 },
+  });
+  renderHook(() => useRealtime(), { wrapper });
+  visible(false);
+  act(() => emitPatch(libraryPatch(1, 2, "Hidden update")));
+  await tick();
+  expect(
+    client.getQueryData<LibraryResponse>(["library"])?.items[0].title,
+  ).toBe("Hidden update");
+  act(() => emitPatch(libraryPatch(3, 4, "Gap")));
+  await tick();
+  expect(fetch).not.toHaveBeenCalled();
+  const fetcher = spyOn(globalThis, "fetch").mockResolvedValue(
+    Response.json({
+      items: [{ ...movie, title: "Recovered" }],
+      errors: [],
+      _realtime: { epoch: "server-a", revision: 4 },
+    }),
+  );
+  act(() => {
+    visible(true);
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await tick();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it("reconnects with a fresh epoch baseline and ignores patches from obsolete streams", async () => {
+  const { client, wrapper } = setup();
+  client.setQueryData(["library"], {
+    items: [movie],
+    errors: [],
+    _realtime: { epoch: "server-a", revision: 1 },
+  });
+  renderHook(() => useRealtime(), { wrapper });
+  act(() => {
+    latestStream().emit("open");
+    emitPatch(libraryPatch(1, 2, "Old pending"));
+    latestStream().emit("error");
+    latestStream().emit("open");
+    latestStream().snapshot(
+      ["library"],
+      { items: [movie], errors: [] },
+      1,
+      "server-b",
+    );
+    emitPatch(libraryPatch(1, 2, "New epoch", "server-b"));
+    emitPatch(libraryPatch(2, 3, "Obsolete", "server-a"));
+  });
+  await tick();
+  expect(
+    client.getQueryData<LibraryResponse>(["library"])?.items[0].title,
+  ).toBe("New epoch");
+  expect(fetch).not.toHaveBeenCalled();
+});
