@@ -100,6 +100,30 @@
     --scrim: #0a0a0bcc;
   }
 
+  [data-theme="neutral"] {
+    color-scheme: dark;
+    --canvas: #141414;
+    --sidebar: #191919;
+    --toolbar: #161616;
+    --surface: #191919;
+    --raised: #1e1e1e;
+    --control: #202020;
+    --elevated: #292929;
+    --line: #292929;
+    --line-soft: #222222;
+    --line-strong: #373737;
+    --ink: #ededed;
+    --soft: #cfcfcf;
+    --muted: #a6a6a6;
+    --subtle: #8c8c8c;
+    --faint: #5f5f5f;
+    --positive: #5fcf8f;
+    --warning: #f0b45b;
+    --negative: #f2878a;
+    --info: #6aa8ff;
+    --scrim: #0a0a0acc;
+  }
+
   [data-theme="daylight"] {
     color-scheme: light;
     --canvas: #f5f5f3;

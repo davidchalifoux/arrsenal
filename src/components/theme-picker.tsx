@@ -54,7 +54,7 @@ export function ThemePicker() {
           gridTemplateColumns: {
             base: "repeat(2, minmax(0, 1fr))",
             sm: "repeat(3, minmax(0, 1fr))",
-            md: "repeat(5, minmax(0, 1fr))",
+            md: "repeat(6, minmax(0, 1fr))",
           },
           gap: "10px",
           m: 0,

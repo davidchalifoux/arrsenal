@@ -3,6 +3,7 @@ export const themes = [
   { id: "midnight", name: "Midnight", accent: "#8b7cf6" },
   { id: "radarr", name: "Radarr", accent: "#ffc230" },
   { id: "graphite", name: "Graphite", accent: "#5fd0a0" },
+  { id: "neutral", name: "Neutral", accent: "#d4d4d4" },
   { id: "daylight", name: "Daylight", accent: "#6d5be8" },
 ] as const;
 
@@ -22,6 +23,7 @@ export const accentSwatches = [
   { name: "Mint", value: "#5fd0a0" },
   { name: "Rose", value: "#f2789a" },
   { name: "Slate", value: "#a3a7b0" },
+  { name: "Silver", value: "#d4d4d4" },
 ];
 
 export const hexColorPattern = /^#[0-9a-f]{6}$/i;
