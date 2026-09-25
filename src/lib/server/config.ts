@@ -11,7 +11,7 @@ import { ApiError, parseInput } from "./http";
 import {
   configSchema,
   instanceInputSchema,
-  preferencesSchema,
+  preferencesPatchSchema,
   type storedInstanceSchema,
 } from "./schemas";
 
@@ -92,10 +92,10 @@ export function replaceAccount(
 export function savePreferences(
   value: unknown,
 ): Promise<Config["preferences"]> {
-  const preferences = parseInput(preferencesSchema, value);
+  const patch = parseInput(preferencesPatchSchema, value);
   return mutateConfig((config) => {
-    config.preferences = preferences;
-    return preferences;
+    config.preferences = { ...config.preferences, ...patch };
+    return config.preferences;
   });
 }
 

@@ -20,9 +20,9 @@ export const buttonStyle = cva({
     alignItems: "center",
     justifyContent: "center",
     gap: "8px",
-    borderRadius: "7px",
-    fontSize: "12px",
-    fontWeight: "550",
+    borderRadius: "8px",
+    fontSize: "13px",
+    fontWeight: "500",
     whiteSpace: "nowrap",
     transition: "background 150ms, color 150ms, border-color 150ms",
     flexShrink: 0,
@@ -32,32 +32,36 @@ export const buttonStyle = cva({
     variant: {
       primary: {
         bg: "accent",
-        color: "#191919",
+        color: "onAccent",
+        fontWeight: "600",
         border: "1px solid transparent",
-        _hover: { bg: "#ffffff" },
+        _hover: { filter: "brightness(1.08)" },
       },
       secondary: {
-        bg: "surface",
-        border: "1px solid token(colors.line)",
+        bg: "elevated",
+        border: "1px solid token(colors.lineStrong)",
         color: "ink",
-        _hover: { bg: "elevated", borderColor: "#414141" },
+        _hover: {
+          bg: "color-mix(in srgb, var(--elevated) 70%, var(--ink) 8%)",
+        },
       },
       ghost: {
-        color: "muted",
+        color: "soft",
         border: "1px solid transparent",
         _hover: { bg: "elevated", color: "ink" },
       },
       danger: {
-        bg: "#372323",
+        bg: "color-mix(in srgb, var(--negative) 12%, transparent)",
         color: "negative",
-        border: "1px solid #553535",
-        _hover: { bg: "#4a2c2c" },
+        border:
+          "1px solid color-mix(in srgb, var(--negative) 32%, transparent)",
+        _hover: { bg: "color-mix(in srgb, var(--negative) 20%, transparent)" },
       },
     },
     size: {
-      sm: { height: "30px", px: "10px" },
-      md: { height: "36px", px: "13px" },
-      lg: { height: "42px", px: "17px", fontSize: "13px" },
+      sm: { height: "30px", px: "10px", fontSize: "12px" },
+      md: { height: "36px", px: "14px" },
+      lg: { height: "42px", px: "18px", fontSize: "14px" },
       icon: { width: "34px", height: "34px", p: 0 },
     },
   },
@@ -86,22 +90,25 @@ export function Button({
 
 export const inputStyle = css({
   width: "100%",
-  height: "41px",
+  height: "40px",
   px: "12px",
   bg: "canvas",
-  border: "1px solid token(colors.line)",
-  borderRadius: "7px",
-  fontSize: "13px",
+  border: "1px solid token(colors.lineStrong)",
+  borderRadius: "9px",
+  fontSize: "14px",
   color: "ink",
   outline: "none",
   _placeholder: { color: "subtle" },
-  _focus: { borderColor: "accent", boxShadow: "0 0 0 2px #e5e5e512" },
+  _focus: {
+    borderColor: "accent",
+    boxShadow: "0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent)",
+  },
 });
 export const labelStyle = css({
   display: "flex",
   flexDirection: "column",
   gap: "8px",
-  color: "#d8d8d8",
+  color: "soft",
   fontSize: "12px",
   fontWeight: "500",
 });
@@ -112,7 +119,7 @@ export const mutedStyle = css({
 });
 export const panelStyle = css({
   border: "1px solid token(colors.line)",
-  borderRadius: "10px",
+  borderRadius: "14px",
   bg: "surface",
 });
 
@@ -173,11 +180,11 @@ export function SelectField({
         <Select.Positioner sideOffset={6} className={css({ zIndex: 100 })}>
           <Select.Popup
             className={css({
-              bg: "#202020",
-              border: "1px solid #414141",
-              borderRadius: "8px",
+              bg: "raised",
+              border: "1px solid token(colors.lineStrong)",
+              borderRadius: "10px",
               padding: "5px",
-              boxShadow: "0 12px 40px #0006",
+              boxShadow: "0 16px 48px -12px #000a",
               minWidth: "var(--anchor-width)",
               maxHeight: "min(320px, var(--available-height))",
               overflowY: "auto",
@@ -190,16 +197,16 @@ export function SelectField({
                   value={option.value}
                   className={css({
                     px: "10px",
-                    py: "9px",
-                    fontSize: "12px",
-                    borderRadius: "4px",
+                    py: "8px",
+                    fontSize: "13px",
+                    borderRadius: "7px",
                     cursor: "pointer",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
                     gap: "24px",
                     outline: "none",
-                    _highlighted: { bg: "#353535", color: "accent" },
+                    _highlighted: { bg: "elevated", color: "ink" },
                   })}
                 >
                   <Select.ItemText>{option.label}</Select.ItemText>
@@ -248,13 +255,13 @@ export function CheckField({
         className={css({
           width: "17px",
           height: "17px",
-          border: "1px solid #555555",
+          border: "1px solid token(colors.lineStrong)",
           borderRadius: "4px",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           flexShrink: 0,
-          _checked: { bg: "accent", color: "#191919", borderColor: "accent" },
+          _checked: { bg: "accent", color: "onAccent", borderColor: "accent" },
         })}
       >
         <Checkbox.Indicator>
@@ -292,8 +299,8 @@ export function Modal({
           className={css({
             position: "fixed",
             inset: 0,
-            bg: "#050505b8",
-            backdropFilter: "blur(7px)",
+            bg: "scrim",
+            backdropFilter: "blur(4px)",
             zIndex: 60,
             transition: "opacity 180ms",
             _startingStyle: { opacity: 0 },
@@ -322,9 +329,9 @@ export function Modal({
               maxHeight: command ? "calc(85dvh - 24px)" : "calc(100dvh - 40px)",
               overflowY: "auto",
               bg: "surface",
-              border: "1px solid #414141",
-              borderRadius: "14px",
-              boxShadow: "0 24px 100px #0008",
+              border: "1px solid token(colors.lineStrong)",
+              borderRadius: "16px",
+              boxShadow: "0 40px 80px -20px #000c",
               p: command ? "16px 16px 0" : { base: "20px", md: "28px" },
               outline: "none",
               transition: "opacity 180ms, transform 180ms",
@@ -350,9 +357,9 @@ export function Modal({
               <div>
                 <Dialog.Title
                   className={css({
-                    fontSize: command ? "14px" : "21px",
+                    fontSize: command ? "14px" : "18px",
                     fontWeight: "600",
-                    letterSpacing: "-.5px",
+                    letterSpacing: "-.3px",
                   })}
                 >
                   {title}
@@ -399,11 +406,15 @@ export function Notice({
         alignItems: "flex-start",
         padding: "12px 14px",
         border: "1px solid",
-        borderColor: error ? "#633a35" : "#414141",
-        bg: error ? "#30211f" : "#242424",
-        color: error ? "negative" : "#bfbfbf",
-        borderRadius: "7px",
-        fontSize: "12px",
+        borderColor: error
+          ? "color-mix(in srgb, var(--negative) 32%, transparent)"
+          : "line",
+        bg: error
+          ? "color-mix(in srgb, var(--negative) 10%, transparent)"
+          : "raised",
+        color: error ? "negative" : "soft",
+        borderRadius: "10px",
+        fontSize: "13px",
         lineHeight: "1.6",
       })}
     >

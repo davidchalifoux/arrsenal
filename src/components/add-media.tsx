@@ -368,9 +368,9 @@ function TargetOption({
       className={css({
         minWidth: 0,
         border: "1px solid",
-        borderColor: enabled ? "#6e6e6e" : "line",
+        borderColor: enabled ? "accent" : "line",
         borderRadius: "8px",
-        bg: enabled ? "#242424" : "surface",
+        bg: enabled ? "elevated" : "surface",
         padding: "15px",
         opacity: existing ? 0.55 : 1,
       })}

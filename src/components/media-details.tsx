@@ -462,7 +462,7 @@ export function MediaDetails({
                           base: index ? "1px solid token(colors.line)" : "none",
                           md: "1px solid token(colors.line)",
                         },
-                        _hover: { bg: "#202020" },
+                        _hover: { bg: "raised" },
                       }),
                     )}
                   >
@@ -751,7 +751,7 @@ export function MediaDetails({
                         base: index ? "1px solid token(colors.line)" : "none",
                         lg: "1px solid token(colors.line)",
                       },
-                      _hover: { bg: "#202020" },
+                      _hover: { bg: "raised" },
                     }),
                   )}
                 >
@@ -772,8 +772,8 @@ export function MediaDetails({
                         display: "grid",
                         placeItems: "center",
                         borderRadius: "7px",
-                        bg: "#303030",
-                        color: "#c7c7c7",
+                        bg: "elevated",
+                        color: "soft",
                       })}
                     >
                       <HardDrivesIcon size={17} />

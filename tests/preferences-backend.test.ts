@@ -177,4 +177,36 @@ describe("preferences config and API", () => {
     expect(response.status).toBe(500);
     expect(await Bun.file(path).text()).toBe("unchanged");
   });
+
+  it("merges theme and accent patches with the saved time zone", async () => {
+    await patch({ timeZone: "UTC" });
+    expect(await (await patch({ theme: "radarr" })).json()).toEqual({
+      timeZone: "UTC",
+      theme: "radarr",
+    });
+    expect(await (await patch({ accent: "#35C5F4" })).json()).toEqual({
+      timeZone: "UTC",
+      theme: "radarr",
+      accent: "#35c5f4",
+    });
+    expect(await (await patch({ accent: null })).json()).toEqual({
+      timeZone: "UTC",
+      theme: "radarr",
+      accent: null,
+    });
+    expect(await readPreferences()).toEqual({
+      timeZone: "UTC",
+      theme: "radarr",
+      accent: null,
+    });
+  });
+
+  it.each([
+    { theme: "neon" },
+    { accent: "violet" },
+    { accent: "#fff" },
+  ])("rejects invalid theme payload %j", async (body) => {
+    expect((await patch(body)).status).toBe(400);
+    expect(await readdir(directory)).toEqual([]);
+  });
 });
