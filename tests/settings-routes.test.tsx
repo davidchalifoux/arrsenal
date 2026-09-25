@@ -39,6 +39,7 @@ mock.module("@/lib/client-data", () => ({
 }));
 mock.module("@/components/library-provider", () => ({
   useLibraryActions: () => ({ notify: state.notify }),
+  useOptionalLibraryActions: () => null,
 }));
 const { default: ConnectionsPage } = await import(
   "@/app/(library)/settings/connections/page"

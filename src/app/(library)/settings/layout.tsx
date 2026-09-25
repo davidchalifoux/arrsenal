@@ -7,11 +7,8 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
     <div
       className={css({
         display: "grid",
-        gridTemplateColumns: {
-          base: "minmax(0, 1fr)",
-          lg: "180px minmax(0, 1fr)",
-        },
-        gap: { base: "16px", lg: "32px" },
+        gridTemplateColumns: "minmax(0, 1fr)",
+        gap: { base: "16px", lg: "0" },
         alignItems: "start",
         minWidth: 0,
       })}

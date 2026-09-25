@@ -28,6 +28,7 @@ mock.module("next/navigation", () => ({
 }));
 mock.module("@/components/library-provider", () => ({
   useLibraryActions: () => ({ add: mocks.add, refresh: mock() }),
+  useOptionalLibraryActions: () => null,
 }));
 mock.module("@/lib/client-data", () => ({
   useLibrary: () => ({

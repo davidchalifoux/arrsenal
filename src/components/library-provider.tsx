@@ -45,6 +45,11 @@ interface LibraryActions {
 
 const LibraryContext = createContext<LibraryActions | null>(null);
 
+/** For chrome that can render outside the provider, such as isolated tests. */
+export function useOptionalLibraryActions() {
+  return useContext(LibraryContext);
+}
+
 export function useLibraryActions() {
   const value = useContext(LibraryContext);
   if (!value) throw new Error("Library actions require LibraryProvider.");

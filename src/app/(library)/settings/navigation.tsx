@@ -17,9 +17,9 @@ export function SettingsNavigation() {
     <nav
       aria-label="Settings sections"
       className={css({
+        display: { base: "block", lg: "none" },
         minWidth: 0,
-        pr: { lg: "16px" },
-        pb: { base: "16px", lg: "8px" },
+        pb: "16px",
       })}
     >
       <p
