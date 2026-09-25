@@ -1,3 +1,9 @@
+/** The mark's two strokes, shared with the animated startup screen. */
+export const logoPaths = [
+  "M4 54 26 10h12l11 22H35l-3-6-14 28Z",
+  "M31 36h20l9 18H46l-4-8H26Z",
+] as const;
+
 /** The Arrsenal mark, drawn in the current text color so it follows the theme. */
 export function Logo({
   size = 28,
@@ -15,8 +21,9 @@ export function Logo({
       aria-hidden="true"
       className={className}
     >
-      <path d="M4 54 26 10h12l11 22H35l-3-6-14 28Z" />
-      <path d="M31 36h20l9 18H46l-4-8H26Z" />
+      {logoPaths.map((d) => (
+        <path key={d} d={d} />
+      ))}
     </svg>
   );
 }

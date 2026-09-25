@@ -44,26 +44,22 @@ export default defineConfig({
         },
       },
       keyframes: {
-        logoLoading: {
-          "0%, 15%": {
-            transform: "translateY(0) rotateY(0deg) scale(1)",
-            opacity: "1",
-          },
-          "40%": {
-            transform: "translateY(-10px) rotateY(0deg) scale(1.04)",
-            opacity: "1",
-          },
-          "65%": {
-            transform: "translateY(0) rotateY(180deg) scale(0.94)",
-            opacity: "0.65",
-          },
-          "85%, 100%": {
-            transform: "translateY(0) rotateY(360deg) scale(1)",
-            opacity: "1",
-          },
-        },
         spin: { to: { transform: "rotate(360deg)" } },
         pulse: { "50%": { opacity: "0.45" } },
+        // Startup screen: marks rise in, then shimmer in a slow wave.
+        markRise: {
+          from: { opacity: "0", transform: "translateY(10px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        markWave: {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.35" },
+        },
+        progressSlide: {
+          from: { transform: "translateX(-100%)" },
+          to: { transform: "translateX(250%)" },
+        },
+        fadeIn: { from: { opacity: "0" }, to: { opacity: "1" } },
         enter: {
           from: { opacity: "0", transform: "translateY(6px)" },
           to: { opacity: "1", transform: "translateY(0)" },

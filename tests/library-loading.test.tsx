@@ -293,6 +293,8 @@ describe("LibraryLoading", () => {
     // Keep jsdom from navigating; the real Link's React onClick still runs.
     link.addEventListener("click", (event) => event.preventDefault());
     fireEvent.click(link);
+    // The splash fades out over the revealed route before unmounting.
+    await act(() => advanceTime(320));
     expect(screen.queryByRole("status")).toBeNull();
     expectBlocked(screen.getByText("Route content"), false);
     for (const name of names)
