@@ -1,5 +1,6 @@
 import type { QueryFunctionContext } from "@tanstack/react-query";
 import { api } from "./client";
+import { awaitBootstrap } from "./realtime-bootstrap";
 import type { RealtimeVersion, Versioned } from "./realtime-events";
 
 export function realtimeVersion(data: unknown): RealtimeVersion | undefined {
@@ -27,7 +28,17 @@ export async function realtimeQuery<T>(
   const startedState = client.getQueryState(queryKey);
   const startedWith =
     realtimeVersion(startedState?.error) ?? realtimeVersion(startedState?.data);
-  const response = await api<Versioned<T>>(path, { signal });
+  // On a first load (no data yet), take the live-update stream's snapshot
+  // instead of asking the server to build the same response again.
+  const streamed =
+    queryKey.length === 1 && startedState?.data === undefined
+      ? ((await awaitBootstrap(String(queryKey[0]), signal)) as
+          | Versioned<T>
+          | undefined)
+      : undefined;
+  // Canceled while waiting (for example by a streamed error): stop here.
+  signal.throwIfAborted();
+  const response = streamed ?? (await api<Versioned<T>>(path, { signal }));
   const cached = client.getQueryData<T>(queryKey);
   const error = client.getQueryState(queryKey)?.error;
   const current = realtimeVersion(error) ?? realtimeVersion(cached);

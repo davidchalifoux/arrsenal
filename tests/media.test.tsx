@@ -1031,6 +1031,23 @@ describe("Library integration", () => {
         <MediaScreen kind="movie" mediaId={movie.id} />
       </LibraryProvider>,
     );
+    // Like the server, the stream opens with snapshots of the core data, which
+    // first loads use instead of REST.
+    const snapshot = (key: string, data: unknown) =>
+      Stream.current.dispatchEvent(
+        new MessageEvent("snapshot", {
+          data: JSON.stringify({
+            queryKey: [key],
+            version: { epoch: "mutation-test", revision: 0 },
+            data,
+          }),
+        }),
+      );
+    await act(async () => {
+      snapshot("library", { ...library, items: [...library.items] });
+      snapshot("instances", { instances: [hd, uhd] });
+      snapshot("queue", { items: [], errors: [] });
+    });
     await screen.findByRole("heading", { level: 1, name: movie.title });
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Add target" }));
@@ -1045,8 +1062,10 @@ describe("Library integration", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByRole("status").textContent).toContain("Target added.");
     expect(
-      fetchMock.mock.calls.filter(([path]) => path === "/api/library"),
-    ).toHaveLength(1);
+      fetchMock.mock.calls.filter(([path]) =>
+        ["/api/library", "/api/instances", "/api/queue"].includes(String(path)),
+      ),
+    ).toHaveLength(0);
     await act(async () => {
       Stream.current.dispatchEvent(
         new MessageEvent("snapshot", {
