@@ -31,23 +31,23 @@ export function SettingsScreen({ autoOpen = false }: { autoOpen?: boolean }) {
       </section>
     );
   return (
-    <>
-      {instances.isError && (
-        <div className={css({ mb: "16px" })}>
-          <Notice error>{instances.error.message}</Notice>
-        </div>
-      )}
-      <Settings
-        instances={instances.data?.instances ?? []}
-        onRefresh={() => {
-          void sync("all");
-        }}
-        notify={notify}
-        autoOpen={autoOpen}
-        onAutoOpened={() =>
-          router.replace("/settings/connections", { scroll: false })
-        }
-      />
-    </>
+    <Settings
+      notice={
+        instances.isError && (
+          <div className={css({ mb: "16px" })}>
+            <Notice error>{instances.error.message}</Notice>
+          </div>
+        )
+      }
+      instances={instances.data?.instances ?? []}
+      onRefresh={() => {
+        void sync("all");
+      }}
+      notify={notify}
+      autoOpen={autoOpen}
+      onAutoOpened={() =>
+        router.replace("/settings/connections", { scroll: false })
+      }
+    />
   );
 }

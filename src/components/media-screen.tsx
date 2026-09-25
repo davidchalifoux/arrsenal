@@ -49,31 +49,33 @@ export function MediaScreen({
       </div>
     );
   return (
-    <>
-      {library.isError && (
-        <div className={css({ mb: "14px" })}>
-          <Notice error>
-            {library.error.message} Showing the last loaded title.
-          </Notice>
-        </div>
-      )}
-      {library.data?.errors.map((error) => (
-        <div
-          key={`${error.instanceId}:${error.message}`}
-          className={css({ mb: "14px" })}
-        >
-          <Notice error>
-            {error.instanceName}: {error.message}
-          </Notice>
-        </div>
-      ))}
-      <MediaDetails
-        key={media.id}
-        media={media}
-        onAddTarget={add}
-        onRefresh={refresh}
-        notify={notify}
-      />
-    </>
+    <MediaDetails
+      key={media.id}
+      media={media}
+      onAddTarget={add}
+      onRefresh={refresh}
+      notify={notify}
+      notice={
+        <>
+          {library.isError && (
+            <div className={css({ mb: "14px" })}>
+              <Notice error>
+                {library.error.message} Showing the last loaded title.
+              </Notice>
+            </div>
+          )}
+          {library.data?.errors.map((error) => (
+            <div
+              key={`${error.instanceId}:${error.message}`}
+              className={css({ mb: "14px" })}
+            >
+              <Notice error>
+                {error.instanceName}: {error.message}
+              </Notice>
+            </div>
+          ))}
+        </>
+      }
+    />
   );
 }

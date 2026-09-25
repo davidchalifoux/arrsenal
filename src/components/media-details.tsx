@@ -19,7 +19,7 @@ import { css, cx } from "@styled-system/css";
 import { useQuery } from "@tanstack/react-query";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { api, sizeLabel } from "@/lib/client";
 import type {
   ActionResponse,
@@ -105,11 +105,14 @@ export function MediaDetails({
   onAddTarget,
   onRefresh,
   notify,
+  notice,
 }: {
   media: MediaItem;
   onAddTarget: (item: MediaItem) => void;
   onRefresh?: () => void;
   notify: (message: string, error?: boolean) => void;
+  /** Page-level notices, shown under the title header. */
+  notice?: ReactNode;
 }) {
   const router = useRouter();
   const [removeTarget, setRemoveTarget] = useState<MediaTarget | null>(null);
@@ -480,6 +483,7 @@ export function MediaDetails({
             </div>
           </div>
         </header>
+        {notice}
         <div>
           <div
             className={css({

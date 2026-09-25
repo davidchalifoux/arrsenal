@@ -15,7 +15,14 @@ import {
   WarningIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
-import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useEffectEvent,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { z } from "zod";
 import { api } from "@/lib/client";
 import type { ActionResponse, InstanceSummary } from "@/lib/types";
@@ -87,6 +94,7 @@ export function Settings({
   autoOpen = false,
   onAutoOpened,
   onDismiss,
+  notice,
 }: {
   instances: InstanceSummary[];
   onRefresh: () => void;
@@ -94,6 +102,8 @@ export function Settings({
   autoOpen?: boolean;
   onAutoOpened?: () => void;
   onDismiss?: () => void;
+  /** Page-level notices, shown under the page title. */
+  notice?: ReactNode;
 }) {
   const id = useId();
   const [open, setOpen] = useState(false);
@@ -302,6 +312,7 @@ export function Settings({
           API keys stay on the server.
         </p>
       </PageHeader>
+      {notice}
 
       {instances.length ? (
         <div

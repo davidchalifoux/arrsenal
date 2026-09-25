@@ -11,7 +11,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
-import { Fragment, useId, useRef, useState } from "react";
+import { Fragment, type ReactNode, useId, useRef, useState } from "react";
 import { api, sizeLabel } from "@/lib/client";
 import type { ActionResponse, QueueItem, QueueResponse } from "@/lib/types";
 import {
@@ -140,11 +140,14 @@ export function DownloadQueue({
   loading,
   onRefresh,
   notify,
+  notice,
 }: {
   data: QueueResponse | undefined;
   loading: boolean;
   onRefresh: () => void;
   notify: (message: string, error?: boolean) => void;
+  /** Page-level notices, shown under the page title. */
+  notice?: ReactNode;
 }) {
   const id = useId();
   const [instanceFilter, setInstanceFilter] = useState("all");
@@ -473,6 +476,7 @@ export function DownloadQueue({
           ]}
         />
       </PageHeader>
+      {notice}
 
       <div
         className={css({
