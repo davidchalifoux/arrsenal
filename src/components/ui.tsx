@@ -426,3 +426,52 @@ export function Notice({
     </div>
   );
 }
+
+export const menuPopupStyle = css({
+  minWidth: "220px",
+  maxHeight: "min(420px, var(--available-height))",
+  overflowY: "auto",
+  p: "6px",
+  bg: "raised",
+  border: "1px solid token(colors.lineStrong)",
+  borderRadius: "12px",
+  boxShadow: "0 24px 60px -12px #000c",
+  outline: "none",
+  transition: "opacity 120ms, transform 120ms",
+  _startingStyle: { opacity: 0, transform: "translateY(-4px)" },
+  _endingStyle: { opacity: 0, transform: "translateY(-4px)" },
+});
+
+export const menuItemStyle = css({
+  display: "flex",
+  alignItems: "center",
+  gap: "10px",
+  minHeight: "34px",
+  px: "10px",
+  borderRadius: "8px",
+  fontSize: "13px",
+  color: "soft",
+  cursor: "pointer",
+  outline: "none",
+  userSelect: "none",
+  _highlighted: { bg: "elevated", color: "ink" },
+  "&[data-checked]": { color: "ink" },
+});
+
+export const menuLabelStyle = css({
+  px: "10px",
+  pt: "8px",
+  pb: "6px",
+  fontSize: "11px",
+  fontWeight: "600",
+  letterSpacing: ".06em",
+  textTransform: "uppercase",
+  color: "subtle",
+});
+
+export const menuSeparatorStyle = css({
+  height: "1px",
+  bg: "lineStrong",
+  my: "6px",
+  mx: "4px",
+});

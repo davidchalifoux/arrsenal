@@ -172,6 +172,22 @@ function renderDetails() {
   return props;
 }
 
+// Library pages also carry the live-connection banner, which is an alert too.
+async function findAlert(text: string) {
+  return waitFor(() => {
+    const alert = screen
+      .getAllByRole("alert")
+      .find((item) => item.textContent?.includes(text));
+    if (!alert) throw new Error(`No alert containing ${text}`);
+    return alert;
+  });
+}
+
+async function chooseSort(label: string) {
+  fireEvent.click(screen.getByRole("button", { name: /^Sort library:/ }));
+  fireEvent.click(await screen.findByRole("menuitemradio", { name: label }));
+}
+
 async function choose(label: string, value: string) {
   fireEvent.click(await screen.findByRole("combobox", { name: label }));
   const option = await screen.findByRole("option", { name: value });
@@ -436,7 +452,7 @@ describe("Library integration", () => {
   });
 
   it.each([
-    ["library", "Home", 3],
+    ["library", "All titles", 3],
     ["movies", "Movies", 2],
     ["shows", "Shows", 1],
   ] as const)("shows one %s toolbar count while filters narrow results", async (category, title, total) => {
@@ -460,7 +476,7 @@ describe("Library integration", () => {
         name: title,
       }),
     ).toBeTruthy();
-    const toolbar = screen.getByRole("group", { name: "Library controls" });
+    const toolbar = document.body;
     const totalLabel = `${total} ${total === 1 ? "title" : "titles"}`;
     expect(within(toolbar).getByText(totalLabel)).toBeTruthy();
     expect(screen.queryByText(/of \d+ titles?/)).toBeNull();
@@ -472,7 +488,7 @@ describe("Library integration", () => {
     ]) {
       expect(screen.queryByText(label)).toBeNull();
     }
-    await choose("Filter by availability", "Available");
+    fireEvent.click(screen.getByRole("button", { name: /^Available/ }));
     expect(
       await screen.findByText(
         `${category === "shows" ? 0 : 1} of ${total} ${total === 1 ? "title" : "titles"}`,
@@ -489,8 +505,8 @@ describe("Library integration", () => {
       expect(within(toolbar).getByText(totalLabel)).toBeTruthy(),
     );
     expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
-    await choose("Filter by availability", "Available");
-    fireEvent.click(screen.getByRole("button", { name: "Filters (1)" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Available/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
     await choose("Filter by instance", hd.name);
     await choose("Filter by quality profile", "Ultra-HD");
     expect(
@@ -529,7 +545,7 @@ describe("Library integration", () => {
     );
     expect(screen.getByRole("heading", { name: "Movies" })).toBeTruthy();
     expect(screen.queryByText(/\d+ titles/)).toBeNull();
-    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(await findAlert("Offline")).toBeTruthy();
   });
 
   it.each([
@@ -566,14 +582,14 @@ describe("Library integration", () => {
       </LibraryProvider>,
     );
     await screen.findByRole("link", { name: `View ${items[0].title}` });
-    await choose("Sort library", sort);
+    await chooseSort(sort);
     expect(
       screen
         .getAllByRole("link", { name: /^View / })
         .map((link) => link.getAttribute("aria-label")),
     ).toEqual(items.map((item) => `View ${item.title}`));
 
-    fireEvent.click(screen.getByRole("button", { name: "Sort ascending" }));
+    await chooseSort("Ascending");
     expect(
       screen
         .getAllByRole("link", { name: /^View / })
@@ -621,7 +637,7 @@ describe("Library integration", () => {
       </LibraryProvider>,
     );
     await screen.findByRole("link", { name: `View ${movie.title}` });
-    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
     await choose("Filter by quality profile", "HD-1080p");
     expect(
       screen.getByRole("link", { name: `View ${movie.title}` }),
@@ -695,11 +711,7 @@ describe("Library integration", () => {
     await screen.findByRole("link", { name: `View ${movie.title}` });
     expect(screen.queryByText("Loading your library...")).toBeNull();
     expect(screen.getByRole("heading", { name: "Movies" })).toBeTruthy();
-    expect(
-      within(screen.getByRole("group", { name: "Library controls" })).getByText(
-        "1 title",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText("1 title")).toBeTruthy();
     rerender(
       <QueryClientProvider client={queryClient}>
         <LibraryProvider>
@@ -739,15 +751,9 @@ describe("Library integration", () => {
     await screen.findByRole("link", { name: `View ${movie.title}` });
     fetchMock.mockRejectedValueOnce(new Error("Network unavailable."));
     fireEvent.click(screen.getByRole("button", { name: "Refresh library" }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Network unavailable.",
-    );
+    expect(await findAlert("Network unavailable.")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Movies" })).toBeTruthy();
-    expect(
-      within(screen.getByRole("group", { name: "Library controls" })).getByText(
-        "1 title",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText("1 title")).toBeTruthy();
     expect(
       screen.getByRole("link", { name: `View ${movie.title}` }),
     ).toBeTruthy();
@@ -788,9 +794,11 @@ describe("Library integration", () => {
         await advanceTime(1);
       });
       expect(screen.queryByText(/Still waiting for your instances/)).toBeNull();
-      expect(screen.getByRole("alert").textContent).toContain(
-        "Library unavailable.",
-      );
+      expect(
+        screen
+          .getAllByRole("alert")
+          .some((alert) => alert.textContent?.includes("Library unavailable.")),
+      ).toBe(true);
       expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
       expect(screen.getByRole("heading", { name: "Incomplete" })).toBeTruthy();
       expect(screen.queryByText(/\d+ titles/)).toBeNull();
@@ -1396,10 +1404,13 @@ describe("MediaList", () => {
       },
     ];
     renderUI(<MediaList items={[{ ...movie, targets }]} />);
-    expect(screen.getByText("Quality profiles")).toBeTruthy();
+    expect(screen.getByText("Targets")).toBeTruthy();
     for (const target of targets) {
       expect(
-        screen.getByText(target.qualityProfile).getAttribute("title"),
+        screen
+          .getByText(target.qualityProfile)
+          .closest("[title]")
+          ?.getAttribute("title"),
       ).toContain(`${target.instanceName}: ${target.qualityProfile}`);
     }
     expect(screen.queryByText("WEBDL-1080p")).toBeNull();
@@ -1425,9 +1436,12 @@ describe("MediaCard", () => {
     expect(within(card).getByText("Ultra-HD")).toBeTruthy();
     expect(within(card).queryByText("WEBDL-1080p")).toBeNull();
     expect(within(card).queryByText("4K")).toBeNull();
-    expect(within(card).getByText("Ultra-HD").getAttribute("title")).toContain(
-      "Ultra-HD",
-    );
+    expect(
+      within(card)
+        .getByText("Ultra-HD")
+        .closest("[title]")
+        ?.getAttribute("title"),
+    ).toContain("Ultra-HD");
     fireEvent.error(
       within(card).getByRole("img", { name: `${movie.title} poster` }),
     );

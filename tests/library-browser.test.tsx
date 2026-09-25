@@ -36,6 +36,7 @@ mock.module("@/lib/client-data", () => ({
     isPending: mocks.pending,
   }),
   useInstances: () => ({ data: { instances: [{ id: "a", name: "A" }] } }),
+  useSyncData: () => mock(),
 }));
 mock.module("@/components/use-library-view", () => ({
   useLibraryView: () => ({
@@ -43,6 +44,7 @@ mock.module("@/components/use-library-view", () => ({
     totalCount: mocks.data.items.length,
     qualities: ["HD"],
     filterCount: 0,
+    statusCounts: { all: 0, available: 0, incomplete: 0, downloading: 0 },
   }),
 }));
 mock.module("@/components/media-card", () => ({
@@ -73,6 +75,15 @@ afterEach(() => {
   window.scrollY = 0;
 });
 
+const pressed = (name: string) =>
+  screen
+    .getByRole("button", { name: new RegExp(`^${name}`) })
+    .getAttribute("aria-pressed");
+const sortLabel = () =>
+  screen
+    .getByRole("button", { name: /^Sort library:/ })
+    .getAttribute("aria-label");
+
 describe("LibraryBrowser", () => {
   it("restores each category's filters, sorting, layout, and scroll after data loads", async () => {
     sessionStorage.setItem(
@@ -81,40 +92,23 @@ describe("LibraryBrowser", () => {
     );
     mocks.pending = true;
     const view = render(<LibraryBrowser category="movies" />);
-    expect(
-      screen.getByRole("combobox", { name: "Filter by availability" })
-        .textContent,
-    ).toContain("Available");
-    expect(
-      screen.getByRole("combobox", { name: "Sort library" }).textContent,
-    ).toContain("Title");
-    expect(
-      screen
-        .getByRole("button", { name: "List view" })
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
+    expect(sortLabel()).toBe("Sort library: Title, ascending");
+    expect(pressed("Table")).toBe("true");
     expect(window.scrollTo).not.toHaveBeenCalled();
     mocks.pending = false;
     view.rerender(<LibraryBrowser category="movies" />);
+    expect(pressed("Available")).toBe("true");
     await waitFor(() =>
       expect(window.scrollTo).toHaveBeenCalledWith({
         top: 640,
         behavior: "instant",
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Sort descending" }));
     window.scrollY = 900;
     fireEvent.scroll(window);
     view.rerender(<LibraryBrowser category="shows" />);
-    expect(
-      screen.getByRole("combobox", { name: "Filter by availability" })
-        .textContent,
-    ).toContain("All availability");
-    expect(
-      screen
-        .getByRole("button", { name: "Grid view" })
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
+    expect(pressed("All")).toBe("true");
+    expect(pressed("Posters")).toBe("true");
     view.rerender(<LibraryBrowser category="movies" />);
     await waitFor(() =>
       expect(window.scrollTo).toHaveBeenCalledWith({
@@ -122,8 +116,8 @@ describe("LibraryBrowser", () => {
         behavior: "instant",
       }),
     );
-    expect(screen.getByRole("button", { name: "Sort ascending" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    expect(sortLabel()).toBe("Sort library: Title, ascending");
+    fireEvent.click(screen.getByRole("button", { name: /^Filter/ }));
     expect(
       (await screen.findByRole("combobox", { name: "Filter by instance" }))
         .textContent,
@@ -134,11 +128,7 @@ describe("LibraryBrowser", () => {
     ).toContain("HD");
     view.unmount();
     render(<LibraryBrowser category="movies" />);
-    expect(
-      screen
-        .getByRole("button", { name: "List view" })
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
+    expect(pressed("Table")).toBe("true");
   });
 
   it("honors the legacy Incomplete entry point over saved availability", () => {
@@ -147,14 +137,8 @@ describe("LibraryBrowser", () => {
       JSON.stringify(saved),
     );
     render(<LibraryBrowser category="library" initialStatus="incomplete" />);
-    expect(screen.getByRole("heading", { name: "Home" })).toBeTruthy();
-    expect(
-      screen.getByRole("combobox", { name: "Filter by availability" })
-        .textContent,
-    ).toContain("Incomplete");
-    expect(
-      screen.queryByRole("button", { name: /Titles downloading/ }),
-    ).toBeNull();
+    expect(screen.getByRole("heading", { name: "All titles" })).toBeTruthy();
+    expect(pressed("Incomplete")).toBe("true");
   });
 
   it.each([
@@ -163,9 +147,7 @@ describe("LibraryBrowser", () => {
   ])("ignores invalid snapshots: %s", (snapshot) => {
     sessionStorage.setItem("arrsenal:library-view:library", snapshot);
     render(<LibraryBrowser category="library" />);
-    expect(
-      screen.getByRole("combobox", { name: "Sort library" }).textContent,
-    ).toContain("Date added");
+    expect(sortLabel()).toBe("Sort library: Date added, descending");
   });
 
   it("works when session storage is unavailable", () => {
@@ -176,12 +158,8 @@ describe("LibraryBrowser", () => {
       throw new Error("Blocked");
     });
     render(<LibraryBrowser category="movies" />);
-    fireEvent.click(screen.getByRole("button", { name: "List view" }));
-    expect(
-      screen
-        .getByRole("button", { name: "List view" })
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+    expect(pressed("Table")).toBe("true");
   });
 });
 

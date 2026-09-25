@@ -15,9 +15,22 @@ export function selectLibraryMedia(
 
 export type LibraryCategory = "library" | "movies" | "shows" | "missing";
 export type LibraryStatus = "all" | "available" | "incomplete" | "downloading";
-export type LibrarySort = "recent" | "title" | "year" | "rating";
+export type LibrarySort = "recent" | "title" | "year" | "rating" | "size";
 export type LibrarySortDirection = "asc" | "desc";
 export type LibraryLayout = "grid" | "list";
+
+export function mediaSize(item: MediaItem) {
+  return item.targets.reduce((total, target) => total + target.sizeOnDisk, 0);
+}
+
+function matchesStatus(item: MediaItem, status: LibraryStatus) {
+  return (
+    status === "all" ||
+    (status === "incomplete"
+      ? item.status === "partial" || item.status === "missing"
+      : item.status === status)
+  );
+}
 
 export function selectLibraryView(
   items: readonly MediaItem[],
@@ -67,16 +80,17 @@ export function selectLibraryView(
     );
   }
   // Filtering preserves response order; stable sorting keeps that order for ties.
-  const filtered = items
-    .filter((item) => {
-      if (!inScope(item)) return false;
-      return (
-        status === "all" ||
-        (status === "incomplete"
-          ? item.status === "partial" || item.status === "missing"
-          : item.status === status)
-      );
-    })
+  const scoped = items.filter(inScope);
+  const statusCounts = {
+    all: scoped.length,
+    available: scoped.filter((item) => matchesStatus(item, "available")).length,
+    incomplete: scoped.filter((item) => matchesStatus(item, "incomplete"))
+      .length,
+    downloading: scoped.filter((item) => matchesStatus(item, "downloading"))
+      .length,
+  } satisfies Record<LibraryStatus, number>;
+  const filtered = scoped
+    .filter((item) => matchesStatus(item, status))
     .sort(
       (a, b) =>
         (sortDirection === "asc" ? 1 : -1) *
@@ -86,7 +100,9 @@ export function selectLibraryView(
             ? a.year - b.year
             : sort === "rating"
               ? (a.rating ?? 0) - (b.rating ?? 0)
-              : a.added.localeCompare(b.added)),
+              : sort === "size"
+                ? mediaSize(a) - mediaSize(b)
+                : a.added.localeCompare(b.added)),
     );
   const filterCount =
     Number(instanceFilter !== "all") +
@@ -98,5 +114,6 @@ export function selectLibraryView(
     totalCount,
     qualities,
     filterCount,
+    statusCounts,
   };
 }

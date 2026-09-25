@@ -2,19 +2,34 @@
 
 import {
   ArrowDownIcon,
-  CheckIcon,
-  CircleDashedIcon,
+  ArrowUpIcon,
   FilmSlateIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { mediaHref } from "@/lib/client";
-import type { MediaItem, MediaTarget } from "@/lib/types";
+import { mediaHref, sizeLabel } from "@/lib/client";
+import { mediaSize } from "@/lib/library-selectors";
+import type { MediaItem, MediaStatus, MediaTarget } from "@/lib/types";
+import type { LibrarySort, LibrarySortDirection } from "./use-library-view";
 
-// Cover two rows at the widest six-column grid without eagerly loading the library.
+// Cover two rows at the widest grid without eagerly loading the library.
 const eagerPosterCount = 12;
+
+export const statusColor: Record<MediaStatus, string> = {
+  available: "var(--positive)",
+  downloading: "var(--info)",
+  partial: "var(--warning)",
+  missing: "var(--warning)",
+};
+
+export const statusLabel: Record<MediaStatus, string> = {
+  available: "Available",
+  downloading: "Downloading",
+  partial: "Incomplete",
+  missing: "Missing",
+};
 
 export function Poster({
   item,
@@ -70,39 +85,77 @@ export function Poster({
   );
 }
 
+/** One chip per target: its quality profile, dotted with the target's status. */
 export function QualityBadge({ target }: { target: MediaTarget }) {
-  const available = target.status === "available";
-  const downloading = target.status === "downloading";
   return (
     <span
-      title={`${target.instanceName}: ${target.qualityProfile} · ${target.status}`}
+      title={`${target.instanceName}: ${target.qualityProfile} · ${statusLabel[target.status]}`}
       className={css({
         display: "inline-flex",
         alignItems: "center",
-        gap: "4px",
-        px: "6px",
+        gap: "5px",
+        px: "7px",
         minHeight: "22px",
-        borderRadius: "4px",
-        bg: "#141414cf",
-        backdropFilter: "blur(8px)",
-        border: "1px solid #c7c7c72b",
-        color: available ? "#d1e8c4" : downloading ? "#b4cff1" : "#e4c894",
-        fontSize: "10px",
-        fontWeight: "550",
-        letterSpacing: ".1px",
-        whiteSpace: "normal",
-        overflowWrap: "anywhere",
+        maxWidth: "100%",
+        borderRadius: "6px",
+        bg: "control",
+        border: "1px solid token(colors.lineStrong)",
+        color: "soft",
+        fontSize: "11px",
+        fontWeight: "500",
+        whiteSpace: "nowrap",
       })}
     >
-      {available ? (
-        <CheckIcon size={10} weight="bold" />
-      ) : downloading ? (
-        <ArrowDownIcon size={10} weight="bold" />
-      ) : (
-        <CircleDashedIcon size={10} weight="bold" />
-      )}
-      {target.qualityProfile}
+      <span
+        aria-hidden="true"
+        className={css({
+          width: "6px",
+          height: "6px",
+          borderRadius: "999px",
+          flexShrink: 0,
+        })}
+        style={{ background: statusColor[target.status] }}
+      />
+      <span className={css({ overflow: "hidden", textOverflow: "ellipsis" })}>
+        {target.qualityProfile}
+      </span>
+      <span className={css({ srOnly: true })}>
+        , {statusLabel[target.status]} on {target.instanceName}
+      </span>
     </span>
+  );
+}
+
+function TargetChips({
+  targets,
+  limit = 3,
+}: {
+  targets: MediaTarget[];
+  limit?: number;
+}) {
+  if (!targets.length) return null;
+  return (
+    <div className={css({ display: "flex", flexWrap: "wrap", gap: "5px" })}>
+      {targets.slice(0, limit).map((target) => (
+        <QualityBadge key={target.instanceId} target={target} />
+      ))}
+      {targets.length > limit && (
+        <span
+          className={css({
+            display: "inline-flex",
+            alignItems: "center",
+            px: "6px",
+            minHeight: "22px",
+            borderRadius: "6px",
+            bg: "control",
+            fontSize: "11px",
+            color: "muted",
+          })}
+        >
+          +{targets.length - limit}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -124,10 +177,12 @@ export function MediaCard({
   const className = cx(
     "group",
     css({
-      display: "block",
+      display: "flex",
+      flexDirection: "column",
+      gap: "10px",
       minWidth: 0,
       textAlign: "left",
-      borderRadius: "9px",
+      borderRadius: "10px",
       width: "100%",
     }),
   );
@@ -138,94 +193,47 @@ export function MediaCard({
           position: "relative",
           aspectRatio: "2 / 3",
           overflow: "hidden",
-          borderRadius: "8px",
+          borderRadius: "10px",
           bg: "surface",
-          boxShadow: "0 2px 8px #0003",
-          outline: "1px solid #ffffff0a",
+          boxShadow: "0 12px 24px -14px #000",
           _after: {
             content: '""',
             position: "absolute",
             inset: 0,
             borderRadius: "inherit",
             pointerEvents: "none",
-            border: "1px solid transparent",
-            transition: "border-color 100ms linear",
-            _groupHover: { borderColor: "#ffffff80" },
+            boxShadow: "inset 0 0 0 1px #ffffff12",
+            transition: "box-shadow 120ms linear",
+            _groupHover: { boxShadow: "inset 0 0 0 2px var(--accent)" },
           },
         })}
       >
         <Poster item={item} priority={priority} sizes={sizes} />
       </div>
-      <div
-        className={css({
-          mt: "12px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "5px",
-        })}
-      >
+      <div className={css({ minWidth: 0 })}>
         <h3
           title={item.title}
           className={css({
-            fontSize: "13px",
-            fontWeight: "550",
+            fontSize: "14px",
+            fontWeight: "500",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
-            color: "#e5e5e5",
+            color: "ink",
             _groupHover: { color: "accent" },
             transition: "color 150ms",
           })}
         >
           {item.title}
         </h3>
-      </div>
-      <div
-        className={css({
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          mt: "4px",
-          color: "subtle",
-          fontSize: "11px",
-          gap: "5px",
-        })}
-      >
-        <span>
+        <p className={css({ mt: "3px", color: "subtle", fontSize: "12px" })}>
           {item.year || "TBA"}
-          <span className={css({ mx: "6px", color: "#555555" })}>·</span>
-          {item.kind === "movie" ? "Movie" : "Show"}
-        </span>
+          <span className={css({ srOnly: true })}>
+            , {item.kind === "movie" ? "Movie" : "Show"}
+          </span>
+        </p>
       </div>
-      {item.targets.length > 0 && (
-        <div
-          className={css({
-            mt: "8px",
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "5px",
-          })}
-        >
-          {item.targets.slice(0, 3).map((target) => (
-            <QualityBadge key={target.instanceId} target={target} />
-          ))}
-          {item.targets.length > 3 && (
-            <span
-              className={css({
-                fontSize: "10px",
-                px: "5px",
-                bg: "#141414cf",
-                borderRadius: "4px",
-                display: "flex",
-                alignItems: "center",
-              })}
-            >
-              +{item.targets.length - 3}
-            </span>
-          )}
-        </div>
-      )}
+      <TargetChips targets={item.targets} />
     </>
   );
   return href ? (
@@ -244,134 +252,290 @@ export function MediaCard({
   );
 }
 
-export function MediaList({ items }: { items: MediaItem[] }) {
+function EpisodeProgress({ item }: { item: MediaItem }) {
+  if (item.kind !== "series") {
+    return <span className={css({ color: "faint" })}>—</span>;
+  }
+  const files = item.targets.reduce(
+    (total, target) => total + (target.episodeFileCount ?? 0),
+    0,
+  );
+  const count = item.targets.reduce(
+    (total, target) => total + (target.episodeCount ?? 0),
+    0,
+  );
+  if (!count) return <span className={css({ color: "faint" })}>—</span>;
+  const percent = Math.min(100, Math.round((files / count) * 100));
+  return (
+    <span
+      title="Downloaded episodes / episode count, across targets"
+      className={css({ display: "flex", alignItems: "center", gap: "10px" })}
+    >
+      <span
+        aria-hidden="true"
+        className={css({
+          flexGrow: 1,
+          height: "4px",
+          borderRadius: "999px",
+          bg: "lineStrong",
+          overflow: "hidden",
+        })}
+      >
+        <span
+          className={css({ display: "block", height: "100%" })}
+          style={{
+            width: `${percent}%`,
+            background: percent === 100 ? "var(--positive)" : "var(--warning)",
+          }}
+        />
+      </span>
+      <span
+        className={css({
+          fontFamily: "mono",
+          fontSize: "11px",
+          color: "muted",
+          whiteSpace: "nowrap",
+        })}
+      >
+        {files} / {count}
+      </span>
+    </span>
+  );
+}
+
+const tableColumns =
+  "minmax(0, 2.6fr) 64px 72px minmax(0, 2fr) minmax(0, 1.2fr) 96px 104px";
+
+const addedFormat = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
+function SortHeader({
+  label,
+  sortKey,
+  sort,
+  sortDirection,
+  onSort,
+  align = "left",
+}: {
+  label: string;
+  sortKey?: LibrarySort;
+  sort: LibrarySort;
+  sortDirection: LibrarySortDirection;
+  onSort: (sort: LibrarySort) => void;
+  align?: "left" | "right";
+}) {
+  if (!sortKey)
+    return <span className={css({ textAlign: align })}>{label}</span>;
+  const active = sort === sortKey;
+  return (
+    <span
+      className={css({
+        display: "flex",
+        justifyContent: align === "right" ? "flex-end" : "flex-start",
+      })}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        aria-label={`Sort by ${label.toLowerCase()}${active ? (sortDirection === "asc" ? ", ascending" : ", descending") : ""}`}
+        className={css({
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "4px",
+          p: 0,
+          border: 0,
+          bg: "transparent",
+          font: "inherit",
+          letterSpacing: "inherit",
+          textTransform: "inherit",
+          color: active ? "ink" : "inherit",
+          _hover: { color: "ink" },
+        })}
+      >
+        {label}
+        {active &&
+          (sortDirection === "asc" ? (
+            <ArrowUpIcon size={12} weight="bold" color="var(--accent)" />
+          ) : (
+            <ArrowDownIcon size={12} weight="bold" color="var(--accent)" />
+          ))}
+      </button>
+    </span>
+  );
+}
+
+export function MediaList({
+  items,
+  sort = "recent",
+  sortDirection = "desc",
+  onSort = () => {},
+}: {
+  items: MediaItem[];
+  sort?: LibrarySort;
+  sortDirection?: LibrarySortDirection;
+  onSort?: (sort: LibrarySort) => void;
+}) {
+  const headerProps = { sort, sortDirection, onSort };
   return (
     <div
       className={css({
         border: "1px solid token(colors.line)",
-        borderRadius: "9px",
+        borderRadius: "12px",
         overflow: "hidden",
+        bg: "surface",
       })}
     >
-      <div
-        className={css({
-          display: { base: "none", md: "grid" },
-          gridTemplateColumns: "minmax(0, 1fr) 80px 180px 110px",
-          gap: "16px",
-          px: "18px",
-          py: "12px",
-          fontSize: "10px",
-          textTransform: "uppercase",
-          letterSpacing: "1px",
-          color: "subtle",
-          bg: "surface",
-        })}
-      >
-        <span>Title</span>
-        <span>Year</span>
-        <span>Quality profiles</span>
-        <span>Status</span>
-      </div>
-      {items.map((item, index) => (
-        <Link
-          href={mediaHref(item)}
-          key={item.id}
+      <div>
+        <div
           className={css({
-            width: "100%",
-            display: "grid",
-            gridTemplateColumns: {
-              base: "minmax(0, 1fr) auto",
-              md: "minmax(0, 1fr) 80px 180px 110px",
-            },
+            display: { base: "none", md: "grid" },
+            gridTemplateColumns: tableColumns,
             alignItems: "center",
             gap: "16px",
-            px: "18px",
-            py: "12px",
-            borderTop: "1px solid token(colors.line)",
-            textAlign: "left",
-            _hover: { bg: "surface" },
+            height: "38px",
+            px: "16px",
+            bg: "raised",
+            borderBottom: "1px solid token(colors.line)",
+            fontSize: "11px",
+            fontWeight: "600",
+            letterSpacing: ".05em",
+            textTransform: "uppercase",
+            color: "subtle",
           })}
         >
-          <span
-            className={css({
-              display: "flex",
-              alignItems: "center",
-              gap: "13px",
-              minWidth: 0,
-            })}
-          >
-            <span
+          <SortHeader label="Title" sortKey="title" {...headerProps} />
+          <SortHeader label="Year" sortKey="year" {...headerProps} />
+          <SortHeader label="Type" {...headerProps} />
+          <SortHeader label="Targets" {...headerProps} />
+          <SortHeader label="Episodes" {...headerProps} />
+          <SortHeader
+            label="On disk"
+            sortKey="size"
+            align="right"
+            {...headerProps}
+          />
+          <SortHeader
+            label="Added"
+            sortKey="recent"
+            align="right"
+            {...headerProps}
+          />
+        </div>
+      </div>
+      <div>
+        {items.map((item) => {
+          const size = mediaSize(item);
+          return (
+            <div
+              key={item.id}
               className={css({
-                width: "34px",
-                height: "49px",
                 position: "relative",
-                overflow: "hidden",
-                borderRadius: "3px",
-                flexShrink: 0,
-              })}
-            >
-              <Poster
-                item={item}
-                sizes="34px"
-                priority={index < eagerPosterCount}
-              />
-            </span>
-            <span
-              className={css({
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
+                display: "grid",
+                gridTemplateColumns: {
+                  base: "minmax(0, 1fr) auto",
+                  md: tableColumns,
+                },
+                alignItems: "center",
+                gap: "8px 16px",
+                minHeight: "36px",
+                px: "16px",
+                py: { base: "10px", md: "4px" },
+                borderBottom: "1px solid token(colors.lineSoft)",
                 fontSize: "13px",
-                fontWeight: "500",
+                _last: { borderBottom: 0 },
+                _even: {
+                  bg: "color-mix(in srgb, var(--raised) 55%, transparent)",
+                },
+                _hover: { bg: "elevated" },
               })}
             >
-              {item.title}
               <span
                 className={css({
-                  display: "block",
-                  fontSize: "11px",
-                  color: "subtle",
-                  fontWeight: "400",
-                  mt: "3px",
+                  fontWeight: "500",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                })}
+              >
+                <Link
+                  href={mediaHref(item)}
+                  className={css({
+                    _after: { content: '""', position: "absolute", inset: 0 },
+                    _focusVisible: { outline: "none" },
+                    "&:focus-visible::after": {
+                      outline: "2px solid var(--accent)",
+                      outlineOffset: "-2px",
+                    },
+                  })}
+                >
+                  {item.title}
+                </Link>
+                <span
+                  className={css({
+                    display: { base: "block", md: "none" },
+                    mt: "2px",
+                    fontSize: "12px",
+                    color: "subtle",
+                    fontWeight: "400",
+                  })}
+                >
+                  {item.year || "TBA"} ·{" "}
+                  {item.kind === "movie" ? "Movie" : "Show"}
+                </span>
+              </span>
+              <span
+                className={css({
+                  display: { base: "none", md: "block" },
+                  fontFamily: "mono",
+                  fontSize: "12px",
+                  color: "muted",
+                })}
+              >
+                {item.year || "TBA"}
+              </span>
+              <span
+                className={css({
+                  display: { base: "none", md: "block" },
+                  color: "muted",
                 })}
               >
                 {item.kind === "movie" ? "Movie" : "Show"}
               </span>
-            </span>
-          </span>
-          <span
-            className={css({
-              color: "muted",
-              fontSize: "12px",
-              display: { base: "none", md: "block" },
-            })}
-          >
-            {item.year}
-          </span>
-          <span
-            className={css({ display: "flex", gap: "5px", flexWrap: "wrap" })}
-          >
-            {item.targets.map((target) => (
-              <QualityBadge key={target.instanceId} target={target} />
-            ))}
-          </span>
-          <span
-            className={css({
-              fontSize: "11px",
-              color:
-                item.status === "available"
-                  ? "positive"
-                  : item.status === "downloading"
-                    ? "info"
-                    : "warning",
-              textTransform: "capitalize",
-              display: { base: "none", md: "block" },
-            })}
-          >
-            {item.status === "partial" ? "Incomplete" : item.status}
-          </span>
-        </Link>
-      ))}
+              <span className={css({ minWidth: 0 })}>
+                <TargetChips targets={item.targets} limit={4} />
+              </span>
+              <span className={css({ display: { base: "none", md: "block" } })}>
+                <EpisodeProgress item={item} />
+              </span>
+              <span
+                className={css({
+                  display: { base: "none", md: "block" },
+                  textAlign: "right",
+                  fontFamily: "mono",
+                  fontSize: "12px",
+                  color: size ? "soft" : "faint",
+                })}
+              >
+                {size ? sizeLabel(size) : "—"}
+              </span>
+              <span
+                className={css({
+                  display: { base: "none", md: "block" },
+                  textAlign: "right",
+                  fontFamily: "mono",
+                  fontSize: "12px",
+                  color: "muted",
+                })}
+              >
+                {item.added ? addedFormat.format(new Date(item.added)) : "—"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

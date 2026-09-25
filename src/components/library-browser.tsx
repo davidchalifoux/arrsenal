@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  ArrowClockwiseIcon,
-  FolderSimpleIcon,
-  PlusIcon,
-  XIcon,
-} from "@phosphor-icons/react";
+import { FolderSimpleIcon, XIcon } from "@phosphor-icons/react";
 import { css } from "@styled-system/css";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -16,6 +11,7 @@ import { useInstances, useLibrary } from "@/lib/client-data";
 import { useLibraryActions } from "./library-provider";
 import { LibraryToolbar } from "./library-toolbar";
 import { MediaCard, MediaList } from "./media-card";
+import { PageHeader, SegmentedTabs } from "./page-header";
 import { Button, Notice } from "./ui";
 import {
   type LibraryCategory,
@@ -44,7 +40,7 @@ const snapshotSchema = z.object({
   instanceFilter: z.string(),
   quality: z.string(),
   status: z.enum(["all", "available", "incomplete", "downloading"]),
-  sort: z.enum(["recent", "title", "year", "rating"]),
+  sort: z.enum(["recent", "title", "year", "rating", "size"]),
   sortDirection: z.enum(["asc", "desc"]),
   layout: z.enum(["grid", "list"]),
   scrollY: z.number().finite().nonnegative(),
@@ -190,17 +186,15 @@ function LibrarySection({
   }, []);
   const items = library.data?.items ?? [];
   const instances = instanceQuery.data?.instances ?? [];
-  const { filtered, totalCount, qualities, filterCount } = useLibraryView(
-    items,
-    {
+  const { filtered, totalCount, qualities, filterCount, statusCounts } =
+    useLibraryView(items, {
       category,
       status,
       instanceFilter,
       quality,
       sort,
       sortDirection,
-    },
-  );
+    });
   useEffect(() => {
     if (!snapshotLoaded || !library.data || scrollRestored.current) return;
     // Wait for the restored layout and selected rows to commit before scrolling.
@@ -221,136 +215,182 @@ function LibrarySection({
     add();
   }
 
+  function changeSort(next: LibrarySort) {
+    setSort(next);
+    setSortDirection(next === "title" ? "asc" : "desc");
+  }
+
   function resetFilters() {
     setInstanceFilter("all");
     setQuality("all");
     setStatus("all");
   }
 
+  const title =
+    category === "library"
+      ? "All titles"
+      : category === "missing"
+        ? "Incomplete"
+        : category === "movies"
+          ? "Movies"
+          : "Shows";
+  const categoryItems = items.filter((item) =>
+    category === "movies"
+      ? item.kind === "movie"
+      : category === "shows"
+        ? item.kind === "series"
+        : true,
+  );
+  const syncLabel = library.isPending ? (
+    <LibraryLoadingStatus />
+  ) : loadingInstances > 0 ? (
+    `Loading ${loadingInstances} more ${loadingInstances === 1 ? "instance" : "instances"}...`
+  ) : library.isFetching ? (
+    "Syncing library..."
+  ) : library.isError ? (
+    "Sync failed"
+  ) : library.data?.errors.length ? (
+    "Some instances need attention"
+  ) : (
+    "Library up to date"
+  );
+
   return (
     <>
-      <h1 className={css({ srOnly: true })}>
-        {category === "library"
-          ? "Home"
-          : category === "missing"
-            ? "Incomplete"
-            : category === "movies"
-              ? "Movies"
-              : "Shows"}
-      </h1>
       <LibraryToolbar
-        filterCount={filterCount}
+        refreshing={library.isFetching}
+        onRefresh={refresh}
+        onAdd={addMedia}
+        filterCount={filterCount - Number(status !== "all")}
         instances={instances}
         qualities={qualities}
         instanceFilter={instanceFilter}
         quality={quality}
-        status={status}
         sort={sort}
         sortDirection={sortDirection}
         layout={layout}
         onInstanceChange={setInstanceFilter}
         onQualityChange={setQuality}
-        onStatusChange={setStatus}
-        onSortChange={(next) => {
-          setSort(next);
-          setSortDirection(next === "title" ? "asc" : "desc");
-        }}
+        onSortChange={changeSort}
         onSortDirectionChange={setSortDirection}
         onLayoutChange={setLayout}
         onResetFilters={resetFilters}
-        count={
-          <>
+      />
+      <PageHeader
+        title={title}
+        actions={
+          <span
+            className={css({
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              color: "subtle",
+              fontSize: "12px",
+              maxWidth: "360px",
+            })}
+          >
             {hasCompleteData && snapshotLoaded && (
-              <span
-                className={css({
-                  color: "muted",
-                  fontSize: "12px",
-                  whiteSpace: "nowrap",
-                })}
-              >
+              <span className={css({ color: "muted", whiteSpace: "nowrap" })}>
                 {filterCount > 0 || category === "missing"
                   ? `${filtered.length} of `
                   : ""}
                 {totalCount} {totalCount === 1 ? "title" : "titles"}
+                <span aria-hidden="true" className={css({ ml: "8px" })}>
+                  ·
+                </span>
               </span>
             )}
-            {library.data && (filterCount > 0 || category === "missing") && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  resetFilters();
-                  if (category === "missing") router.push("/");
-                }}
-              >
-                <XIcon size={12} />
-                Clear filters
-              </Button>
-            )}
-          </>
+            {syncLabel}
+          </span>
         }
-        actions={
-          <>
-            <Button
-              variant="primary"
-              onClick={addMedia}
-              className={css({ display: { base: "inline-flex", lg: "none" } })}
-            >
-              <PlusIcon size={14} />
-              Add media
-            </Button>
-            <div
+      >
+        <nav
+          aria-label="Library categories"
+          className={css({
+            display: { base: "flex", lg: "none" },
+            gap: "4px",
+            order: -1,
+            width: "100%",
+          })}
+        >
+          {(
+            [
+              ["/", "All", "library"],
+              ["/movies", "Movies", "movies"],
+              ["/shows", "Shows", "shows"],
+            ] as const
+          ).map(([href, label, value]) => (
+            <Link
+              key={href}
+              href={href}
+              aria-current={category === value ? "page" : undefined}
               className={css({
-                display: "flex",
+                height: "30px",
+                px: "12px",
+                display: "inline-flex",
                 alignItems: "center",
-                gap: "6px",
-                minWidth: 0,
+                borderRadius: "999px",
+                border: "1px solid token(colors.lineStrong)",
+                fontSize: "12px",
+                color: "muted",
+                _currentPage: {
+                  bg: "elevated",
+                  color: "ink",
+                  borderColor: "elevated",
+                },
               })}
             >
-              <span
-                className={css({
-                  color: "subtle",
-                  fontSize: "11px",
-                  maxWidth: "260px",
-                })}
-              >
-                {library.isPending ? (
-                  <LibraryLoadingStatus />
-                ) : loadingInstances > 0 ? (
-                  `Loading ${loadingInstances} more ${loadingInstances === 1 ? "instance" : "instances"}...`
-                ) : library.isFetching ? (
-                  "Syncing library..."
-                ) : library.isError ? (
-                  "Sync failed"
-                ) : library.data?.errors.length ? (
-                  "Some instances need attention"
-                ) : (
-                  "Library up to date"
-                )}
-              </span>
-              <Button
-                size="icon"
-                variant="ghost"
-                aria-label="Refresh library"
-                disabled={library.isFetching}
-                onClick={refresh}
-              >
-                <ArrowClockwiseIcon
-                  size={16}
-                  className={
-                    library.isFetching && !library.isPending
-                      ? css({
-                          animation: "spin 1s linear infinite",
-                          _motionReduce: { animation: "none" },
-                        })
-                      : undefined
-                  }
-                />
-              </Button>
-            </div>
-          </>
-        }
-      />
+              {label}
+            </Link>
+          ))}
+        </nav>
+        {library.data && category !== "missing" && (
+          <SegmentedTabs
+            label="Filter by availability"
+            value={status}
+            onChange={setStatus}
+            options={[
+              {
+                value: "all",
+                label: "All",
+                count: statusCounts.all,
+                dot: "var(--ink)",
+              },
+              {
+                value: "available",
+                label: "Available",
+                count: statusCounts.available,
+                dot: "var(--positive)",
+              },
+              {
+                value: "incomplete",
+                label: "Incomplete",
+                count: statusCounts.incomplete,
+                dot: "var(--warning)",
+              },
+              {
+                value: "downloading",
+                label: "Downloading",
+                count: statusCounts.downloading,
+                dot: "var(--info)",
+              },
+            ]}
+          />
+        )}
+        {library.data && (filterCount > 0 || category === "missing") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              resetFilters();
+              if (category === "missing") router.push("/");
+            }}
+          >
+            <XIcon size={12} />
+            Clear filters
+          </Button>
+        )}
+      </PageHeader>
       {library.isError && library.data && (
         <div className={css({ mb: "14px" })}>
           <Notice error>
@@ -388,13 +428,22 @@ function LibrarySection({
                 item={item}
                 index={index}
                 priority={index < 16}
-                sizes="(min-width: 1864px) 183px, (min-width: 1536px) calc((100vw - 224px) / 9), (min-width: 1280px) calc((100vw - 204px) / 8), (min-width: 1024px) calc((100vw - 184px) / 7), (min-width: 768px) calc((100vw - 144px) / 5), (min-width: 640px) calc((100vw - 62px) / 3), calc((100vw - 47px) / 2)"
+                sizes="(min-width: 1864px) 183px, (min-width: 1536px) calc((100vw - 400px) / 9), (min-width: 1280px) calc((100vw - 380px) / 8), (min-width: 1024px) calc((100vw - 360px) / 7), (min-width: 768px) calc((100vw - 112px) / 5), (min-width: 640px) calc((100vw - 62px) / 3), calc((100vw - 47px) / 2)"
                 href={mediaHref(item)}
               />
             ))}
           </div>
         ) : (
-          <MediaList items={filtered} />
+          <MediaList
+            items={filtered}
+            sort={sort}
+            sortDirection={sortDirection}
+            onSort={(next) =>
+              next === sort
+                ? setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                : changeSort(next)
+            }
+          />
         )
       ) : loadingInstances > 0 ? (
         <output>More library items are still loading.</output>
@@ -403,8 +452,8 @@ function LibrarySection({
           className={css({
             textAlign: "center",
             py: "70px",
-            border: "1px dashed token(colors.line)",
-            borderRadius: "10px",
+            border: "1px dashed token(colors.lineStrong)",
+            borderRadius: "14px",
           })}
         >
           <FolderSimpleIcon
@@ -412,14 +461,14 @@ function LibrarySection({
             weight="duotone"
             className={css({ mx: "auto", color: "subtle", mb: "15px" })}
           />
-          <h3
-            className={css({ fontSize: "18px", fontWeight: "550", mb: "8px" })}
+          <h2
+            className={css({ fontSize: "18px", fontWeight: "600", mb: "8px" })}
           >
             {items.length
               ? "Nothing in this view. Yet."
               : "The beginning of a great collection."}
-          </h3>
-          <p className={css({ fontSize: "12px", color: "muted", mb: "20px" })}>
+          </h2>
+          <p className={css({ fontSize: "13px", color: "muted", mb: "20px" })}>
             {items.length
               ? "Try a different filter to find what you're looking for."
               : "Add your first movie or show to get things rolling."}
@@ -439,81 +488,72 @@ function LibrarySection({
       )}
       <footer
         className={css({
-          mt: "30px",
-          borderTop: "1px solid token(colors.line)",
-          pt: "17px",
+          mt: "32px",
+          mx: { base: "-16px", lg: "-28px" },
+          mb: { base: "0", lg: "-40px" },
+          px: { base: "16px", lg: "28px" },
+          minHeight: "28px",
+          py: "6px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: "12px",
-          color: "subtle",
-          fontSize: "10px",
           flexWrap: "wrap",
+          gap: "6px 16px",
+          bg: "toolbar",
+          borderTop: "1px solid token(colors.line)",
+          color: "subtle",
+          fontSize: "11px",
         })}
       >
-        <span>
-          {instanceQuery.data ? `${instances.length} instances` : "Instances"}
-          <span className={css({ mx: "7px", color: "#4d4d4d" })}>·</span>
-          One library
+        <span
+          className={css({ display: "flex", gap: "16px", flexWrap: "wrap" })}
+        >
+          {category === "library" && (
+            <>
+              <span>
+                {categoryItems.filter((item) => item.kind === "movie").length}{" "}
+                movies
+              </span>
+              <span>
+                {categoryItems.filter((item) => item.kind === "series").length}{" "}
+                shows
+              </span>
+            </>
+          )}
+          <span>
+            {instanceQuery.data ? `${instances.length} instances` : "Instances"}
+          </span>
         </span>
         <span
-          className={css({
-            display: "flex",
-            alignItems: "center",
-            gap: "12px",
-          })}
+          className={css({ display: "flex", gap: "14px", flexWrap: "wrap" })}
         >
-          <span
-            className={css({
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            })}
-          >
+          {(
+            [
+              ["Available", "var(--positive)"],
+              ["Downloading", "var(--info)"],
+              ["Incomplete", "var(--warning)"],
+            ] as const
+          ).map(([label, color]) => (
             <span
+              key={label}
               className={css({
-                width: "4px",
-                height: "4px",
-                bg: "positive",
-                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
               })}
-            />
-            Available
-          </span>
-          <span
-            className={css({
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            })}
-          >
-            <span
-              className={css({
-                width: "4px",
-                height: "4px",
-                bg: "warning",
-                borderRadius: "50%",
-              })}
-            />
-            Incomplete
-          </span>
-          <span
-            className={css({
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            })}
-          >
-            <span
-              className={css({
-                width: "4px",
-                height: "4px",
-                bg: "info",
-                borderRadius: "50%",
-              })}
-            />
-            Downloading
-          </span>
+            >
+              <span
+                aria-hidden="true"
+                className={css({
+                  width: "7px",
+                  height: "7px",
+                  borderRadius: "2px",
+                })}
+                style={{ background: color }}
+              />
+              {label}
+            </span>
+          ))}
         </span>
       </footer>
     </>
