@@ -668,9 +668,15 @@ function LibrarySection({
         }
         error={saveError}
       />
+      <div
+        aria-hidden="true"
+        className={css({ flexGrow: 1, minHeight: "32px" })}
+      />
       <footer
         className={css({
-          mt: "32px",
+          position: { lg: "sticky" },
+          bottom: 0,
+          zIndex: 10,
           mx: { base: "-16px", lg: "-28px" },
           mb: { base: "0", lg: "-40px" },
           px: { base: "16px", lg: "28px" },

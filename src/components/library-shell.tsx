@@ -656,6 +656,10 @@ export function LibraryShell({ children }: { children: ReactNode }) {
               lg: "40px",
             },
             minWidth: 0,
+            // Fill the window so page footers can sit at the bottom of short pages.
+            display: "flex",
+            flexDirection: "column",
+            minHeight: "calc(100dvh - 57px - env(safe-area-inset-top))",
             // Pages without an action bar still need breathing room below the header.
             "& > :first-child:not([role=toolbar]):not(:has(> [role=toolbar]:first-child))":
               {
