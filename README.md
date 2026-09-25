@@ -4,7 +4,7 @@
 
 Arrsenal brings your movies, shows, and download queues into one web interface, even when your HD and 4K libraries live on separate instances.
 
-![Arrsenal library showing movies and TV shows across demo Sonarr and Radarr instances](docs/images/library-demo.png)
+![Arrsenal library in poster view, with movies and shows from Sonarr and Radarr instances in one sidebar layout](docs/images/library-demo.png)
 
 *Poster artwork belongs to its respective owners.*
 
