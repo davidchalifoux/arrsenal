@@ -10,13 +10,13 @@ import {
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import { useQuery } from "@tanstack/react-query";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { settingsSections } from "@/app/(library)/settings/sections";
 import { useInstances, useLibrary, useQueue } from "@/lib/client-data";
 import { useLibraryActions } from "./library-provider";
+import { Logo } from "./logo";
 import { SearchTrigger, TaskStatus } from "./page-header";
 import { wantedRows } from "./wanted";
 
@@ -313,14 +313,7 @@ function Sidebar({ pathname }: { pathname: string }) {
           px: "20px",
         })}
       >
-        <Image
-          src="/logo.svg"
-          loading="eager"
-          width={28}
-          height={28}
-          alt=""
-          aria-hidden="true"
-        />
+        <Logo size={28} />
       </Link>
       <nav
         aria-label="Main navigation"
@@ -635,14 +628,7 @@ export function LibraryShell({ children }: { children: ReactNode }) {
                 flexShrink: 0,
               })}
             >
-              <Image
-                src="/logo.svg"
-                loading="eager"
-                width={28}
-                height={28}
-                alt=""
-                aria-hidden="true"
-              />
+              <Logo size={28} />
             </Link>
             <span
               className={css({

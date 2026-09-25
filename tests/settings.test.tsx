@@ -368,7 +368,7 @@ describe("Settings", () => {
     expect(onRefresh).not.toHaveBeenCalled();
   });
 
-  it("switches instance type through the shared select and sends the selected kind", async () => {
+  it("switches instance type through the app choice and sends the selected kind", async () => {
     (
       api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
     ).mockResolvedValue({
@@ -379,12 +379,11 @@ describe("Settings", () => {
       <Settings instances={[]} onRefresh={mock()} notify={mock()} autoOpen />,
     );
     await screen.findByRole("dialog");
-    fireEvent.click(screen.getByRole("combobox", { name: "Instance type" }));
-    const option = await screen.findByRole("option", {
-      name: "Radarr - Movies",
-    });
-    fireEvent.pointerDown(option);
-    fireEvent.click(option);
+    const type = within(screen.getByRole("group", { name: "Instance type" }));
+    expect(
+      (type.getByRole("radio", { name: /Sonarr/ }) as HTMLInputElement).checked,
+    ).toBe(true);
+    fireEvent.click(type.getByRole("radio", { name: /Radarr/ }));
     fillForm("http://localhost:7878");
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await screen.findByText(/Connection verified/);

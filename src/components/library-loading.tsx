@@ -1,7 +1,6 @@
 "use client";
 
 import { css } from "@styled-system/css";
-import Image from "next/image";
 import Link from "next/link";
 import {
   createContext,
@@ -11,6 +10,7 @@ import {
   useState,
 } from "react";
 import { useInstances, useLibrary, useQueue } from "@/lib/client-data";
+import { Logo } from "./logo";
 
 const StartupContext = createContext<(() => void) | null>(null);
 
@@ -57,14 +57,10 @@ export function LibraryLoading({ children }: { children: ReactNode }) {
           })}
         >
           <div className={css({ perspective: "600px", mb: "34px" })}>
-            <Image
-              src="/logo.svg"
-              alt=""
-              width={80}
-              height={80}
-              loading="eager"
-              fetchPriority="high"
+            <Logo
+              size={80}
               className={css({
+                color: "ink",
                 animation: "logoLoading 2.4s ease-in-out infinite",
                 _motionReduce: { animation: "none" },
               })}
