@@ -275,4 +275,16 @@ describe("preferences config and API", () => {
       addDefaults,
     });
   });
+
+  it("maps earlier theme IDs to their renamed themes", async () => {
+    expect(await (await patch({ theme: "daylight" })).json()).toEqual({
+      timeZone: null,
+      theme: "light",
+    });
+    expect(await (await patch({ theme: "neutral" })).json()).toEqual({
+      timeZone: null,
+      theme: "dark",
+    });
+    expect((await patch({ theme: "sepia" })).status).toBe(400);
+  });
 });

@@ -16,7 +16,7 @@
 - Combined download queues with progress, removal/blocklisting, pending-release grabs, and import retries, one at a time or for selected rows.
 - **Wanted** lists monitored targets that are missing files and searches them individually, by selection, or all at once.
 - A month calendar and agenda of episodes and releases; busy days open a list of every event.
-- Six themes (Neutral, the default, plus Sonarr, Midnight, Radarr, Graphite and Daylight) and a custom accent color in **Settings > Personalization**.
+- Six themes (Dark, the default, and its inverse Light, plus Sonarr, Midnight, Radarr and Graphite) and a custom accent color in **Settings > Personalization**.
 - UI-managed connections, server-side API keys, and Zod-validated local configuration. No database.
 - Optional single-account authentication in **Settings > Security**, with local password recovery.
 - **Settings > About** shows the installed version and project links, and checks GitHub's latest stable release server-side. Results are cached for one hour; an unavailable check does not block Settings.

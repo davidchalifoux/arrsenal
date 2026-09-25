@@ -29,15 +29,13 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-it("selects the Neutral theme when none has been saved", () => {
+it("selects the Dark theme when none has been saved", () => {
   const saved = state.data;
   state.data = { timeZone: null, accent: null };
   try {
     render(<ThemePicker />);
     expect(
-      screen
-        .getByRole("button", { name: /Neutral/ })
-        .getAttribute("aria-pressed"),
+      screen.getByRole("button", { name: /Dark/ }).getAttribute("aria-pressed"),
     ).toBe("true");
   } finally {
     state.data = saved;

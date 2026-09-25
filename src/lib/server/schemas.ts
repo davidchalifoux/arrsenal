@@ -2,7 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import { libraryPreferencesSchema } from "@/lib/library-options";
-import { hexColorPattern, themeIds } from "@/lib/theme";
+import { hexColorPattern, legacyThemeIds, themeIds } from "@/lib/theme";
 import { isPosterSource } from "../image-sources";
 
 const objectError = { error: "A JSON object is required." };
@@ -139,7 +139,13 @@ export const preferencesSchema = z.strictObject({
         return z.NEVER;
       }
     }),
-  theme: z.enum(themeIds).optional(),
+  theme: z
+    .preprocess(
+      (value) =>
+        typeof value === "string" ? (legacyThemeIds[value] ?? value) : value,
+      z.enum(themeIds),
+    )
+    .optional(),
   accent: z
     .string()
     .regex(hexColorPattern, { error: "Enter a hex color, such as #8b7cf6." })

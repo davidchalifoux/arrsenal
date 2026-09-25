@@ -1,10 +1,12 @@
 export const themes = [
-  { id: "neutral", name: "Neutral", accent: "#d4d4d4" },
+  // Dark and Light mirror each other: neutral grays with a silver or charcoal
+  // accent.
+  { id: "dark", name: "Dark", accent: "#d4d4d4" },
+  { id: "light", name: "Light", accent: "#262626" },
   { id: "sonarr", name: "Sonarr", accent: "#35c5f4" },
   { id: "midnight", name: "Midnight", accent: "#8b7cf6" },
   { id: "radarr", name: "Radarr", accent: "#ffc230" },
   { id: "graphite", name: "Graphite", accent: "#5fd0a0" },
-  { id: "daylight", name: "Daylight", accent: "#6d5be8" },
 ] as const;
 
 export type ThemeId = (typeof themes)[number]["id"];
@@ -14,7 +16,13 @@ export const themeIds = themes.map((theme) => theme.id) as [
   ...ThemeId[],
 ];
 
-export const defaultTheme: ThemeId = "neutral";
+export const defaultTheme: ThemeId = "dark";
+
+/** Earlier theme IDs, mapped so saved preferences keep their theme. */
+export const legacyThemeIds: Record<string, ThemeId> = {
+  neutral: "dark",
+  daylight: "light",
+};
 
 export const accentSwatches = [
   { name: "Violet", value: "#8b7cf6" },
@@ -24,6 +32,7 @@ export const accentSwatches = [
   { name: "Rose", value: "#f2789a" },
   { name: "Slate", value: "#a3a7b0" },
   { name: "Silver", value: "#d4d4d4" },
+  { name: "Charcoal", value: "#262626" },
 ];
 
 export const hexColorPattern = /^#[0-9a-f]{6}$/i;
