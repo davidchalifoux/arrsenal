@@ -71,6 +71,7 @@ export function MediaScreen({
         key={media.id}
         media={media}
         onAddTarget={add}
+        onRefresh={refresh}
         notify={notify}
       />
     </>

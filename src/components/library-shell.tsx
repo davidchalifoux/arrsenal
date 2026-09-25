@@ -672,9 +672,10 @@ export function LibraryShell({ children }: { children: ReactNode }) {
             },
             minWidth: 0,
             // Pages without an action bar still need breathing room below the header.
-            "& > :first-child:not([role=toolbar])": {
-              mt: { base: "18px", lg: "24px" },
-            },
+            "& > :first-child:not([role=toolbar]):not(:has(> [role=toolbar]:first-child))":
+              {
+                mt: { base: "18px", lg: "24px" },
+              },
           })}
         >
           {children}
