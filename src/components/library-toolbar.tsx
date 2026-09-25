@@ -31,7 +31,15 @@ import type {
   LibraryLayout,
   LibrarySort,
   LibrarySortDirection,
+  LibraryStatus,
 } from "./use-library-view";
+
+const statusOptions: { value: LibraryStatus; label: string; dot: string }[] = [
+  { value: "all", label: "All availability", dot: "var(--ink)" },
+  { value: "available", label: "Available", dot: "var(--positive)" },
+  { value: "incomplete", label: "Incomplete", dot: "var(--warning)" },
+  { value: "downloading", label: "Downloading", dot: "var(--info)" },
+];
 
 export const sortOptions: { value: LibrarySort; label: string }[] = [
   { value: "recent", label: "Date added" },
@@ -175,11 +183,13 @@ function FilterEntry({
   active,
   onSelect,
   onEdit,
+  dot,
 }: {
   entry: FilterMenuEntry;
   active: boolean;
   onSelect: () => void;
   onEdit?: () => void;
+  dot?: string;
 }) {
   return (
     <div className={css({ display: "flex", alignItems: "center", gap: "2px" })}>
@@ -200,6 +210,18 @@ function FilterEntry({
             <CheckIcon size={14} weight="bold" color="var(--accent)" />
           )}
         </span>
+        {dot && (
+          <span
+            aria-hidden="true"
+            className={css({
+              width: "6px",
+              height: "6px",
+              borderRadius: "999px",
+              flexShrink: 0,
+            })}
+            style={{ background: dot }}
+          />
+        )}
         <span className={css({ flexGrow: 1, minWidth: 0 })}>{entry.name}</span>
         {entry.count !== undefined && (
           <span
@@ -254,7 +276,13 @@ function FilterPopover({
   onFilterChange,
   onEditFilter,
   onNewFilter,
+  status,
+  statusCounts,
+  onStatusChange,
 }: {
+  status: LibraryStatus;
+  statusCounts?: Record<LibraryStatus, number>;
+  onStatusChange: (status: LibraryStatus) => void;
   filterCount: number;
   instances: { id: string; name: string }[];
   qualities: string[];
@@ -317,9 +345,27 @@ function FilterPopover({
             aria-label="Filter library"
             className={cx(menuPopupStyle, css({ width: "320px" }))}
           >
+            <p className={menuLabelStyle}>Availability</p>
+            {statusOptions.map((option) => (
+              <FilterEntry
+                key={option.value}
+                entry={{
+                  id: option.value,
+                  name: option.label,
+                  count: statusCounts?.[option.value],
+                }}
+                dot={option.dot}
+                active={status === option.value}
+                onSelect={() => {
+                  onStatusChange(option.value);
+                  setOpen(false);
+                }}
+              />
+            ))}
+            <div className={menuSeparatorStyle} />
             <p className={menuLabelStyle}>Presets</p>
             <FilterEntry
-              entry={{ id: "all", name: "All titles", count: allCount }}
+              entry={{ id: "all", name: "No preset", count: allCount }}
               active={filterId === null}
               onSelect={() => select(null)}
             />
@@ -440,7 +486,13 @@ export function LibraryToolbar({
   onEditFilter = () => {},
   onNewFilter = () => {},
   onOptions,
+  status = "all",
+  statusCounts,
+  onStatusChange = () => {},
 }: {
+  status?: LibraryStatus;
+  statusCounts?: Record<LibraryStatus, number>;
+  onStatusChange?: (status: LibraryStatus) => void;
   refreshing: boolean;
   onRefresh: () => void;
   onAdd: () => void;
@@ -507,6 +559,9 @@ export function LibraryToolbar({
             onFilterChange={onFilterChange}
             onEditFilter={onEditFilter}
             onNewFilter={onNewFilter}
+            status={status}
+            statusCounts={statusCounts}
+            onStatusChange={onStatusChange}
           />
           {onOptions && (
             <ToolbarButton

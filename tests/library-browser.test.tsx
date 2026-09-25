@@ -83,6 +83,19 @@ const pressed = (name: string) =>
   screen
     .getByRole("button", { name: new RegExp(`^${name}`) })
     .getAttribute("aria-pressed");
+const availability = async (name: string) => {
+  fireEvent.click(screen.getByRole("button", { name: /^Filter/ }));
+  const value = (
+    await screen.findByRole("button", { name: new RegExp(`^${name}`) })
+  ).getAttribute("aria-pressed");
+  fireEvent.keyDown(document.activeElement ?? document.body, {
+    key: "Escape",
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: /^No preset/ })).toBeNull(),
+  );
+  return value;
+};
 const sortLabel = () =>
   screen
     .getByRole("button", { name: /^Sort library:/ })
@@ -101,7 +114,7 @@ describe("LibraryBrowser", () => {
     expect(window.scrollTo).not.toHaveBeenCalled();
     mocks.pending = false;
     view.rerender(<LibraryBrowser category="movies" />);
-    expect(pressed("Available")).toBe("true");
+    expect(await availability("Available")).toBe("true");
     await waitFor(() =>
       expect(window.scrollTo).toHaveBeenCalledWith({
         top: 640,
@@ -111,7 +124,7 @@ describe("LibraryBrowser", () => {
     window.scrollY = 900;
     fireEvent.scroll(window);
     view.rerender(<LibraryBrowser category="shows" />);
-    expect(pressed("All")).toBe("true");
+    expect(await availability("All")).toBe("true");
     expect(pressed("Posters")).toBe("true");
     view.rerender(<LibraryBrowser category="movies" />);
     await waitFor(() =>
@@ -135,14 +148,14 @@ describe("LibraryBrowser", () => {
     expect(pressed("Table")).toBe("true");
   });
 
-  it("honors the legacy Incomplete entry point over saved availability", () => {
+  it("honors the legacy Incomplete entry point over saved availability", async () => {
     sessionStorage.setItem(
       "arrsenal:library-view:library",
       JSON.stringify(saved),
     );
     render(<LibraryBrowser category="library" initialStatus="incomplete" />);
     expect(screen.getByRole("heading", { name: "All titles" })).toBeTruthy();
-    expect(pressed("Incomplete")).toBe("true");
+    expect(await availability("Incomplete")).toBe("true");
   });
 
   it.each([

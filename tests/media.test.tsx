@@ -488,7 +488,8 @@ describe("Library integration", () => {
     ]) {
       expect(screen.queryByText(label)).toBeNull();
     }
-    fireEvent.click(screen.getByRole("button", { name: /^Available/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Filter/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Available/ }));
     expect(
       await screen.findByText(
         `${category === "shows" ? 0 : 1} of ${total} ${total === 1 ? "title" : "titles"}`,
@@ -505,8 +506,9 @@ describe("Library integration", () => {
       expect(within(toolbar).getByText(totalLabel)).toBeTruthy(),
     );
     expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /^Available/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Filter/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Available/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Filter, 1 active" }));
     await choose("Filter by instance", hd.name);
     await choose("Filter by quality profile", "Ultra-HD");
     expect(
@@ -528,6 +530,41 @@ describe("Library integration", () => {
         name: title,
       }),
     ).toBeTruthy();
+  });
+
+  it("narrows the library to titles matching a preset filter", async () => {
+    queryClient.setQueryData(["library"], {
+      items: [
+        { ...movie, targets: [hdTarget] },
+        {
+          ...movie,
+          id: "unmonitored-movie",
+          title: "Forgotten movie",
+          targets: [{ ...hdTarget, monitored: false }],
+        },
+      ],
+      errors: [],
+    });
+    queryClient.setQueryData(["instances"], { instances: [hd] });
+    renderUI(
+      <LibraryProvider>
+        <LibraryBrowser category="movies" />
+      </LibraryProvider>,
+    );
+    await screen.findByRole("link", { name: `View ${movie.title}` });
+    fireEvent.click(screen.getByRole("button", { name: /^Filter/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Unmonitored/ }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("link", { name: `View ${movie.title}` }),
+      ).toBeNull(),
+    );
+    expect(
+      screen.getByRole("link", { name: "View Forgotten movie" }),
+    ).toBeTruthy();
+    expect(screen.getByText("1 of 2 titles")).toBeTruthy();
   });
 
   it("does not present partial instance results as a complete category count", async () => {

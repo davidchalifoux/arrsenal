@@ -23,7 +23,7 @@ import { CustomFilterDialog, emptyCustomFilter } from "./custom-filter-dialog";
 import { useLibraryActions } from "./library-provider";
 import { LibraryToolbar } from "./library-toolbar";
 import { MediaCard, MediaList } from "./media-card";
-import { PageHeader, SegmentedTabs } from "./page-header";
+import { PageHeader } from "./page-header";
 import { Button, Notice } from "./ui";
 import {
   type LibraryCategory,
@@ -242,6 +242,7 @@ function LibrarySection({
       quality,
       sort,
       sortDirection,
+      filter: activeFilter,
     });
   useEffect(() => {
     if (!snapshotLoaded || !library.data || scrollRestored.current) return;
@@ -358,7 +359,10 @@ function LibrarySection({
         refreshing={library.isFetching}
         onRefresh={refresh}
         onAdd={addMedia}
-        filterCount={filterCount - Number(status !== "all")}
+        filterCount={filterCount}
+        status={status}
+        statusCounts={library.data ? statusCounts : undefined}
+        onStatusChange={setStatus}
         instances={instances}
         qualities={qualities}
         instanceFilter={instanceFilter}
@@ -485,39 +489,6 @@ function LibrarySection({
             </Link>
           ))}
         </nav>
-        {library.data && category !== "missing" && (
-          <SegmentedTabs
-            label="Filter by availability"
-            value={status}
-            onChange={setStatus}
-            options={[
-              {
-                value: "all",
-                label: "All",
-                count: statusCounts.all,
-                dot: "var(--ink)",
-              },
-              {
-                value: "available",
-                label: "Available",
-                count: statusCounts.available,
-                dot: "var(--positive)",
-              },
-              {
-                value: "incomplete",
-                label: "Incomplete",
-                count: statusCounts.incomplete,
-                dot: "var(--warning)",
-              },
-              {
-                value: "downloading",
-                label: "Downloading",
-                count: statusCounts.downloading,
-                dot: "var(--info)",
-              },
-            ]}
-          />
-        )}
         {library.data && (filterCount > 0 || category === "missing") && (
           <Button
             variant="ghost"
