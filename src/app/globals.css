@@ -1,7 +1,6 @@
 @layer reset, base, tokens, recipes, utilities;
 
 @layer base {
-  :root,
   [data-theme="midnight"] {
     color-scheme: dark;
     --canvas: #0d0e10;
@@ -28,6 +27,7 @@
     --on-accent: #0d0e10;
   }
 
+  :root,
   [data-theme="sonarr"] {
     color-scheme: dark;
     --canvas: #16191e;

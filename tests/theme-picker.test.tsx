@@ -29,6 +29,21 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+it("selects the Sonarr theme when none has been saved", () => {
+  const saved = state.data;
+  state.data = { timeZone: null, accent: null };
+  try {
+    render(<ThemePicker />);
+    expect(
+      screen
+        .getByRole("button", { name: /Sonarr/ })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+  } finally {
+    state.data = saved;
+  }
+});
+
 it("applies a theme immediately and saves it with the theme accent", () => {
   render(<ThemePicker />);
   expect(
