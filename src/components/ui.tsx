@@ -227,24 +227,29 @@ export function CheckField({
   onChange,
   children,
   disabled = false,
+  className,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   children: ReactNode;
   disabled?: boolean;
+  className?: string;
 }) {
   const id = useId();
   return (
     <label
       htmlFor={id}
-      className={css({
-        display: "flex",
-        alignItems: "center",
-        gap: "10px",
-        cursor: "pointer",
-        fontSize: "12px",
-        lineHeight: "1.6",
-      })}
+      className={cx(
+        css({
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          cursor: "pointer",
+          fontSize: "12px",
+          lineHeight: "1.6",
+        }),
+        className,
+      )}
     >
       <Checkbox.Root
         id={id}
@@ -281,6 +286,7 @@ export function Modal({
   wide = false,
   initialFocus,
   command = false,
+  placement = "center",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -289,8 +295,12 @@ export function Modal({
   children: ReactNode;
   wide?: boolean;
   initialFocus?: ComponentProps<typeof Dialog.Popup>["initialFocus"];
+  /** A command palette: no visible header, and the content manages scrolling. */
   command?: boolean;
+  /** Top-anchored dialogs grow downward instead of re-centering as they change. */
+  placement?: "center" | "top";
 }) {
+  const top = command || placement === "top";
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
@@ -313,11 +323,11 @@ export function Modal({
             zIndex: 61,
             overflowY: "auto",
             display: "flex",
-            alignItems: command ? "flex-start" : "center",
+            alignItems: top ? "flex-start" : "center",
             justifyContent: "center",
             px: { base: "12px", md: "32px" },
             pb: { base: "12px", md: "32px" },
-            pt: command ? "min(15dvh, 120px)" : { base: "12px", md: "32px" },
+            pt: top ? "min(12dvh, 96px)" : { base: "12px", md: "32px" },
           })}
         >
           <Dialog.Popup
@@ -326,12 +336,14 @@ export function Modal({
               width: "100%",
               maxWidth: command ? "720px" : wide ? "800px" : "540px",
               maxHeight: command ? "calc(85dvh - 24px)" : "calc(100dvh - 40px)",
-              overflowY: "auto",
+              overflowY: command ? "hidden" : "auto",
+              display: command ? "flex" : "block",
+              flexDirection: "column",
               bg: "surface",
               border: "1px solid token(colors.lineStrong)",
               borderRadius: "16px",
               boxShadow: "0 40px 80px -20px #000c",
-              p: command ? "16px 16px 0" : { base: "20px", md: "28px" },
+              p: command ? 0 : { base: "20px", md: "28px" },
               outline: "none",
               transition: "opacity 180ms, transform 180ms",
               _startingStyle: {
@@ -344,43 +356,49 @@ export function Modal({
               },
             })}
           >
-            <div
-              className={css({
-                display: "flex",
-                alignItems: "flex-start",
-                justifyContent: "space-between",
-                gap: "16px",
-                mb: command ? "12px" : "22px",
-              })}
-            >
-              <div>
-                <Dialog.Title
-                  className={css({
-                    fontSize: command ? "14px" : "18px",
-                    fontWeight: "600",
-                    letterSpacing: "-.3px",
-                  })}
-                >
-                  {title}
-                </Dialog.Title>
-                {description && (
-                  <Dialog.Description
-                    className={cx(
-                      mutedStyle,
-                      css({ mt: "6px", maxWidth: "590px" }),
-                    )}
-                  >
-                    {description}
-                  </Dialog.Description>
-                )}
-              </div>
-              <Dialog.Close
-                aria-label="Close dialog"
-                className={buttonStyle({ variant: "ghost", size: "icon" })}
+            {command ? (
+              <Dialog.Title className={css({ srOnly: true })}>
+                {title}
+              </Dialog.Title>
+            ) : (
+              <div
+                className={css({
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: "16px",
+                  mb: "22px",
+                })}
               >
-                <XIcon size={19} />
-              </Dialog.Close>
-            </div>
+                <div>
+                  <Dialog.Title
+                    className={css({
+                      fontSize: "18px",
+                      fontWeight: "600",
+                      letterSpacing: "-.3px",
+                    })}
+                  >
+                    {title}
+                  </Dialog.Title>
+                  {description && (
+                    <Dialog.Description
+                      className={cx(
+                        mutedStyle,
+                        css({ mt: "6px", maxWidth: "590px" }),
+                      )}
+                    >
+                      {description}
+                    </Dialog.Description>
+                  )}
+                </div>
+                <Dialog.Close
+                  aria-label="Close dialog"
+                  className={buttonStyle({ variant: "ghost", size: "icon" })}
+                >
+                  <XIcon size={19} />
+                </Dialog.Close>
+              </div>
+            )}
             {children}
           </Dialog.Popup>
         </Dialog.Viewport>
