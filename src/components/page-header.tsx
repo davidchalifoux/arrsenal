@@ -387,6 +387,10 @@ export function Page({
         data-page-scroll=""
         tabIndex={-1}
         className={css({
+          // Contain absolutely positioned content (such as screen-reader-only
+          // labels) so it scrolls and clips with the body instead of growing
+          // the document.
+          position: "relative",
           flex: 1,
           minHeight: 0,
           overflowY: "auto",

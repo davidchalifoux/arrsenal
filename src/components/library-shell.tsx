@@ -536,6 +536,9 @@ export function LibraryShell({ children }: { children: ReactNode }) {
         // action bars, and footers never need offsets to stay in place.
         height: "100dvh",
         overflow: "hidden",
+        // Makes the frame the containing block for anything absolutely
+        // positioned, so overflow: hidden actually clips it.
+        position: "relative",
         isolation: "isolate",
         display: "grid",
         gridTemplateColumns: {
