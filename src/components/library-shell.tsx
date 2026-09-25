@@ -273,9 +273,7 @@ function Sidebar({ pathname }: { pathname: string }) {
       className={css({
         display: { base: "none", lg: "flex" },
         flexDirection: "column",
-        position: "sticky",
-        top: 0,
-        height: "100dvh",
+        minHeight: 0,
         bg: "sidebar",
         borderRight: "1px solid token(colors.line)",
         overflowY: "auto",
@@ -431,13 +429,8 @@ function MobileNavigation({ pathname }: { pathname: string }) {
         display: { base: "grid", lg: "none" },
         gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
         gap: "2px",
-        position: "fixed",
-        bottom: 0,
-        left: 0,
-        right: 0,
-        zIndex: 40,
-        bg: "color-mix(in srgb, var(--sidebar) 94%, transparent)",
-        backdropFilter: "blur(16px)",
+        flexShrink: 0,
+        bg: "sidebar",
         borderTop: "1px solid token(colors.line)",
         pt: "6px",
         px: "max(6px, env(safe-area-inset-left), env(safe-area-inset-right))",
@@ -539,10 +532,17 @@ export function LibraryShell({ children }: { children: ReactNode }) {
   return (
     <div
       className={css({
-        minHeight: "100dvh",
+        // A fixed frame: only each page's body scrolls, so the header, sidebar,
+        // action bars, and footers never need offsets to stay in place.
+        height: "100dvh",
+        overflow: "hidden",
         isolation: "isolate",
-        display: { lg: "grid" },
-        gridTemplateColumns: { lg: "232px minmax(0, 1fr)" },
+        display: "grid",
+        gridTemplateColumns: {
+          base: "minmax(0, 1fr)",
+          lg: "232px minmax(0, 1fr)",
+        },
+        gridTemplateRows: "minmax(0, 1fr)",
       })}
     >
       <a
@@ -563,12 +563,17 @@ export function LibraryShell({ children }: { children: ReactNode }) {
         Skip to content
       </a>
       <Sidebar pathname={pathname} />
-      <div className={css({ minWidth: 0 })}>
+      <div
+        className={css({
+          minWidth: 0,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+        })}
+      >
         <header
           className={css({
-            position: "sticky",
-            top: 0,
-            zIndex: 30,
+            flexShrink: 0,
             bg: "sidebar",
             borderBottom: "1px solid token(colors.line)",
             paddingTop: "env(safe-area-inset-top)",
@@ -616,26 +621,19 @@ export function LibraryShell({ children }: { children: ReactNode }) {
         <main
           id="main-content"
           className={css({
-            px: { base: "16px", lg: "28px" },
-            pb: {
-              base: "calc(96px + env(safe-area-inset-bottom))",
-              lg: "40px",
-            },
+            flex: 1,
+            minHeight: 0,
             minWidth: 0,
-            // Fill the window so page footers can sit at the bottom of short pages.
             display: "flex",
             flexDirection: "column",
-            minHeight: "calc(100dvh - 57px - env(safe-area-inset-top))",
-            // Pages without an action bar still need breathing room below the header.
-            "& > :first-child:not([role=toolbar]):not(:has([role=toolbar]))": {
-              mt: { base: "18px", lg: "24px" },
-            },
+            // Pages scroll inside <Page>; this only catches content outside one.
+            overflowY: "auto",
           })}
         >
           {children}
         </main>
+        <MobileNavigation pathname={pathname} />
       </div>
-      <MobileNavigation pathname={pathname} />
     </div>
   );
 }

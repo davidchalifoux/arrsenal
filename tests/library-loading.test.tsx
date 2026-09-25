@@ -24,7 +24,11 @@ import { renderToString } from "react-dom/server";
 import type { InstanceSummary, MediaItem, QueueItem } from "@/lib/types";
 import { advanceTime } from "./timers";
 
-mock.module("@/lib/client", () => ({ api: mock() }));
+mock.module("@/lib/client", () => ({
+  api: mock(),
+  mediaHref: () => "/",
+  sizeLabel: () => "",
+}));
 mock.module("next/image", () => ({
   // Whitelist DOM props so Next-only options such as preload never leak.
   default: ({

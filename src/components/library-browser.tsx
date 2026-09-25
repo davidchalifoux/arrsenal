@@ -1,7 +1,7 @@
 "use client";
 
 import { FolderSimpleIcon, XIcon } from "@phosphor-icons/react";
-import { css } from "@styled-system/css";
+import { css, cx } from "@styled-system/css";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
@@ -21,7 +21,7 @@ import { CustomFilterDialog, emptyCustomFilter } from "./custom-filter-dialog";
 import { useLibraryActions } from "./library-provider";
 import { LibraryToolbar } from "./library-toolbar";
 import { MediaList } from "./media-card";
-import { PageHeader } from "./page-header";
+import { Page, PageHeader, pageFooterStyle } from "./page-header";
 import { PosterGrid } from "./poster-grid";
 import { Button, Notice } from "./ui";
 import {
@@ -132,6 +132,7 @@ function LibrarySection({
   const hadSnapshot = useRef(false);
   const appliedDefaults = useRef(false);
   const [snapshotLoaded, setSnapshotLoaded] = useState(false);
+  const scrollBody = useRef<HTMLDivElement>(null);
   const scrollPosition = useRef(0);
   const scrollRestored = useRef(false);
   const storageKey = `arrsenal:library-view:${category}`;
@@ -203,16 +204,17 @@ function LibrarySection({
     setSortDirection(defaults.sortDirection);
   }, [snapshotLoaded, defaults]);
   useEffect(() => {
+    const body = scrollBody.current;
     const onScroll = () => {
-      if (!scrollRestored.current) return;
-      scrollPosition.current = window.scrollY;
+      if (!scrollRestored.current || !body) return;
+      scrollPosition.current = body.scrollTop;
       saveSnapshot();
     };
     const onPageHide = () => saveSnapshot();
-    window.addEventListener("scroll", onScroll, { passive: true });
+    body?.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("pagehide", onPageHide);
     return () => {
-      window.removeEventListener("scroll", onScroll);
+      body?.removeEventListener("scroll", onScroll);
       window.removeEventListener("pagehide", onPageHide);
     };
   }, []);
@@ -232,7 +234,8 @@ function LibrarySection({
     if (!snapshotLoaded || !library.data || scrollRestored.current) return;
     // Wait for the restored layout and selected rows to commit before scrolling.
     const frame = requestAnimationFrame(() => {
-      window.scrollTo({ top: scrollPosition.current, behavior: "instant" });
+      if (scrollBody.current)
+        scrollBody.current.scrollTop = scrollPosition.current;
       scrollRestored.current = true;
     });
     return () => cancelAnimationFrame(frame);
@@ -338,61 +341,129 @@ function LibrarySection({
   );
 
   return (
-    <>
-      <LibraryToolbar
-        refreshing={library.isFetching}
-        onRefresh={refresh}
-        onAdd={addMedia}
-        filterCount={filterCount}
-        status={status}
-        statusCounts={library.data ? statusCounts : undefined}
-        onStatusChange={setStatus}
-        instances={instances}
-        qualities={qualities}
-        instanceFilter={instanceFilter}
-        quality={quality}
-        sort={sort}
-        sortDirection={sortDirection}
-        layout={layout}
-        onInstanceChange={setInstanceFilter}
-        onQualityChange={setQuality}
-        onSortChange={changeSort}
-        onSortDirectionChange={setSortDirection}
-        onLayoutChange={setLayout}
-        onResetFilters={resetFilters}
-        filterId={activeFilter ? filterId : null}
-        allCount={categoryItems.length}
-        presets={presetFilters.map((preset) => ({
-          id: preset.id,
-          name: preset.name,
-          count: categoryItems.filter((item) =>
-            matchesFilter(item, preset.definition, now),
-          ).length,
-        }))}
-        customFilters={customFilters.map((filter) => ({
-          id: filter.id,
-          name: filter.name,
-          count: categoryItems.filter((item) =>
-            matchesFilter(item, filter, now),
-          ).length,
-        }))}
-        onFilterChange={setFilterId}
-        onEditFilter={(id) => {
-          const filter = customFilters.find((item) => item.id === id);
-          if (filter) {
+    <Page
+      toolbar={
+        <LibraryToolbar
+          refreshing={library.isFetching}
+          onRefresh={refresh}
+          onAdd={addMedia}
+          filterCount={filterCount}
+          status={status}
+          statusCounts={library.data ? statusCounts : undefined}
+          onStatusChange={setStatus}
+          instances={instances}
+          qualities={qualities}
+          instanceFilter={instanceFilter}
+          quality={quality}
+          sort={sort}
+          sortDirection={sortDirection}
+          layout={layout}
+          onInstanceChange={setInstanceFilter}
+          onQualityChange={setQuality}
+          onSortChange={changeSort}
+          onSortDirectionChange={setSortDirection}
+          onLayoutChange={setLayout}
+          onResetFilters={resetFilters}
+          filterId={activeFilter ? filterId : null}
+          allCount={categoryItems.length}
+          presets={presetFilters.map((preset) => ({
+            id: preset.id,
+            name: preset.name,
+            count: categoryItems.filter((item) =>
+              matchesFilter(item, preset.definition, now),
+            ).length,
+          }))}
+          customFilters={customFilters.map((filter) => ({
+            id: filter.id,
+            name: filter.name,
+            count: categoryItems.filter((item) =>
+              matchesFilter(item, filter, now),
+            ).length,
+          }))}
+          onFilterChange={setFilterId}
+          onEditFilter={(id) => {
+            const filter = customFilters.find((item) => item.id === id);
+            if (filter) {
+              setSaveError(null);
+              setEditing({ filter, isNew: false });
+            }
+          }}
+          onNewFilter={() => {
             setSaveError(null);
-            setEditing({ filter, isNew: false });
-          }
-        }}
-        onNewFilter={() => {
-          setSaveError(null);
-          setEditing({ filter: emptyCustomFilter(), isNew: true });
-        }}
-        onOptions={() => {
-          setSaveError(null);
-          setOptionsOpen(true);
-        }}
-      />
+            setEditing({ filter: emptyCustomFilter(), isNew: true });
+          }}
+          onOptions={() => {
+            setSaveError(null);
+            setOptionsOpen(true);
+          }}
+        />
+      }
+      footer={
+        <footer
+          className={cx(
+            pageFooterStyle,
+            css({ justifyContent: "space-between" }),
+          )}
+        >
+          <span
+            className={css({ display: "flex", gap: "16px", flexWrap: "wrap" })}
+          >
+            {category === "library" && (
+              <>
+                <span>
+                  {categoryItems.filter((item) => item.kind === "movie").length}{" "}
+                  movies
+                </span>
+                <span>
+                  {
+                    categoryItems.filter((item) => item.kind === "series")
+                      .length
+                  }{" "}
+                  shows
+                </span>
+              </>
+            )}
+            <span>
+              {instanceQuery.data
+                ? `${instances.length} instances`
+                : "Instances"}
+            </span>
+          </span>
+          <span
+            className={css({ display: "flex", gap: "14px", flexWrap: "wrap" })}
+          >
+            {(
+              [
+                ["Available", "var(--positive)"],
+                ["Downloading", "var(--info)"],
+                ["Incomplete", "var(--warning)"],
+              ] as const
+            ).map(([label, color]) => (
+              <span
+                key={label}
+                className={css({
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                })}
+              >
+                <span
+                  aria-hidden="true"
+                  className={css({
+                    width: "7px",
+                    height: "7px",
+                    borderRadius: "2px",
+                  })}
+                  style={{ background: color }}
+                />
+                {label}
+              </span>
+            ))}
+          </span>
+        </footer>
+      }
+      scrollRef={scrollBody}
+    >
       <PageHeader
         title={
           activeFilterName ? (
@@ -604,82 +675,6 @@ function LibrarySection({
         }
         error={saveError}
       />
-      <div
-        aria-hidden="true"
-        className={css({ flexGrow: 1, minHeight: "32px" })}
-      />
-      <footer
-        className={css({
-          position: { lg: "sticky" },
-          bottom: 0,
-          zIndex: 10,
-          mx: { base: "-16px", lg: "-28px" },
-          mb: { base: "0", lg: "-40px" },
-          px: { base: "16px", lg: "28px" },
-          minHeight: "28px",
-          py: "6px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: "6px 16px",
-          bg: "toolbar",
-          borderTop: "1px solid token(colors.line)",
-          color: "subtle",
-          fontSize: "11px",
-        })}
-      >
-        <span
-          className={css({ display: "flex", gap: "16px", flexWrap: "wrap" })}
-        >
-          {category === "library" && (
-            <>
-              <span>
-                {categoryItems.filter((item) => item.kind === "movie").length}{" "}
-                movies
-              </span>
-              <span>
-                {categoryItems.filter((item) => item.kind === "series").length}{" "}
-                shows
-              </span>
-            </>
-          )}
-          <span>
-            {instanceQuery.data ? `${instances.length} instances` : "Instances"}
-          </span>
-        </span>
-        <span
-          className={css({ display: "flex", gap: "14px", flexWrap: "wrap" })}
-        >
-          {(
-            [
-              ["Available", "var(--positive)"],
-              ["Downloading", "var(--info)"],
-              ["Incomplete", "var(--warning)"],
-            ] as const
-          ).map(([label, color]) => (
-            <span
-              key={label}
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-              })}
-            >
-              <span
-                aria-hidden="true"
-                className={css({
-                  width: "7px",
-                  height: "7px",
-                  borderRadius: "2px",
-                })}
-                style={{ background: color }}
-              />
-              {label}
-            </span>
-          ))}
-        </span>
-      </footer>
-    </>
+    </Page>
   );
 }

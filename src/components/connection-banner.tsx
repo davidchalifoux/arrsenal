@@ -68,7 +68,6 @@ function Banner({
         flexWrap: "wrap",
         alignItems: "center",
         gap: "8px 10px",
-        mb: "20px",
         minHeight: "40px",
         p: "7px 8px 7px 14px",
         bg: "color-mix(in srgb, var(--warning) 9%, transparent)",

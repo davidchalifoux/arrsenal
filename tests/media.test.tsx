@@ -56,6 +56,7 @@ const { LibraryBrowser } = await import("@/components/library-browser");
 const { LibraryProvider } = await import("@/components/library-provider");
 const { MediaCard, MediaList } = await import("@/components/media-card");
 const { MediaDetails } = await import("@/components/media-details");
+const { Page } = await import("@/components/page-header");
 const { MediaScreen } = await import("@/components/media-screen");
 
 const hd: InstanceSummary = {
@@ -1440,7 +1441,11 @@ describe("MediaList", () => {
         qualityProfile: "Custom UHD profile",
       },
     ];
-    renderUI(<MediaList items={[{ ...movie, targets }]} />);
+    renderUI(
+      <Page>
+        <MediaList items={[{ ...movie, targets }]} />
+      </Page>,
+    );
     expect(screen.getByText("Targets")).toBeTruthy();
     for (const target of targets) {
       expect(

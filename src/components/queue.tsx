@@ -15,6 +15,7 @@ import { Fragment, type ReactNode, useId, useRef, useState } from "react";
 import { api, sizeLabel } from "@/lib/client";
 import type { ActionResponse, QueueItem, QueueResponse } from "@/lib/types";
 import {
+  Page,
   PageHeader,
   PageToolbar,
   SegmentedTabs,
@@ -300,79 +301,84 @@ export function DownloadQueue({
   }
 
   return (
-    <section className={css({ minWidth: 0 })} aria-labelledby={`${id}-heading`}>
-      <PageToolbar label="Queue actions">
-        <ToolbarButton
-          icon={ArrowClockwiseIcon}
-          label={loading ? "Refreshing..." : "Refresh"}
-          disabled={loading || !!busy}
-          onClick={() => onRefresh()}
-          iconClassName={
-            loading
-              ? css({
-                  animation: "spin 1s linear infinite",
-                  _motionReduce: { animation: "none" },
-                })
-              : undefined
-          }
-        />
-        {selectedItems.length > 0 && (
-          <>
-            <ToolbarDivider />
-            <span
-              className={css({
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                height: "26px",
-                pl: "10px",
-                pr: "3px",
-                mr: "4px",
-                flexShrink: 0,
-                borderRadius: "999px",
-                bg: "color-mix(in srgb, var(--accent) 16%, transparent)",
-                fontSize: "12px",
-                fontWeight: "600",
-              })}
-            >
-              {selectedItems.length} selected
-              <button
-                type="button"
-                aria-label="Clear selection"
-                onClick={() => setSelected(new Set())}
+    <Page
+      className={css({ minWidth: 0 })}
+      aria-labelledby={`${id}-heading`}
+      toolbar={
+        <PageToolbar label="Queue actions">
+          <ToolbarButton
+            icon={ArrowClockwiseIcon}
+            label={loading ? "Refreshing..." : "Refresh"}
+            disabled={loading || !!busy}
+            onClick={() => onRefresh()}
+            iconClassName={
+              loading
+                ? css({
+                    animation: "spin 1s linear infinite",
+                    _motionReduce: { animation: "none" },
+                  })
+                : undefined
+            }
+          />
+          {selectedItems.length > 0 && (
+            <>
+              <ToolbarDivider />
+              <span
                 className={css({
-                  width: "20px",
-                  height: "20px",
-                  display: "grid",
-                  placeItems: "center",
-                  border: 0,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  height: "26px",
+                  pl: "10px",
+                  pr: "3px",
+                  mr: "4px",
+                  flexShrink: 0,
                   borderRadius: "999px",
-                  bg: "transparent",
-                  color: "soft",
-                  _hover: { color: "ink" },
+                  bg: "color-mix(in srgb, var(--accent) 16%, transparent)",
+                  fontSize: "12px",
+                  fontWeight: "600",
                 })}
               >
-                <XIcon size={11} weight="bold" />
-              </button>
-            </span>
-            <ToolbarButton
-              icon={DownloadSimpleIcon}
-              label="Grab"
-              aria-label={`Grab or import ${retryable.length} selected`}
-              disabled={!retryable.length || !!busy || loading}
-              onClick={() => void mutate(retryable, "retry")}
-            />
-            <ToolbarButton
-              icon={TrashIcon}
-              label="Remove"
-              aria-label={`Remove ${selectedItems.length} selected`}
-              danger
-              disabled={!!busy || loading}
-              onClick={() => openRemove(selectedItems)}
-            />
-          </>
-        )}
-      </PageToolbar>
+                {selectedItems.length} selected
+                <button
+                  type="button"
+                  aria-label="Clear selection"
+                  onClick={() => setSelected(new Set())}
+                  className={css({
+                    width: "20px",
+                    height: "20px",
+                    display: "grid",
+                    placeItems: "center",
+                    border: 0,
+                    borderRadius: "999px",
+                    bg: "transparent",
+                    color: "soft",
+                    _hover: { color: "ink" },
+                  })}
+                >
+                  <XIcon size={11} weight="bold" />
+                </button>
+              </span>
+              <ToolbarButton
+                icon={DownloadSimpleIcon}
+                label="Grab"
+                aria-label={`Grab or import ${retryable.length} selected`}
+                disabled={!retryable.length || !!busy || loading}
+                onClick={() => void mutate(retryable, "retry")}
+              />
+              <ToolbarButton
+                icon={TrashIcon}
+                label="Remove"
+                aria-label={`Remove ${selectedItems.length} selected`}
+                danger
+                disabled={!!busy || loading}
+                onClick={() => openRemove(selectedItems)}
+              />
+            </>
+          )}
+        </PageToolbar>
+      }
+    >
       <PageHeader
         id={`${id}-heading`}
         title="Queue"
@@ -1199,6 +1205,6 @@ export function DownloadQueue({
           </div>
         </div>
       </Modal>
-    </section>
+    </Page>
   );
 }

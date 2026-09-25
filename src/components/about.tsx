@@ -10,7 +10,7 @@ import {
 import { css, cx } from "@styled-system/css";
 import type { ReactNode } from "react";
 import { Logo } from "./logo";
-import { PageHeader } from "./page-header";
+import { Page, PageHeader } from "./page-header";
 import { mutedStyle, panelStyle } from "./ui";
 
 export function About({
@@ -49,7 +49,7 @@ export function About({
     },
   ];
   return (
-    <section aria-labelledby="about-heading" className={css({ minWidth: 0 })}>
+    <Page aria-labelledby="about-heading">
       <PageHeader id="about-heading" title="About" />
       <div
         className={css({
@@ -204,6 +204,6 @@ export function About({
           ))}
         </ul>
       </div>
-    </section>
+    </Page>
   );
 }

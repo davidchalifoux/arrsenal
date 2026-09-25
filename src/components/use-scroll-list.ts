@@ -2,20 +2,21 @@
 
 import {
   measureElement as measureSize,
-  useWindowVirtualizer,
+  useVirtualizer,
 } from "@tanstack/react-virtual";
 import { type CSSProperties, useLayoutEffect, useRef, useState } from "react";
+import { usePageScrollElement } from "./page-scroll";
 
 // Row heights by layout, kept across visits so returning to a list restores
 // its scroll position against the same row positions it left with.
 const measuredSizes = new Map<string, number>();
 
 /**
- * Virtualizes a list that scrolls with the page. Rendered rows stay in normal
- * flow between two spacers, so sticky headers, striping by index, and plain
- * `window.scrollTo` restoration keep working.
+ * Virtualizes a list inside the current page's scrolling body. Rendered rows
+ * stay in normal flow between two spacers, so striping by index and plain
+ * `scrollTo` restoration on the body keep working.
  */
-export function useWindowList<TElement extends HTMLElement>({
+export function useScrollList<TElement extends HTMLElement>({
   count,
   estimateSize,
   getItemKey,
@@ -34,32 +35,35 @@ export function useWindowList<TElement extends HTMLElement>({
   // The virtualizer mutates one stable instance, so compiler memoization would
   // keep returning the first set of rows.
   "use no memo";
+  const scroller = usePageScrollElement();
   const listRef = useRef<TElement>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
 
-  // Headings, notices, and banners above the list move its page offset.
+  // Headings and notices above the list inside the body move its offset.
   useLayoutEffect(() => {
     const element = listRef.current;
-    if (!element) return;
+    if (!element || !scroller) return;
     const update = () => {
-      const next = element.getBoundingClientRect().top + window.scrollY;
+      const next =
+        element.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top +
+        scroller.scrollTop;
       setScrollMargin((previous) =>
         Math.abs(previous - next) < 1 ? previous : next,
       );
     };
     update();
-    const observer =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
-    observer?.observe(document.body);
-    window.addEventListener("resize", update);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener("resize", update);
-    };
-  }, []);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(scroller);
+    if (scroller.firstElementChild)
+      observer.observe(scroller.firstElementChild);
+    return () => observer.disconnect();
+  }, [scroller]);
 
-  const virtualizer = useWindowVirtualizer({
+  const virtualizer = useVirtualizer<HTMLElement, Element>({
     count,
+    getScrollElement: () => scroller,
     // Rows share a height, so a measured row is the best estimate for rows
     // not rendered yet. Exact estimates keep scroll restoration on target.
     estimateSize: (index) => measuredSizes.get(sizeKey) ?? estimateSize(index),
@@ -77,10 +81,9 @@ export function useWindowList<TElement extends HTMLElement>({
       measuredSizes.set(sizeKey, size);
       return size;
     },
-    initialRect:
-      typeof window === "undefined"
-        ? undefined
-        : { width: window.innerWidth, height: window.innerHeight },
+    initialRect: scroller
+      ? { width: scroller.clientWidth, height: scroller.clientHeight }
+      : undefined,
   });
   const rows = virtualizer.getVirtualItems();
   const first = rows[0];

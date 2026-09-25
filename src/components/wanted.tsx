@@ -15,8 +15,10 @@ import { useLibrary } from "@/lib/client-data";
 import type { ActionResponse, MediaItem, MediaTarget } from "@/lib/types";
 import { useLibraryActions } from "./library-provider";
 import {
+  Page,
   PageHeader,
   PageToolbar,
+  pageFooterStyle,
   SegmentedTabs,
   ToolbarButton,
   ToolbarDivider,
@@ -138,69 +140,85 @@ export function Wanted() {
   }
 
   return (
-    <section>
-      <PageToolbar label="Wanted actions">
-        <ToolbarButton
-          icon={ArrowClockwiseIcon}
-          label="Refresh"
-          aria-label="Refresh wanted"
-          disabled={library.isFetching}
-          onClick={refresh}
-        />
-        <ToolbarButton
-          icon={MagnifyingGlassIcon}
-          label="Search all"
-          aria-label={`Search all ${rows.length} missing`}
-          disabled={!rows.length || busy !== null}
-          onClick={() => void search(rows, "all")}
-        />
-        <ToolbarButton
-          icon={CheckSquareIcon}
-          label="Search selected"
-          aria-label={`Search ${selectedRows.length} selected`}
-          disabled={!selectedRows.length || busy !== null}
-          onClick={() => void search(selectedRows, "selected")}
-        />
-        {selectedRows.length > 0 && (
-          <>
-            <ToolbarDivider />
-            <span
-              className={css({
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                height: "26px",
-                pl: "10px",
-                pr: "3px",
-                flexShrink: 0,
-                borderRadius: "999px",
-                bg: "color-mix(in srgb, var(--accent) 16%, transparent)",
-                fontSize: "12px",
-                fontWeight: "600",
-              })}
-            >
-              {selectedRows.length} selected
-              <button
-                type="button"
-                aria-label="Clear selection"
-                onClick={() => setSelected(new Set())}
+    <Page
+      toolbar={
+        <PageToolbar label="Wanted actions">
+          <ToolbarButton
+            icon={ArrowClockwiseIcon}
+            label="Refresh"
+            aria-label="Refresh wanted"
+            disabled={library.isFetching}
+            onClick={refresh}
+          />
+          <ToolbarButton
+            icon={MagnifyingGlassIcon}
+            label="Search all"
+            aria-label={`Search all ${rows.length} missing`}
+            disabled={!rows.length || busy !== null}
+            onClick={() => void search(rows, "all")}
+          />
+          <ToolbarButton
+            icon={CheckSquareIcon}
+            label="Search selected"
+            aria-label={`Search ${selectedRows.length} selected`}
+            disabled={!selectedRows.length || busy !== null}
+            onClick={() => void search(selectedRows, "selected")}
+          />
+          {selectedRows.length > 0 && (
+            <>
+              <ToolbarDivider />
+              <span
                 className={css({
-                  width: "20px",
-                  height: "20px",
-                  display: "grid",
-                  placeItems: "center",
-                  border: 0,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  height: "26px",
+                  pl: "10px",
+                  pr: "3px",
+                  flexShrink: 0,
                   borderRadius: "999px",
-                  bg: "transparent",
-                  color: "soft",
+                  bg: "color-mix(in srgb, var(--accent) 16%, transparent)",
+                  fontSize: "12px",
+                  fontWeight: "600",
                 })}
               >
-                <XIcon size={11} weight="bold" />
-              </button>
-            </span>
-          </>
-        )}
-      </PageToolbar>
+                {selectedRows.length} selected
+                <button
+                  type="button"
+                  aria-label="Clear selection"
+                  onClick={() => setSelected(new Set())}
+                  className={css({
+                    width: "20px",
+                    height: "20px",
+                    display: "grid",
+                    placeItems: "center",
+                    border: 0,
+                    borderRadius: "999px",
+                    bg: "transparent",
+                    color: "soft",
+                  })}
+                >
+                  <XIcon size={11} weight="bold" />
+                </button>
+              </span>
+            </>
+          )}
+        </PageToolbar>
+      }
+      footer={
+        <footer className={pageFooterStyle}>
+          <span>
+            {all.length} missing across {titles}{" "}
+            {titles === 1 ? "title" : "titles"}
+          </span>
+          <span>{movies} movies</span>
+          <span>{episodes} episodes</span>
+          <span className={css({ ml: "auto" })}>
+            Unmonitored and downloading items are hidden
+          </span>
+        </footer>
+      }
+    >
       <PageHeader
         title="Wanted"
         actions={
@@ -434,26 +452,6 @@ export function Wanted() {
           </ul>
         </div>
       )}
-      <footer
-        className={css({
-          mt: "24px",
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "16px",
-          fontSize: "11px",
-          color: "subtle",
-        })}
-      >
-        <span>
-          {all.length} missing across {titles}{" "}
-          {titles === 1 ? "title" : "titles"}
-        </span>
-        <span>{movies} movies</span>
-        <span>{episodes} episodes</span>
-        <span className={css({ ml: "auto" })}>
-          Unmonitored and downloading items are hidden
-        </span>
-      </footer>
-    </section>
+    </Page>
   );
 }

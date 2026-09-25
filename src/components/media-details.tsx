@@ -29,6 +29,7 @@ import type {
 } from "@/lib/types";
 import { Poster } from "./media-card";
 import {
+  Page,
   PageToolbar,
   ToolbarButton,
   ToolbarDivider,
@@ -227,8 +228,8 @@ export function MediaDetails({
     setRemoving(false);
   }
   return (
-    <>
-      <article className={css({ minWidth: 0, width: "100%" })}>
+    <Page
+      toolbar={
         <PageToolbar
           label={`${media.kind === "movie" ? "Movie" : "Show"} actions`}
           actions={
@@ -284,6 +285,9 @@ export function MediaDetails({
             onClick={() => onAddTarget(media)}
           />
         </PageToolbar>
+      }
+    >
+      <article className={css({ minWidth: 0, width: "100%" })}>
         <header
           className={css({
             position: "relative",
@@ -1180,7 +1184,7 @@ export function MediaDetails({
           searchScope={searchScope}
         />
       )}
-    </>
+    </Page>
   );
 }
 

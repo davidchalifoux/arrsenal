@@ -17,8 +17,10 @@ import { calendarQuery } from "@/lib/queries";
 import { useTimezonePreference } from "@/lib/timezone-preference";
 import type { CalendarEvent } from "@/lib/types";
 import {
+  Page,
   PageHeader,
   PageToolbar,
+  pageFooterStyle,
   ToolbarButton,
   ToolbarDivider,
 } from "./page-header";
@@ -250,59 +252,91 @@ export function Calendar({ now }: { now: string }) {
   }
   const eventCount = items.length;
   return (
-    <section>
-      <PageToolbar
-        label="Calendar actions"
-        actions={
-          <>
-            <ToolbarButton
-              icon={SquaresFourIcon}
-              label="Month"
-              aria-pressed={view === "month"}
-              onClick={() => setView("month")}
-              className={css({ display: { base: "none", md: "inline-flex" } })}
-            />
-            <ToolbarButton
-              icon={ListBulletsIcon}
-              label="Agenda"
-              aria-pressed={view === "agenda"}
-              onClick={() => setView("agenda")}
-              className={css({ display: { base: "none", md: "inline-flex" } })}
-            />
-          </>
-        }
-      >
-        <ToolbarButton
-          icon={ArrowClockwiseIcon}
-          label="Refresh"
-          aria-label="Refresh calendar"
-          disabled={query.isFetching}
-          onClick={() => void query.refetch()}
-        />
-        <ToolbarButton
-          icon={CalendarDotIcon}
-          label="Today"
-          aria-label="Today"
-          onClick={() => setMonth(`${today.slice(0, 7)}-01`)}
-        />
-        <ToolbarDivider />
-        <ToolbarButton
-          icon={CaretLeftIcon}
-          label="Previous"
-          aria-label="Previous month"
-          onClick={() => move(-1)}
-          onMouseEnter={() => prefetchMonth(-1)}
-          onFocus={() => prefetchMonth(-1)}
-        />
-        <ToolbarButton
-          icon={CaretRightIcon}
-          label="Next"
-          aria-label="Next month"
-          onClick={() => move(1)}
-          onMouseEnter={() => prefetchMonth(1)}
-          onFocus={() => prefetchMonth(1)}
-        />
-      </PageToolbar>
+    <Page
+      toolbar={
+        <PageToolbar
+          label="Calendar actions"
+          actions={
+            <>
+              <ToolbarButton
+                icon={SquaresFourIcon}
+                label="Month"
+                aria-pressed={view === "month"}
+                onClick={() => setView("month")}
+                className={css({
+                  display: { base: "none", md: "inline-flex" },
+                })}
+              />
+              <ToolbarButton
+                icon={ListBulletsIcon}
+                label="Agenda"
+                aria-pressed={view === "agenda"}
+                onClick={() => setView("agenda")}
+                className={css({
+                  display: { base: "none", md: "inline-flex" },
+                })}
+              />
+            </>
+          }
+        >
+          <ToolbarButton
+            icon={ArrowClockwiseIcon}
+            label="Refresh"
+            aria-label="Refresh calendar"
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          />
+          <ToolbarButton
+            icon={CalendarDotIcon}
+            label="Today"
+            aria-label="Today"
+            onClick={() => setMonth(`${today.slice(0, 7)}-01`)}
+          />
+          <ToolbarDivider />
+          <ToolbarButton
+            icon={CaretLeftIcon}
+            label="Previous"
+            aria-label="Previous month"
+            onClick={() => move(-1)}
+            onMouseEnter={() => prefetchMonth(-1)}
+            onFocus={() => prefetchMonth(-1)}
+          />
+          <ToolbarButton
+            icon={CaretRightIcon}
+            label="Next"
+            aria-label="Next month"
+            onClick={() => move(1)}
+            onMouseEnter={() => prefetchMonth(1)}
+            onFocus={() => prefetchMonth(1)}
+          />
+        </PageToolbar>
+      }
+      footer={
+        <footer className={pageFooterStyle}>
+          {(Object.keys(labels) as CalendarEvent["type"][]).map((type) => (
+            <span
+              key={type}
+              className={css({
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+              })}
+            >
+              <span
+                aria-hidden="true"
+                className={css({
+                  width: "7px",
+                  height: "7px",
+                  borderRadius: "2px",
+                })}
+                style={{ background: typeColors[type] }}
+              />
+              {labels[type]}
+            </span>
+          ))}
+        </footer>
+      }
+    >
       <PageHeader
         title={<span aria-live="polite">{title}</span>}
         actions={
@@ -538,38 +572,6 @@ export function Calendar({ now }: { now: string }) {
           ))}
         </ul>
       </Modal>
-      <footer
-        className={css({
-          mt: "24px",
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "14px",
-          fontSize: "11px",
-          color: "subtle",
-        })}
-      >
-        {(Object.keys(labels) as CalendarEvent["type"][]).map((type) => (
-          <span
-            key={type}
-            className={css({
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-            })}
-          >
-            <span
-              aria-hidden="true"
-              className={css({
-                width: "7px",
-                height: "7px",
-                borderRadius: "2px",
-              })}
-              style={{ background: typeColors[type] }}
-            />
-            {labels[type]}
-          </span>
-        ))}
-      </footer>
-    </section>
+    </Page>
   );
 }

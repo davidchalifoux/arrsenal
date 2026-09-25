@@ -8,10 +8,18 @@ import {
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import Link from "next/link";
-import type { ComponentProps, ReactNode } from "react";
+import {
+  type ComponentProps,
+  type ReactNode,
+  type Ref,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import { useInstances } from "@/lib/client-data";
 import { ConnectionBanner } from "./connection-banner";
 import { useLibraryActions } from "./library-provider";
+import { PageScrollContext } from "./page-scroll";
 
 export function TaskStatus() {
   const active = (useInstances().data?.instances ?? []).flatMap((instance) =>
@@ -263,8 +271,145 @@ export function ToolbarDivider() {
 }
 
 /**
- * The Arr-style action bar pinned under the header. Page actions sit on the
- * left, view controls on the right.
+ * A page footer: a slim status bar below the scrolling body. Phones skip it to
+ * keep the screen for content.
+ */
+export const pageFooterStyle = css({
+  flexShrink: 0,
+  px: { base: "16px", lg: "28px" },
+  minHeight: "28px",
+  py: "6px",
+  display: { base: "none", md: "flex" },
+  alignItems: "center",
+  flexWrap: "wrap",
+  gap: "6px 16px",
+  bg: "toolbar",
+  borderTop: "1px solid token(colors.line)",
+  color: "subtle",
+  fontSize: "11px",
+});
+
+/**
+ * A routed page: an optional action bar, a body that scrolls on its own, and
+ * an optional footer. The bar and footer stay put while only the body scrolls.
+ */
+export function Page({
+  toolbar,
+  footer,
+  scrollRef,
+  children,
+  className,
+  ...props
+}: ComponentProps<"section"> & {
+  toolbar?: ReactNode;
+  footer?: ReactNode;
+  scrollRef?: Ref<HTMLDivElement>;
+}) {
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const bodyRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      setScroller(node);
+      if (typeof scrollRef === "function") scrollRef(node);
+      else if (scrollRef) scrollRef.current = node;
+    },
+    [scrollRef],
+  );
+  // Browsers send scrolling keys to the document when nothing has focus, as
+  // after navigating. The document no longer scrolls, so scroll the body.
+  useEffect(() => {
+    if (!scroller) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        document.activeElement !== document.body
+      )
+        return;
+      const page = scroller.clientHeight * 0.875;
+      const top =
+        event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? scroller.scrollHeight
+            : null;
+      const delta =
+        event.key === "ArrowDown"
+          ? 40
+          : event.key === "ArrowUp"
+            ? -40
+            : event.key === "PageDown" || (event.key === " " && !event.shiftKey)
+              ? page
+              : event.key === "PageUp" || event.key === " "
+                ? -page
+                : null;
+      if (top === null && delta === null) return;
+      event.preventDefault();
+      // Jumps are instant: a long smooth scroll through a virtualized list
+      // can be cut short as rows are measured along the way.
+      if (top !== null) scroller.scrollTo({ top });
+      else scroller.scrollBy({ top: delta ?? 0, behavior: "smooth" });
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [scroller]);
+  return (
+    <section
+      data-page=""
+      className={cx(
+        css({
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          display: "flex",
+          flexDirection: "column",
+        }),
+        className,
+      )}
+      {...props}
+    >
+      {toolbar}
+      {toolbar && (
+        <div
+          className={css({
+            flexShrink: 0,
+            px: { base: "16px", lg: "28px" },
+            pt: "12px",
+            _empty: { display: "none" },
+          })}
+        >
+          <ConnectionBanner />
+        </div>
+      )}
+      <div
+        ref={bodyRef}
+        data-page-scroll=""
+        tabIndex={-1}
+        className={css({
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          outline: "none",
+          px: { base: "16px", lg: "28px" },
+          pt: { base: "18px", lg: "24px" },
+          pb: { base: "24px", lg: "40px" },
+        })}
+      >
+        <PageScrollContext value={scroller}>
+          <div className={css({ display: "flow-root", minWidth: 0 })}>
+            {children}
+          </div>
+        </PageScrollContext>
+      </div>
+      {footer}
+    </section>
+  );
+}
+
+/**
+ * The Arr-style action bar above a page's scrolling body. Page actions sit on
+ * the left, view controls on the right.
  */
 export function PageToolbar({
   children,
@@ -276,12 +421,9 @@ export function PageToolbar({
   label?: string;
 }) {
   return (
-    <>
-      <PageActionBar label={label} actions={actions}>
-        {children}
-      </PageActionBar>
-      <ConnectionBanner />
-    </>
+    <PageActionBar label={label} actions={actions}>
+      {children}
+    </PageActionBar>
   );
 }
 
@@ -299,17 +441,11 @@ function PageActionBar({
       role="toolbar"
       aria-label={label}
       className={css({
-        position: "sticky",
-        // Stick below the 56px header and its 1px bottom border, so the header
-        // never covers the bar's top edge.
-        top: "calc(57px + env(safe-area-inset-top))",
-        zIndex: 20,
+        flexShrink: 0,
         display: "flex",
         alignItems: "center",
         gap: "2px",
         minHeight: "44px",
-        mx: { base: "-16px", lg: "-28px" },
-        mb: { base: "18px", lg: "24px" },
         px: { base: "8px", lg: "12px" },
         bg: "toolbar",
         borderBottom: "1px solid token(colors.line)",

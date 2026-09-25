@@ -6,7 +6,7 @@ import { useLibraryMedia } from "@/lib/client-data";
 import type { MediaKind } from "@/lib/types";
 import { useLibraryActions } from "./library-provider";
 import { MediaDetails } from "./media-details";
-import { PageHeader } from "./page-header";
+import { Page, PageHeader } from "./page-header";
 import { Button, buttonStyle, Notice, Spinner } from "./ui";
 
 export function MediaScreen({
@@ -25,10 +25,14 @@ export function MediaScreen({
       (library.isFetching ||
         (!library.isError && !!library.data?.loadingInstanceIds?.length)))
   )
-    return <PageHeader title="Loading title..." actions={<Spinner />} />;
+    return (
+      <Page>
+        <PageHeader title="Loading title..." actions={<Spinner />} />
+      </Page>
+    );
   if (!media)
     return (
-      <div>
+      <Page>
         <PageHeader title="Title unavailable" />
         <Notice error>
           {library.isError
@@ -46,7 +50,7 @@ export function MediaScreen({
             Back to {kind === "movie" ? "movies" : "shows"}
           </Link>
         </div>
-      </div>
+      </Page>
     );
   return (
     <MediaDetails

@@ -19,3 +19,24 @@ for (const key of Object.getOwnPropertyNames(window)) {
   }
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+// jsdom has no layout. Give page scroll bodies a viewport-sized box so
+// virtualized lists inside them render the rows a real window would show.
+for (const [property, size] of [
+  ["offsetWidth", () => window.innerWidth],
+  ["offsetHeight", () => window.innerHeight],
+  ["clientWidth", () => window.innerWidth],
+  ["clientHeight", () => window.innerHeight],
+]) {
+  const base =
+    Object.getOwnPropertyDescriptor(window.HTMLElement.prototype, property) ??
+    Object.getOwnPropertyDescriptor(window.Element.prototype, property);
+  Object.defineProperty(window.HTMLElement.prototype, property, {
+    configurable: true,
+    get() {
+      return this.hasAttribute("data-page-scroll")
+        ? size()
+        : (base?.get?.call(this) ?? 0);
+    },
+  });
+}

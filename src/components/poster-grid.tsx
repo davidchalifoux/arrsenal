@@ -6,7 +6,7 @@ import { mediaHref } from "@/lib/client";
 import type { LibraryViewOptions, PosterSize } from "@/lib/library-options";
 import type { MediaItem } from "@/lib/types";
 import { MediaCard } from "./media-card";
-import { useWindowList } from "./use-window-list";
+import { useScrollList } from "./use-scroll-list";
 
 const posterMinWidth: Record<PosterSize, number> = {
   small: 118,
@@ -77,7 +77,7 @@ export function PosterGrid({
   const rowCount = Math.ceil(items.length / columns);
   const posterWidth = width ? (width - gap * (columns - 1)) / columns : 160;
   const { listRef, rows, spacerStyle, measureElement } =
-    useWindowList<HTMLDivElement>({
+    useScrollList<HTMLDivElement>({
       count: rowCount,
       estimateSize: useCallback(
         () => posterWidth * 1.5 + captionHeight,

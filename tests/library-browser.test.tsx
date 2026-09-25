@@ -96,6 +96,8 @@ const availability = async (name: string) => {
   );
   return value;
 };
+const scrollBody = () =>
+  document.querySelector<HTMLElement>("[data-page-scroll]") as HTMLElement;
 const sortLabel = () =>
   screen
     .getByRole("button", { name: /^Sort library:/ })
@@ -111,28 +113,19 @@ describe("LibraryBrowser", () => {
     const view = render(<LibraryBrowser category="movies" />);
     expect(sortLabel()).toBe("Sort library: Title, ascending");
     expect(pressed("Table")).toBe("true");
-    expect(window.scrollTo).not.toHaveBeenCalled();
+    expect(scrollBody().scrollTop).toBe(0);
     mocks.pending = false;
     view.rerender(<LibraryBrowser category="movies" />);
     expect(await availability("Available")).toBe("true");
-    await waitFor(() =>
-      expect(window.scrollTo).toHaveBeenCalledWith({
-        top: 640,
-        behavior: "instant",
-      }),
-    );
-    window.scrollY = 900;
-    fireEvent.scroll(window);
+    await waitFor(() => expect(scrollBody().scrollTop).toBe(640));
+    scrollBody().scrollTop = 900;
+    fireEvent.scroll(scrollBody());
     view.rerender(<LibraryBrowser category="shows" />);
     expect(await availability("All")).toBe("true");
     expect(pressed("Posters")).toBe("true");
+    scrollBody().scrollTop = 0;
     view.rerender(<LibraryBrowser category="movies" />);
-    await waitFor(() =>
-      expect(window.scrollTo).toHaveBeenCalledWith({
-        top: 900,
-        behavior: "instant",
-      }),
-    );
+    await waitFor(() => expect(scrollBody().scrollTop).toBe(900));
     expect(sortLabel()).toBe("Sort library: Title, ascending");
     fireEvent.click(screen.getByRole("button", { name: /^Filter/ }));
     expect(

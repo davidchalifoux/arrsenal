@@ -16,6 +16,7 @@ mock.module("next/image", () => ({
 }));
 
 const { MediaList } = await import("@/components/media-card");
+const { Page } = await import("@/components/page-header");
 const { PosterGrid, posterColumns } = await import("@/components/poster-grid");
 
 const library: MediaItem[] = Array.from({ length: 5000 }, (_, index) => ({
@@ -37,21 +38,23 @@ const titleLinks = () =>
     .filter((link) => link.textContent?.startsWith("Movie "));
 
 async function scrollTo(top: number) {
+  const body = document.querySelector("[data-page-scroll]") as HTMLElement;
   await act(async () => {
-    window.scrollY = top;
-    fireEvent.scroll(window);
+    body.scrollTop = top;
+    fireEvent.scroll(body);
     await new Promise((resolve) => requestAnimationFrame(resolve));
   });
 }
 
-afterEach(async () => {
-  cleanup();
-  await scrollTo(0);
-});
+afterEach(cleanup);
 
 describe("MediaList", () => {
   it("renders only the rows near the viewport of a large library", async () => {
-    render(<MediaList items={library} />);
+    render(
+      <Page>
+        <MediaList items={library} />
+      </Page>,
+    );
     const links = titleLinks();
     expect(links.length).toBeGreaterThan(10);
     expect(links.length).toBeLessThan(100);
@@ -65,7 +68,11 @@ describe("MediaList", () => {
   });
 
   it("stripes rows by their position in the whole list", () => {
-    render(<MediaList items={library.slice(0, 3)} />);
+    render(
+      <Page>
+        <MediaList items={library.slice(0, 3)} />
+      </Page>,
+    );
     const rows = document.querySelectorAll("[data-index]");
     expect([...rows].map((row) => row.hasAttribute("data-stripe"))).toEqual([
       false,
@@ -78,7 +85,11 @@ describe("MediaList", () => {
 
 describe("PosterGrid", () => {
   it("renders only the poster rows near the viewport", async () => {
-    render(<PosterGrid items={library} options={defaultViewOptions} />);
+    render(
+      <Page>
+        <PosterGrid items={library} options={defaultViewOptions} />
+      </Page>,
+    );
     const cards = () => screen.getAllByRole("link", { name: /^View Movie / });
     expect(cards().length).toBeGreaterThan(2);
     expect(cards().length).toBeLessThan(100);

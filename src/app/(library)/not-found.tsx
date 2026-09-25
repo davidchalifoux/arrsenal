@@ -1,10 +1,10 @@
 import { css } from "@styled-system/css";
 import Link from "next/link";
-import { PageHeader } from "@/components/page-header";
+import { Page, PageHeader } from "@/components/page-header";
 
 export default function NotFound() {
   return (
-    <div>
+    <Page>
       <PageHeader title="Title not found" />
       <p className={css({ color: "muted", mb: "16px" })}>
         This title is not in your library, or the link is no longer valid.
@@ -15,6 +15,6 @@ export default function NotFound() {
       >
         Back to library
       </Link>
-    </div>
+    </Page>
   );
 }

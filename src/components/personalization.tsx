@@ -6,7 +6,7 @@ import type { LibraryDefaults } from "@/lib/library-options";
 import { usePreferences, useSavePreferences } from "@/lib/preferences";
 import { useTimezonePreference } from "@/lib/timezone-preference";
 import { sortOptions } from "./library-toolbar";
-import { PageHeader } from "./page-header";
+import { Page, PageHeader } from "./page-header";
 import { ThemePicker } from "./theme-picker";
 import { TimezoneSelect } from "./timezone-select";
 import { Button, labelStyle, mutedStyle, panelStyle, SelectField } from "./ui";
@@ -144,7 +144,7 @@ export function Personalization() {
   }
 
   return (
-    <section aria-labelledby={`${id}-heading`} className={css({ minWidth: 0 })}>
+    <Page aria-labelledby={`${id}-heading`}>
       <PageHeader id={`${id}-heading`} title="Personalization">
         <p
           className={css({
@@ -251,6 +251,6 @@ export function Personalization() {
           <LibraryDefaultsForm />
         </Section>
       </div>
-    </section>
+    </Page>
   );
 }

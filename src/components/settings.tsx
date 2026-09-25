@@ -26,7 +26,7 @@ import {
 import { z } from "zod";
 import { api } from "@/lib/client";
 import type { ActionResponse, InstanceSummary } from "@/lib/types";
-import { PageHeader, PageToolbar, ToolbarButton } from "./page-header";
+import { Page, PageHeader, PageToolbar, ToolbarButton } from "./page-header";
 import {
   Button,
   inputStyle,
@@ -282,22 +282,27 @@ export function Settings({
   }
 
   return (
-    <section className={css({ minWidth: 0 })} aria-labelledby={`${id}-heading`}>
-      <PageToolbar label="Connection actions">
-        <ToolbarButton
-          icon={PlusIcon}
-          label="Add instance"
-          onClick={() => changeOpen(true)}
-        />
-        {instances.length > 0 && (
+    <Page
+      className={css({ minWidth: 0 })}
+      aria-labelledby={`${id}-heading`}
+      toolbar={
+        <PageToolbar label="Connection actions">
           <ToolbarButton
-            icon={ArrowClockwiseIcon}
-            label="Refresh status"
-            title="Refresh all instance statuses"
-            onClick={() => onRefresh()}
+            icon={PlusIcon}
+            label="Add instance"
+            onClick={() => changeOpen(true)}
           />
-        )}
-      </PageToolbar>
+          {instances.length > 0 && (
+            <ToolbarButton
+              icon={ArrowClockwiseIcon}
+              label="Refresh status"
+              title="Refresh all instance statuses"
+              onClick={() => onRefresh()}
+            />
+          )}
+        </PageToolbar>
+      }
+    >
       <PageHeader id={`${id}-heading`} title="Connections">
         <p
           className={css({
@@ -1012,6 +1017,6 @@ export function Settings({
           </div>
         </div>
       </Modal>
-    </section>
+    </Page>
   );
 }

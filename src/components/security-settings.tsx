@@ -2,7 +2,7 @@
 
 import { css, cx } from "@styled-system/css";
 import { useEffect, useId, useState } from "react";
-import { PageHeader } from "./page-header";
+import { Page, PageHeader } from "./page-header";
 import {
   Button,
   inputStyle,
@@ -140,11 +140,7 @@ export function SecuritySettings() {
   }
 
   return (
-    <section
-      aria-labelledby={`${id}-heading`}
-      aria-busy={pending !== null}
-      className={css({ minWidth: 0 })}
-    >
+    <Page aria-labelledby={`${id}-heading`} aria-busy={pending !== null}>
       <PageHeader id={`${id}-heading`} title="Security" />
       <div
         className={css({
@@ -379,6 +375,6 @@ export function SecuritySettings() {
           </>
         )}
       </div>
-    </section>
+    </Page>
   );
 }

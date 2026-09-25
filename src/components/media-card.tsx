@@ -17,7 +17,7 @@ import {
 import { mediaSize } from "@/lib/library-selectors";
 import type { MediaItem, MediaStatus, MediaTarget } from "@/lib/types";
 import type { LibrarySort, LibrarySortDirection } from "./use-library-view";
-import { useWindowList } from "./use-window-list";
+import { useScrollList } from "./use-scroll-list";
 
 // Cover two rows at the widest grid without eagerly loading the library.
 const eagerPosterCount = 12;
@@ -418,7 +418,7 @@ export function MediaList({
 }) {
   const headerProps = { sort, sortDirection, onSort };
   const { listRef, rows, spacerStyle, measureElement } =
-    useWindowList<HTMLDivElement>({
+    useScrollList<HTMLDivElement>({
       count: items.length,
       estimateSize: useCallback(() => 36, []),
       sizeKey: "table",
