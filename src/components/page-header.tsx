@@ -300,7 +300,9 @@ function PageActionBar({
       aria-label={label}
       className={css({
         position: "sticky",
-        top: "calc(56px + env(safe-area-inset-top))",
+        // Stick below the 56px header and its 1px bottom border, so the header
+        // never covers the bar's top edge.
+        top: "calc(57px + env(safe-area-inset-top))",
         zIndex: 20,
         display: "flex",
         alignItems: "center",
