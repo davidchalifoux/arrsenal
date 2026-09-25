@@ -10,6 +10,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { mediaHref, sizeLabel } from "@/lib/client";
+import {
+  defaultViewOptions,
+  type LibraryViewOptions,
+} from "@/lib/library-options";
 import { mediaSize } from "@/lib/library-selectors";
 import type { MediaItem, MediaStatus, MediaTarget } from "@/lib/types";
 import type { LibrarySort, LibrarySortDirection } from "./use-library-view";
@@ -86,10 +90,18 @@ export function Poster({
 }
 
 /** One chip per target: its quality profile, dotted with the target's status. */
-export function QualityBadge({ target }: { target: MediaTarget }) {
+export function QualityBadge({
+  target,
+  label = "profile",
+}: {
+  target: MediaTarget;
+  label?: "profile" | "quality";
+}) {
+  const text =
+    label === "quality" ? target.quality || "No file" : target.qualityProfile;
   return (
     <span
-      title={`${target.instanceName}: ${target.qualityProfile} · ${statusLabel[target.status]}`}
+      title={`${target.instanceName}: ${text} · ${statusLabel[target.status]}`}
       className={css({
         display: "inline-flex",
         alignItems: "center",
@@ -117,7 +129,7 @@ export function QualityBadge({ target }: { target: MediaTarget }) {
         style={{ background: statusColor[target.status] }}
       />
       <span className={css({ overflow: "hidden", textOverflow: "ellipsis" })}>
-        {target.qualityProfile}
+        {text}
       </span>
       <span className={css({ srOnly: true })}>
         , {statusLabel[target.status]} on {target.instanceName}
@@ -129,15 +141,17 @@ export function QualityBadge({ target }: { target: MediaTarget }) {
 function TargetChips({
   targets,
   limit = 3,
+  label,
 }: {
   targets: MediaTarget[];
   limit?: number;
+  label?: "profile" | "quality";
 }) {
   if (!targets.length) return null;
   return (
     <div className={css({ display: "flex", flexWrap: "wrap", gap: "5px" })}>
       {targets.slice(0, limit).map((target) => (
-        <QualityBadge key={target.instanceId} target={target} />
+        <QualityBadge key={target.instanceId} target={target} label={label} />
       ))}
       {targets.length > limit && (
         <span
@@ -166,6 +180,7 @@ export function MediaCard({
   index = eagerPosterCount,
   priority = index < eagerPosterCount,
   sizes,
+  options = defaultViewOptions,
 }: {
   item: MediaItem;
   onClick?: () => void;
@@ -173,7 +188,14 @@ export function MediaCard({
   index?: number;
   priority?: boolean;
   sizes?: string;
+  options?: LibraryViewOptions;
 }) {
+  const size = mediaSize(item);
+  const meta = [
+    options.showYear ? String(item.year || "TBA") : null,
+    options.showRating && item.rating ? `★ ${item.rating.toFixed(1)}` : null,
+    options.showSize && size ? sizeLabel(size) : null,
+  ].filter(Boolean);
   const className = cx(
     "group",
     css({
@@ -213,27 +235,43 @@ export function MediaCard({
       <div className={css({ minWidth: 0 })}>
         <h3
           title={item.title}
-          className={css({
-            fontSize: "14px",
-            fontWeight: "500",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            color: "ink",
-            _groupHover: { color: "accent" },
-            transition: "color 150ms",
-          })}
+          className={cx(
+            css({
+              fontSize: "14px",
+              fontWeight: "500",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              color: "ink",
+              _groupHover: { color: "accent" },
+              transition: "color 150ms",
+            }),
+            !options.showTitle && css({ srOnly: true }),
+          )}
         >
           {item.title}
         </h3>
-        <p className={css({ mt: "3px", color: "subtle", fontSize: "12px" })}>
-          {item.year || "TBA"}
+        <p
+          className={cx(
+            css({ mt: "3px", color: "subtle", fontSize: "12px" }),
+            !meta.length && css({ srOnly: true }),
+          )}
+        >
+          {meta.join(" · ")}
           <span className={css({ srOnly: true })}>
-            , {item.kind === "movie" ? "Movie" : "Show"}
+            {meta.length ? ", " : ""}
+            {item.kind === "movie" ? "Movie" : "Show"}
           </span>
         </p>
+        {options.showEpisodes && item.kind === "series" && (
+          <div className={css({ mt: "6px" })}>
+            <EpisodeProgress item={item} />
+          </div>
+        )}
       </div>
-      <TargetChips targets={item.targets} />
+      {options.showTargets && (
+        <TargetChips targets={item.targets} label={options.chipLabel} />
+      )}
     </>
   );
   return href ? (

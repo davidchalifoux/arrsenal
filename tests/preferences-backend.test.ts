@@ -209,4 +209,50 @@ describe("preferences config and API", () => {
     expect((await patch(body)).status).toBe(400);
     expect(await readdir(directory)).toEqual([]);
   });
+
+  it("stores library view options and saved filters", async () => {
+    const library = {
+      view: {
+        posterSize: "large",
+        chipLabel: "quality",
+        showTitle: true,
+        showYear: false,
+        showTargets: true,
+        showEpisodes: true,
+        showRating: false,
+        showSize: true,
+      },
+      filters: [
+        {
+          id: "filter-4k",
+          name: "4K",
+          match: "any",
+          rules: [{ field: "target", operator: "includes", values: ["uhd"] }],
+          groups: [],
+        },
+      ],
+      defaults: { layout: "list", sort: "size", sortDirection: "desc" },
+    };
+    expect(await (await patch({ library })).json()).toEqual({
+      timeZone: null,
+      library,
+    });
+    expect(
+      (
+        await patch({
+          library: {
+            ...library,
+            filters: [library.filters[0], library.filters[0]],
+          },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (await patch({ library: { view: { posterSize: "tiny" } } })).status,
+    ).toBe(400);
+    expect(JSON.parse(JSON.stringify(await readPreferences()))).toEqual({
+      timeZone: null,
+      library,
+    });
+  });
 });

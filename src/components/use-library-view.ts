@@ -19,6 +19,7 @@ export function useLibraryView(
     quality,
     sort,
     sortDirection,
+    filter,
   }: Parameters<typeof selectLibraryView>[1],
 ) {
   return useMemo(
@@ -30,7 +31,17 @@ export function useLibraryView(
         quality,
         sort,
         sortDirection,
+        filter,
       }),
-    [items, category, status, instanceFilter, quality, sort, sortDirection],
+    [
+      items,
+      category,
+      status,
+      instanceFilter,
+      quality,
+      sort,
+      sortDirection,
+      filter,
+    ],
   );
 }

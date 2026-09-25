@@ -38,6 +38,10 @@ mock.module("@/lib/client-data", () => ({
   useInstances: () => ({ data: { instances: [{ id: "a", name: "A" }] } }),
   useSyncData: () => mock(),
 }));
+mock.module("@/lib/preferences", () => ({
+  usePreferences: () => ({ data: undefined }),
+  useSavePreferences: () => ({ mutate: mock(), isPending: false }),
+}));
 mock.module("@/components/use-library-view", () => ({
   useLibraryView: () => ({
     filtered: mocks.data.items,

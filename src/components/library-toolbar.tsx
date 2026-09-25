@@ -6,11 +6,13 @@ import {
   CheckIcon,
   FunnelIcon,
   ListIcon,
+  PencilSimpleIcon,
   PlusIcon,
+  SlidersHorizontalIcon,
   SquaresFourIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
-import type { ReactNode } from "react";
+import { useState } from "react";
 import {
   PageToolbar,
   ToolbarButton,
@@ -149,6 +151,93 @@ function SortMenu({
   );
 }
 
+export type FilterMenuEntry = { id: string; name: string; count?: number };
+
+const filterEntryStyle = css({
+  display: "flex",
+  alignItems: "center",
+  gap: "10px",
+  width: "100%",
+  minHeight: "34px",
+  px: "10px",
+  border: 0,
+  borderRadius: "8px",
+  bg: "transparent",
+  color: "soft",
+  fontSize: "13px",
+  textAlign: "left",
+  _hover: { bg: "elevated", color: "ink" },
+  "&[aria-pressed=true]": { bg: "elevated", color: "ink" },
+});
+
+function FilterEntry({
+  entry,
+  active,
+  onSelect,
+  onEdit,
+}: {
+  entry: FilterMenuEntry;
+  active: boolean;
+  onSelect: () => void;
+  onEdit?: () => void;
+}) {
+  return (
+    <div className={css({ display: "flex", alignItems: "center", gap: "2px" })}>
+      <button
+        type="button"
+        aria-pressed={active}
+        onClick={onSelect}
+        className={filterEntryStyle}
+      >
+        <span
+          className={css({
+            width: "16px",
+            display: "grid",
+            placeItems: "center",
+          })}
+        >
+          {active && (
+            <CheckIcon size={14} weight="bold" color="var(--accent)" />
+          )}
+        </span>
+        <span className={css({ flexGrow: 1, minWidth: 0 })}>{entry.name}</span>
+        {entry.count !== undefined && (
+          <span
+            className={css({
+              fontFamily: "mono",
+              fontSize: "11px",
+              color: "subtle",
+            })}
+          >
+            {entry.count}
+          </span>
+        )}
+      </button>
+      {onEdit && (
+        <button
+          type="button"
+          aria-label={`Edit ${entry.name}`}
+          onClick={onEdit}
+          className={css({
+            width: "30px",
+            height: "30px",
+            flexShrink: 0,
+            display: "grid",
+            placeItems: "center",
+            border: 0,
+            borderRadius: "7px",
+            bg: "transparent",
+            color: "muted",
+            _hover: { bg: "elevated", color: "ink" },
+          })}
+        >
+          <PencilSimpleIcon size={14} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 function FilterPopover({
   filterCount,
   instances,
@@ -158,6 +247,13 @@ function FilterPopover({
   onInstanceChange,
   onQualityChange,
   onResetFilters,
+  filterId,
+  allCount,
+  presets,
+  customFilters,
+  onFilterChange,
+  onEditFilter,
+  onNewFilter,
 }: {
   filterCount: number;
   instances: { id: string; name: string }[];
@@ -167,9 +263,21 @@ function FilterPopover({
   onInstanceChange: (instance: string) => void;
   onQualityChange: (quality: string) => void;
   onResetFilters: () => void;
+  filterId: string | null;
+  allCount?: number;
+  presets: FilterMenuEntry[];
+  customFilters: FilterMenuEntry[];
+  onFilterChange: (id: string | null) => void;
+  onEditFilter: (id: string) => void;
+  onNewFilter: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+  function select(id: string | null) {
+    onFilterChange(id);
+    setOpen(false);
+  }
   return (
-    <Popover.Root>
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
         aria-label={filterCount ? `Filter, ${filterCount} active` : "Filter"}
         data-active={filterCount > 0 || undefined}
@@ -206,46 +314,95 @@ function FilterPopover({
           className={css({ zIndex: 50 })}
         >
           <Popover.Popup
-            className={cx(menuPopupStyle, css({ width: "280px", p: "16px" }))}
+            aria-label="Filter library"
+            className={cx(menuPopupStyle, css({ width: "320px" }))}
           >
+            <p className={menuLabelStyle}>Presets</p>
+            <FilterEntry
+              entry={{ id: "all", name: "All titles", count: allCount }}
+              active={filterId === null}
+              onSelect={() => select(null)}
+            />
+            {presets.map((entry) => (
+              <FilterEntry
+                key={entry.id}
+                entry={entry}
+                active={filterId === entry.id}
+                onSelect={() => select(entry.id)}
+              />
+            ))}
+            <div className={menuSeparatorStyle} />
+            <p className={menuLabelStyle}>Custom filters</p>
+            {customFilters.length === 0 && (
+              <p
+                className={css({
+                  px: "10px",
+                  pb: "6px",
+                  fontSize: "12px",
+                  color: "subtle",
+                })}
+              >
+                Save a combination of rules to reuse it here.
+              </p>
+            )}
+            {customFilters.map((entry) => (
+              <FilterEntry
+                key={entry.id}
+                entry={entry}
+                active={filterId === entry.id}
+                onSelect={() => select(entry.id)}
+                onEdit={() => {
+                  setOpen(false);
+                  onEditFilter(entry.id);
+                }}
+              />
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onNewFilter();
+              }}
+              className={cx(
+                filterEntryStyle,
+                css({ color: "accent", fontWeight: "500" }),
+              )}
+            >
+              <PlusIcon size={16} aria-hidden="true" />
+              New custom filter…
+            </button>
+            <div className={menuSeparatorStyle} />
+            <p className={menuLabelStyle}>Quick filters</p>
             <div
               className={css({
                 display: "flex",
                 flexDirection: "column",
-                gap: "14px",
+                gap: "8px",
+                px: "10px",
+                pb: "8px",
               })}
             >
-              <div>
-                <p className={cx(menuLabelStyle, css({ px: 0, pt: 0 }))}>
-                  Instance
-                </p>
-                <SelectField
-                  value={instanceFilter}
-                  onChange={onInstanceChange}
-                  label="Filter by instance"
-                  options={[
-                    { value: "all", label: "All instances" },
-                    ...instances.map((instance) => ({
-                      value: instance.id,
-                      label: instance.name,
-                    })),
-                  ]}
-                />
-              </div>
-              <div>
-                <p className={cx(menuLabelStyle, css({ px: 0, pt: 0 }))}>
-                  Quality profile
-                </p>
-                <SelectField
-                  value={quality}
-                  onChange={onQualityChange}
-                  label="Filter by quality profile"
-                  options={[
-                    { value: "all", label: "All profiles" },
-                    ...qualities.map((name) => ({ value: name, label: name })),
-                  ]}
-                />
-              </div>
+              <SelectField
+                value={instanceFilter}
+                onChange={onInstanceChange}
+                label="Filter by instance"
+                options={[
+                  { value: "all", label: "All instances" },
+                  ...instances.map((instance) => ({
+                    value: instance.id,
+                    label: instance.name,
+                  })),
+                ]}
+              />
+              <SelectField
+                value={quality}
+                onChange={onQualityChange}
+                label="Filter by quality profile"
+                options={[
+                  { value: "all", label: "All profiles" },
+                  ...qualities.map((name) => ({ value: name, label: name })),
+                ]}
+              />
               <Button variant="ghost" size="sm" onClick={onResetFilters}>
                 Reset filters
               </Button>
@@ -275,7 +432,14 @@ export function LibraryToolbar({
   onSortDirectionChange,
   onLayoutChange,
   onResetFilters,
-  extra,
+  filterId = null,
+  allCount,
+  presets = [],
+  customFilters = [],
+  onFilterChange = () => {},
+  onEditFilter = () => {},
+  onNewFilter = () => {},
+  onOptions,
 }: {
   refreshing: boolean;
   onRefresh: () => void;
@@ -294,7 +458,14 @@ export function LibraryToolbar({
   onSortDirectionChange: (direction: LibrarySortDirection) => void;
   onLayoutChange: (layout: LibraryLayout) => void;
   onResetFilters: () => void;
-  extra?: ReactNode;
+  filterId?: string | null;
+  allCount?: number;
+  presets?: FilterMenuEntry[];
+  customFilters?: FilterMenuEntry[];
+  onFilterChange?: (id: string | null) => void;
+  onEditFilter?: (id: string) => void;
+  onNewFilter?: () => void;
+  onOptions?: () => void;
 }) {
   return (
     <PageToolbar
@@ -329,8 +500,22 @@ export function LibraryToolbar({
             onInstanceChange={onInstanceChange}
             onQualityChange={onQualityChange}
             onResetFilters={onResetFilters}
+            filterId={filterId}
+            allCount={allCount}
+            presets={presets}
+            customFilters={customFilters}
+            onFilterChange={onFilterChange}
+            onEditFilter={onEditFilter}
+            onNewFilter={onNewFilter}
           />
-          {extra}
+          {onOptions && (
+            <ToolbarButton
+              icon={SlidersHorizontalIcon}
+              label="Options"
+              aria-label="View options"
+              onClick={onOptions}
+            />
+          )}
         </>
       }
     >

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { z } from "zod";
+import { libraryPreferencesSchema } from "@/lib/library-options";
 import { hexColorPattern, themeIds } from "@/lib/theme";
 import { isPosterSource } from "../image-sources";
 
@@ -145,6 +146,7 @@ export const preferencesSchema = z.strictObject({
     .transform((value) => value.toLowerCase())
     .nullable()
     .optional(),
+  library: libraryPreferencesSchema.optional(),
 });
 
 // Saves merge into the stored preferences, so a patch may name any subset.

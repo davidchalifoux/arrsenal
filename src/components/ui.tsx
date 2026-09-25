@@ -159,17 +159,16 @@ export function SelectField({
     >
       <Select.Trigger
         aria-label={label}
-        className={cx(
-          buttonStyle({ variant: "secondary" }),
-          css({
-            minWidth: "0",
-            width: compact ? "auto" : "100%",
-            justifyContent: "space-between",
-            gap: "16px",
-            fontSize: "12px",
-            fontWeight: "400",
-          }),
-        )}
+        className={css(buttonStyle.raw({ variant: "secondary", size: "md" }), {
+          minWidth: "0",
+          width: compact ? "auto" : "100%",
+          justifyContent: "space-between",
+          gap: "12px",
+          px: "12px",
+          fontSize: "13px",
+          fontWeight: "400",
+          textAlign: "left",
+        })}
       >
         <Select.Value />
         <Select.Icon>

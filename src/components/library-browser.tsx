@@ -8,6 +8,18 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { z } from "zod";
 import { mediaHref } from "@/lib/client";
 import { useInstances, useLibrary } from "@/lib/client-data";
+import {
+  type CustomFilter,
+  matchesFilter,
+  presetFilters,
+} from "@/lib/library-filters";
+import {
+  defaultViewOptions,
+  type LibraryPreferences,
+  type PosterSize,
+} from "@/lib/library-options";
+import { usePreferences, useSavePreferences } from "@/lib/preferences";
+import { CustomFilterDialog, emptyCustomFilter } from "./custom-filter-dialog";
 import { useLibraryActions } from "./library-provider";
 import { LibraryToolbar } from "./library-toolbar";
 import { MediaCard, MediaList } from "./media-card";
@@ -21,20 +33,22 @@ import {
   type LibraryStatus,
   useLibraryView,
 } from "./use-library-view";
+import { ViewOptionsDialog } from "./view-options-dialog";
 
 const gridStyle = css({
   display: "grid",
-  gridTemplateColumns: {
-    base: "repeat(2, minmax(0, 1fr))",
-    sm: "repeat(3, minmax(0, 1fr))",
-    md: "repeat(5, minmax(0, 1fr))",
-    lg: "repeat(7, minmax(0, 1fr))",
-    xl: "repeat(8, minmax(0, 1fr))",
-    "2xl": "repeat(9, minmax(0, 1fr))",
-  },
+  gridTemplateColumns:
+    "repeat(auto-fill, minmax(min(var(--poster-min), calc(50% - 8px)), 1fr))",
   columnGap: { base: "15px", md: "20px" },
-  rowGap: "29px",
+  rowGap: "28px",
 });
+
+const posterMinWidth: Record<PosterSize, string> = {
+  small: "118px",
+  medium: "148px",
+  large: "188px",
+  huge: "240px",
+};
 
 const snapshotSchema = z.object({
   instanceFilter: z.string(),
@@ -43,6 +57,7 @@ const snapshotSchema = z.object({
   sort: z.enum(["recent", "title", "year", "rating", "size"]),
   sortDirection: z.enum(["asc", "desc"]),
   layout: z.enum(["grid", "list"]),
+  filterId: z.string().max(80).nullable().default(null),
   scrollY: z.number().finite().nonnegative(),
 });
 
@@ -113,6 +128,25 @@ function LibrarySection({
   const [sortDirection, setSortDirection] =
     useState<LibrarySortDirection>("desc");
   const [layout, setLayout] = useState<LibraryLayout>("grid");
+  const [filterId, setFilterId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{
+    filter: CustomFilter;
+    isNew: boolean;
+  } | null>(null);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const preferences = usePreferences();
+  const savePreferences = useSavePreferences();
+  const libraryPreferences: LibraryPreferences =
+    preferences.data?.library ?? {};
+  const customFilters = libraryPreferences.filters ?? [];
+  const viewOptions = libraryPreferences.view ?? defaultViewOptions;
+  const activeFilter =
+    presetFilters.find((preset) => preset.id === filterId)?.definition ??
+    customFilters.find((filter) => filter.id === filterId) ??
+    null;
+  const hadSnapshot = useRef(false);
+  const appliedDefaults = useRef(false);
   const [snapshotLoaded, setSnapshotLoaded] = useState(false);
   const scrollPosition = useRef(0);
   const scrollRestored = useRef(false);
@@ -131,6 +165,8 @@ function LibrarySection({
         setSort(saved.sort);
         setSortDirection(saved.sortDirection);
         setLayout(saved.layout);
+        setFilterId(saved.filterId);
+        hadSnapshot.current = true;
         scrollPosition.current = initialStatus === "all" ? saved.scrollY : 0;
       }
     } catch {
@@ -151,6 +187,7 @@ function LibrarySection({
           sort,
           sortDirection,
           layout,
+          filterId,
           scrollY: scrollPosition.current,
         }),
       );
@@ -169,7 +206,18 @@ function LibrarySection({
     sort,
     sortDirection,
     layout,
+    filterId,
   ]);
+  const defaults = libraryPreferences.defaults;
+  useEffect(() => {
+    // Server-wide defaults apply only when this browser has no saved view.
+    if (!snapshotLoaded || !defaults || hadSnapshot.current) return;
+    if (appliedDefaults.current) return;
+    appliedDefaults.current = true;
+    setLayout(defaults.layout);
+    setSort(defaults.sort);
+    setSortDirection(defaults.sortDirection);
+  }, [snapshotLoaded, defaults]);
   useEffect(() => {
     const onScroll = () => {
       if (!scrollRestored.current) return;
@@ -220,7 +268,51 @@ function LibrarySection({
     setSortDirection(next === "title" ? "asc" : "desc");
   }
 
+  function saveLibraryPreferences(
+    library: LibraryPreferences,
+    onSaved?: () => void,
+  ) {
+    setSaveError(null);
+    savePreferences.mutate(
+      { library },
+      {
+        onSuccess: onSaved,
+        onError: (error) => setSaveError(`Could not save. ${error.message}`),
+      },
+    );
+  }
+
+  function saveFilter(filter: CustomFilter) {
+    const exists = customFilters.some((item) => item.id === filter.id);
+    saveLibraryPreferences(
+      {
+        ...libraryPreferences,
+        filters: exists
+          ? customFilters.map((item) => (item.id === filter.id ? filter : item))
+          : [...customFilters, filter],
+      },
+      () => {
+        setFilterId(filter.id);
+        setEditing(null);
+      },
+    );
+  }
+
+  function deleteFilter(id: string) {
+    saveLibraryPreferences(
+      {
+        ...libraryPreferences,
+        filters: customFilters.filter((item) => item.id !== id),
+      },
+      () => {
+        if (filterId === id) setFilterId(null);
+        setEditing(null);
+      },
+    );
+  }
+
   function resetFilters() {
+    setFilterId(null);
     setInstanceFilter("all");
     setQuality("all");
     setStatus("all");
@@ -241,6 +333,11 @@ function LibrarySection({
         ? item.kind === "series"
         : true,
   );
+  const now = Date.now();
+  const activeFilterName = activeFilter
+    ? (presetFilters.find((preset) => preset.id === filterId)?.name ??
+      customFilters.find((filter) => filter.id === filterId)?.name)
+    : null;
   const syncLabel = library.isPending ? (
     <LibraryLoadingStatus />
   ) : loadingInstances > 0 ? (
@@ -275,9 +372,53 @@ function LibrarySection({
         onSortDirectionChange={setSortDirection}
         onLayoutChange={setLayout}
         onResetFilters={resetFilters}
+        filterId={activeFilter ? filterId : null}
+        allCount={categoryItems.length}
+        presets={presetFilters.map((preset) => ({
+          id: preset.id,
+          name: preset.name,
+          count: categoryItems.filter((item) =>
+            matchesFilter(item, preset.definition, now),
+          ).length,
+        }))}
+        customFilters={customFilters.map((filter) => ({
+          id: filter.id,
+          name: filter.name,
+          count: categoryItems.filter((item) =>
+            matchesFilter(item, filter, now),
+          ).length,
+        }))}
+        onFilterChange={setFilterId}
+        onEditFilter={(id) => {
+          const filter = customFilters.find((item) => item.id === id);
+          if (filter) {
+            setSaveError(null);
+            setEditing({ filter, isNew: false });
+          }
+        }}
+        onNewFilter={() => {
+          setSaveError(null);
+          setEditing({ filter: emptyCustomFilter(), isNew: true });
+        }}
+        onOptions={() => {
+          setSaveError(null);
+          setOptionsOpen(true);
+        }}
       />
       <PageHeader
-        title={title}
+        title={
+          activeFilterName ? (
+            <>
+              {title}
+              <span className={css({ color: "subtle", fontWeight: "500" })}>
+                {" "}
+                · {activeFilterName}
+              </span>
+            </>
+          ) : (
+            title
+          )
+        }
         actions={
           <span
             className={css({
@@ -421,7 +562,14 @@ function LibrarySection({
         </Notice>
       ) : library.isPending ? null : filtered.length ? (
         layout === "grid" ? (
-          <div className={gridStyle}>
+          <div
+            className={gridStyle}
+            style={
+              {
+                "--poster-min": posterMinWidth[viewOptions.posterSize],
+              } as React.CSSProperties
+            }
+          >
             {filtered.map((item, index) => (
               <MediaCard
                 key={item.id}
@@ -430,6 +578,7 @@ function LibrarySection({
                 priority={index < 16}
                 sizes="(min-width: 1864px) 183px, (min-width: 1536px) calc((100vw - 400px) / 9), (min-width: 1280px) calc((100vw - 380px) / 8), (min-width: 1024px) calc((100vw - 360px) / 7), (min-width: 768px) calc((100vw - 112px) / 5), (min-width: 640px) calc((100vw - 62px) / 3), calc((100vw - 47px) / 2)"
                 href={mediaHref(item)}
+                options={viewOptions}
               />
             ))}
           </div>
@@ -486,6 +635,39 @@ function LibrarySection({
           </Button>
         </div>
       )}
+      {editing && (
+        <CustomFilterDialog
+          key={editing.filter.id}
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditing(null);
+          }}
+          initial={editing.filter}
+          isNew={editing.isNew}
+          choices={{
+            instances: instances.map((instance) => ({
+              value: instance.id,
+              label: instance.name,
+            })),
+            qualities,
+            genres: [...new Set(items.flatMap((item) => item.genres))].sort(),
+          }}
+          items={categoryItems}
+          saving={savePreferences.isPending}
+          error={saveError}
+          onSave={saveFilter}
+          onDelete={deleteFilter}
+        />
+      )}
+      <ViewOptionsDialog
+        open={optionsOpen}
+        onOpenChange={setOptionsOpen}
+        options={viewOptions}
+        onChange={(view) =>
+          saveLibraryPreferences({ ...libraryPreferences, view })
+        }
+        error={saveError}
+      />
       <footer
         className={css({
           mt: "32px",

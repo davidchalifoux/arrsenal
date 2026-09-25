@@ -1,3 +1,4 @@
+import { type FilterDefinition, matchesFilter } from "./library-filters";
 import type { LibraryResponse, MediaItem, MediaKind } from "./types";
 
 // Project the shared response without materializing a separate entity store.
@@ -41,7 +42,9 @@ export function selectLibraryView(
     quality,
     sort,
     sortDirection,
+    filter,
   }: {
+    filter?: FilterDefinition | null;
     category: LibraryCategory;
     status: LibraryStatus;
     instanceFilter: string;
@@ -69,9 +72,11 @@ export function selectLibraryView(
     return true;
   }
   const totalCount = items.filter(inCategory).length;
+  const now = Date.now();
   function inScope(item: MediaItem) {
     return (
       inCategory(item) &&
+      (!filter || matchesFilter(item, filter, now)) &&
       item.targets.some(
         (target) =>
           (instanceFilter === "all" || target.instanceId === instanceFilter) &&
@@ -105,6 +110,7 @@ export function selectLibraryView(
                 : a.added.localeCompare(b.added)),
     );
   const filterCount =
+    Number(!!filter) +
     Number(instanceFilter !== "all") +
     Number(quality !== "all") +
     Number(status !== "all");
