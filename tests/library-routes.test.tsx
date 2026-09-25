@@ -17,8 +17,8 @@ describe("Library-first routes", () => {
     expect(() => DiscoverPage()).toThrow("REDIRECT:/?add=1");
   });
 
-  it("sends old Missing links to the Incomplete library filter", () => {
-    expect(() => MissingPage()).toThrow("REDIRECT:/?status=incomplete");
+  it("sends old Missing links to the Wanted page", () => {
+    expect(() => MissingPage()).toThrow("REDIRECT:/wanted");
   });
 
   it.each([

@@ -1,0 +1,166 @@
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  type Mock,
+  mock,
+} from "bun:test";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import type { MediaItem, MediaTarget } from "@/lib/types";
+
+const target = (overrides: Partial<MediaTarget> = {}): MediaTarget => ({
+  instanceId: "hd",
+  instanceName: "Movies HD",
+  remoteId: 1,
+  qualityProfileId: 1,
+  qualityProfile: "HD-1080p",
+  quality: "",
+  status: "missing",
+  monitored: true,
+  sizeOnDisk: 0,
+  ...overrides,
+});
+const item = (overrides: Partial<MediaItem>): MediaItem => ({
+  id: "movie:tmdb:1",
+  kind: "movie",
+  title: "Dune",
+  year: 2021,
+  overview: "",
+  poster: "",
+  genres: [],
+  added: "2026-01-01",
+  status: "missing",
+  targets: [target()],
+  ...overrides,
+});
+
+const state = {
+  items: [] as MediaItem[],
+  notify: mock(),
+};
+const originalClient = { ...(await import("@/lib/client")) };
+mock.module("@/lib/client", () => ({ ...originalClient, api: mock() }));
+mock.module("@/lib/client-data", () => ({
+  useLibrary: () => ({
+    data: { items: state.items, errors: [] },
+    isPending: false,
+    isFetching: false,
+  }),
+  useInstances: () => ({ data: { instances: [] } }),
+  useSyncData: () => mock(),
+}));
+mock.module("@/components/library-provider", () => ({
+  useLibraryActions: () => ({ notify: state.notify, refresh: mock() }),
+  useOptionalLibraryActions: () => null,
+}));
+const { Wanted, wantedRows } = await import("@/components/wanted");
+const { api } = await import("@/lib/client");
+const apiMock = api as Mock<
+  (...args: Parameters<typeof api>) => ReturnType<typeof api>
+>;
+
+beforeEach(() => {
+  apiMock.mockReset();
+  state.notify.mockReset();
+  state.items = [
+    item({}),
+    item({
+      id: "series:tvdb:2",
+      kind: "series",
+      title: "Severance",
+      status: "partial",
+      targets: [
+        target({
+          instanceId: "tv",
+          instanceName: "Shows HD",
+          remoteId: 5,
+          status: "partial",
+          episodeCount: 19,
+          episodeFileCount: 17,
+        }),
+        target({ instanceId: "tv4k", status: "available" }),
+      ],
+    }),
+    item({
+      id: "movie:tmdb:3",
+      title: "Unmonitored",
+      targets: [target({ monitored: false })],
+    }),
+  ];
+});
+afterEach(cleanup);
+
+describe("wantedRows", () => {
+  it("lists monitored missing or partial targets with what is missing", () => {
+    expect(
+      wantedRows(state.items).map((row) => [
+        row.media.title,
+        row.target.instanceName,
+        row.missing,
+      ]),
+    ).toEqual([
+      ["Dune", "Movies HD", "Movie file"],
+      ["Severance", "Shows HD", "2 episodes"],
+    ]);
+  });
+});
+
+describe("Wanted", () => {
+  it("filters by kind and searches one row", async () => {
+    apiMock.mockResolvedValue({ success: true, message: "ok" });
+    render(<Wanted />);
+    expect(screen.getByRole("heading", { name: "Wanted" })).toBeTruthy();
+    expect(screen.queryByText("Unmonitored")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Episodes/ }));
+    expect(
+      screen.queryByRole("listitem", { name: "Dune on Movies HD" }),
+    ).toBeNull();
+    const row = screen.getByRole("listitem", { name: "Severance on Shows HD" });
+    fireEvent.click(
+      within(row).getByRole("button", {
+        name: "Search Shows HD for Severance",
+      }),
+    );
+    await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(String(apiMock.mock.calls[0][1]?.body))).toEqual({
+      instanceId: "tv",
+      remoteId: 5,
+      kind: "series",
+    });
+    await waitFor(() =>
+      expect(state.notify).toHaveBeenCalledWith(
+        "Searching Shows HD for Severance.",
+      ),
+    );
+  });
+
+  it("searches selected rows and reports failures", async () => {
+    apiMock
+      .mockResolvedValueOnce({ success: true, message: "ok" })
+      .mockResolvedValueOnce({ success: false, message: "Offline" });
+    render(<Wanted />);
+    expect(
+      screen
+        .getByRole("button", { name: "Search 0 selected" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all wanted items" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Search 2 selected" }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(2));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Severance (Shows HD): Offline",
+    );
+    expect(state.notify).not.toHaveBeenCalled();
+  });
+});

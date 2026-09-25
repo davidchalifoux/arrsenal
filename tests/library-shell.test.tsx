@@ -22,7 +22,7 @@ const mocks = {
   searchLibrary: mock(),
   queue: { data: { items: [] as unknown[] } },
   library: {
-    data: { items: [] as { status: string }[], errors: [] as unknown[] },
+    data: { items: [] as unknown[], errors: [] as unknown[] },
   },
   realtime: {
     connection: "connecting",
@@ -270,7 +270,16 @@ it("updates download and wanted badges on rerender", () => {
   for (const count of [0, 1, 99, 123, 0]) {
     mocks.queue.data.items = Array.from({ length: count }, () => ({}));
     mocks.library.data.items = Array.from({ length: count }, (_, index) => ({
+      id: `title-${index}`,
+      kind: "movie",
       status: index % 2 ? "partial" : "missing",
+      targets: [
+        {
+          instanceId: "a",
+          monitored: true,
+          status: index % 2 ? "partial" : "missing",
+        },
+      ],
     }));
     view.rerender(<LibraryShell>Downloads content</LibraryShell>);
     const nav = within(
@@ -284,7 +293,7 @@ it("updates download and wanted badges on rerender", () => {
         within(activity).getByLabelText(`${count} downloads`).textContent,
       ).toBe(shown);
       expect(
-        within(wanted).getByLabelText(`${count} wanted titles`).textContent,
+        within(wanted).getByLabelText(`${count} wanted items`).textContent,
       ).toBe(shown);
     } else {
       expect(activity.textContent).toBe("Activity");

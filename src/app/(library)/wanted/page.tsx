@@ -1,5 +1,7 @@
-import { redirect } from "next/navigation";
+import { Wanted } from "@/components/wanted";
+
+export const metadata = { title: "Wanted | Arrsenal" };
 
 export default function WantedPage() {
-  redirect("/?status=incomplete");
+  return <Wanted />;
 }

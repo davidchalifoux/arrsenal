@@ -18,6 +18,7 @@ import { settingsSections } from "@/app/(library)/settings/sections";
 import { useInstances, useLibrary, useQueue } from "@/lib/client-data";
 import { useLibraryActions } from "./library-provider";
 import { SearchTrigger, TaskStatus } from "./page-header";
+import { wantedRows } from "./wanted";
 
 type Section = "library" | "calendar" | "activity" | "wanted" | "settings";
 
@@ -280,9 +281,7 @@ function useCounts() {
   const library = useLibrary();
   return {
     downloads: queue.data?.items.length ?? 0,
-    wanted: (library.data?.items ?? []).filter(
-      (item) => item.status === "missing" || item.status === "partial",
-    ).length,
+    wanted: wantedRows(library.data?.items ?? []).length,
   };
 }
 
@@ -383,7 +382,7 @@ function Sidebar({ pathname }: { pathname: string }) {
           active={section === "wanted"}
           current={section === "wanted"}
         >
-          <Count value={counts.wanted} label="wanted titles" />
+          <Count value={counts.wanted} label="wanted items" />
         </SectionLink>
         <SectionLink
           href="/settings"
@@ -520,7 +519,7 @@ function MobileNavigation({ pathname }: { pathname: string }) {
                   <Count
                     value={count}
                     label={
-                      tab.section === "activity" ? "downloads" : "wanted titles"
+                      tab.section === "activity" ? "downloads" : "wanted items"
                     }
                     strong={tab.section === "activity"}
                   />
