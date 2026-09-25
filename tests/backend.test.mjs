@@ -4201,6 +4201,46 @@ test("a disconnected initiating request does not cancel mutation reconciliation 
   );
 });
 
+test("keeps upstream work running across a quick resubscribe, like a page reload", async () => {
+  const env = await setup({ hd: { media: [movie] } });
+  await env.connect("hd");
+  const { subscribeRealtime } = await import("../src/lib/server/realtime.ts");
+  const watch = () => {
+    const seen = { data: new Map(), hints: [] };
+    const unsubscribe = subscribeRealtime(
+      () => {},
+      (snapshot) => {
+        if ("data" in snapshot)
+          seen.data.set(snapshot.queryKey[0], snapshot.data);
+      },
+      (event) => seen.hints.push(event),
+    );
+    return { seen, unsubscribe };
+  };
+  const first = watch();
+  await eventually(
+    () => first.seen.data.has("library") && first.seen.hints.length > 0,
+  );
+  process.env.ARRSENAL_UPSTREAM_LINGER_MS = "30000";
+  try {
+    first.unsubscribe();
+    // The next browser stream joins the running upstream work: it gets the
+    // current data without a discovery round or page refresh hints.
+    const second = watch();
+    await eventually(() => second.seen.data.has("library"));
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(second.seen.hints).toEqual([]);
+    process.env.ARRSENAL_UPSTREAM_LINGER_MS = "0";
+    second.unsubscribe();
+    // After a full stop, the next subscriber starts discovery again.
+    const third = watch();
+    await eventually(() => third.seen.hints.length > 0);
+    third.unsubscribe();
+  } finally {
+    process.env.ARRSENAL_UPSTREAM_LINGER_MS = "0";
+  }
+});
+
 test("connection edits and removal reconcile subscribers through committed configuration notifications", async () => {
   const env = await setup({ hd: { media: [movie] } });
   const instance = await env.connect("hd");

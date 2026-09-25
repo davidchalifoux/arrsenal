@@ -40,3 +40,7 @@ for (const [property, size] of [
     },
   });
 }
+
+// Tear upstream realtime connections down as soon as the last subscriber
+// leaves, so tests don't share them. One test opts into the grace period.
+process.env.ARRSENAL_UPSTREAM_LINGER_MS ??= "0";
