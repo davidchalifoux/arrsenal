@@ -12,7 +12,11 @@ export type Preferences = {
   theme?: ThemeId;
   accent?: string | null;
   library?: LibraryPreferences;
+  /** Last quality profile and root folder used per instance when adding. */
+  addDefaults?: Record<string, AddDefault>;
 };
+
+export type AddDefault = { qualityProfileId: number; rootFolderPath: string };
 
 export type PreferencesPatch = Partial<Preferences>;
 

@@ -255,4 +255,24 @@ describe("preferences config and API", () => {
       library,
     });
   });
+
+  it("stores the last add choices per instance and rejects malformed ones", async () => {
+    const addDefaults = {
+      "radarr-hd": { qualityProfileId: 7, rootFolderPath: "/movies" },
+    };
+    expect(await (await patch({ addDefaults })).json()).toEqual({
+      timeZone: null,
+      addDefaults,
+    });
+    for (const invalid of [
+      { "radarr-hd": { qualityProfileId: 0, rootFolderPath: "/movies" } },
+      { "radarr-hd": { qualityProfileId: 7, rootFolderPath: "" } },
+      { "radarr-hd": { qualityProfileId: 7, rootFolderPath: "/m", extra: 1 } },
+    ])
+      expect((await patch({ addDefaults: invalid })).status).toBe(400);
+    expect(JSON.parse(JSON.stringify(await readPreferences()))).toEqual({
+      timeZone: null,
+      addDefaults,
+    });
+  });
 });

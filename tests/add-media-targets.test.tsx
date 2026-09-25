@@ -83,7 +83,8 @@ it.each([
   expect(screen.queryByRole("checkbox", { name: radarr.name })).toBeNull();
   expect(
     screen
-      .getByRole("button", { name: "Add to targets" })
+      .getByRole("button", { name: "Add to library" })
       .hasAttribute("disabled"),
   ).toBe(true);
+  expect(screen.getByText("Already on every Radarr instance.")).toBeDefined();
 });

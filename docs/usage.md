@@ -3,7 +3,8 @@
 [Back to README](../README.md)
 
 - A Sonarr/Radarr-style layout: a sidebar for Library, Calendar, Activity, Wanted and Settings, a search bar with ⌘K, and an action bar on every page.
-- Poster and table views with sorting, availability tabs, and a Filter menu with presets, quick instance/quality filters and saved custom filters. Custom filters combine rules (type, status, target, quality, monitoring, year, rating, genre, size, episode progress, date added) matched all/any, with nested groups.
+- One search for everything: ⌘K shows recently added titles, then library matches as you type, followed by movies and shows you can add. **Add new** opens the same search for the catalog only. The add dialog starts from the last profile and root folder used for each instance (saved in the server configuration), or the only option when there is one.
+- Poster and table views with sorting, and a Filter menu with availability, presets, quick instance/quality filters and saved custom filters. Custom filters combine rules (type, status, target, quality, monitoring, year, rating, genre, size, episode progress, date added) matched all/any, with nested groups.
 - **Options** sets poster size, card details and chip labels. Custom filters, view options and library defaults are saved in the server configuration, so every browser shares them.
 - Unified titles with independent quality targets across HD and 4K instances.
 - Dedicated movie and show pages with bookmarkable URLs, metadata, and quality targets.

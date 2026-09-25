@@ -9,9 +9,14 @@ import {
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
-import { api } from "@/lib/client";
+import { useEffect, useRef, useState } from "react";
+import { api, mediaHref } from "@/lib/client";
 import { instanceOptionsQuery } from "@/lib/instance-options-query";
+import {
+  type AddDefault,
+  usePreferences,
+  useSavePreferences,
+} from "@/lib/preferences";
 import type {
   ActionResponse,
   AddMediaRequest,
@@ -52,7 +57,11 @@ export function AddMedia({
   seed: CatalogItem | MediaItem | null;
   instances: InstanceSummary[];
   library: MediaItem[];
-  notify: (message: string, error?: boolean) => void;
+  notify: (
+    message: string,
+    error?: boolean,
+    action?: { label: string; href: string },
+  ) => void;
   onConnect: () => void;
   onBack?: () => void;
 }) {
@@ -62,9 +71,15 @@ export function AddMedia({
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
-      title="Add a quality target"
-      description="One title. Your choice of instances and quality profiles."
+      title="Add to library"
       wide
+      placement="top"
+      // Start on the first instance to choose, not the close button.
+      initialFocus={() =>
+        document.querySelector<HTMLElement>(
+          "[data-add-media] [role=checkbox]:not([aria-disabled=true])",
+        ) ?? true
+      }
     >
       {open && seed && (
         <AddMediaContent
@@ -93,16 +108,18 @@ function AddMediaContent({
 }: Omit<Parameters<typeof AddMedia>[0], "open" | "seed"> & {
   seed: CatalogItem | MediaItem;
 }) {
-  const [choices, setChoices] = useState<Record<string, TargetChoice>>({});
+  const matching = instances.filter(
+    (instance) =>
+      instance.kind === (selected.kind === "series" ? "sonarr" : "radarr"),
+  );
+  const preferences = usePreferences();
+  const savePreferences = useSavePreferences();
+  const savedDefaults = preferences.data?.addDefaults ?? {};
   const [confirmedIds, setConfirmedIds] = useState<string[]>([]);
   const [search, setSearch] = useState(true);
   const [saving, setSaving] = useState(false);
   const saveLock = useRef(false);
   const [error, setError] = useState("");
-  const matching = instances.filter(
-    (instance) =>
-      instance.kind === (selected.kind === "series" ? "sonarr" : "radarr"),
-  );
   const existingIds = [
     ...(library.find((item) => item.id === selected.id)?.targets ?? []).map(
       (target) => target.instanceId,
@@ -112,27 +129,42 @@ function AddMediaContent({
       : selected.targets.map((target) => target.instanceId)),
     ...confirmedIds,
   ];
+  // With a single instance to choose from, start with it selected.
+  const [choices, setChoices] = useState<Record<string, TargetChoice>>(() => {
+    const available = matching.filter(
+      (instance) => !existingIds.includes(instance.id),
+    );
+    return available.length === 1
+      ? {
+          [available[0].id]: {
+            enabled: true,
+            qualityProfileId: 0,
+            rootFolderPath: "",
+          },
+        }
+      : {};
+  });
   const targets = Object.entries(choices).filter(
     ([id, choice]) => choice.enabled && !existingIds.includes(id),
   );
+  const incomplete = targets.find(
+    ([, choice]) => !choice.qualityProfileId || !choice.rootFolderPath,
+  );
+  const incompleteName = incomplete
+    ? matching.find((instance) => instance.id === incomplete[0])?.name
+    : undefined;
+  const targetName =
+    targets.length === 1
+      ? matching.find((instance) => instance.id === targets[0][0])?.name
+      : undefined;
   async function add() {
-    if (targets.length === 0 || saveLock.current) return;
+    if (targets.length === 0 || incomplete || saveLock.current) return;
     setError("");
     const requestTargets = targets.map(([instanceId, choice]) => ({
       instanceId,
       qualityProfileId: choice.qualityProfileId,
       rootFolderPath: choice.rootFolderPath,
     }));
-    if (
-      requestTargets.some(
-        (target) => !target.qualityProfileId || !target.rootFolderPath,
-      )
-    ) {
-      setError(
-        "Choose a quality profile and root folder for every selected instance.",
-      );
-      return;
-    }
     saveLock.current = true;
     setSaving(true);
     try {
@@ -162,7 +194,25 @@ function AddMediaContent({
         );
         return;
       }
-      notify(result.message);
+      // Remember these choices so the next add starts from them.
+      savePreferences.mutate({
+        addDefaults: {
+          ...savedDefaults,
+          ...Object.fromEntries(
+            requestTargets.map((target) => [
+              target.instanceId,
+              {
+                qualityProfileId: target.qualityProfileId,
+                rootFolderPath: target.rootFolderPath,
+              },
+            ]),
+          ),
+        },
+      });
+      notify(result.message, false, {
+        label: "View title",
+        href: mediaHref(selected),
+      });
       onClose();
     } catch (cause) {
       setError(
@@ -174,14 +224,14 @@ function AddMediaContent({
     }
   }
   return (
-    <>
+    <div data-add-media="">
       {onBack && (
         <Button
           variant="ghost"
           size="sm"
           onClick={onBack}
           disabled={saving}
-          className={css({ mb: "16px", ml: "-8px" })}
+          className={css({ mb: "14px", ml: "-8px" })}
         >
           <ArrowLeftIcon size={14} />
           Back to results
@@ -191,25 +241,26 @@ function AddMediaContent({
         className={css({
           display: "flex",
           gap: "16px",
-          alignItems: "center",
-          pb: "23px",
+          alignItems: "flex-start",
+          pb: "20px",
           borderBottom: "1px solid token(colors.line)",
-          mb: "21px",
+          mb: "20px",
         })}
       >
         <div
           className={css({
             width: "64px",
-            height: "94px",
+            height: "96px",
             position: "relative",
-            borderRadius: "5px",
+            borderRadius: "6px",
             overflow: "hidden",
             flexShrink: 0,
+            bg: "elevated",
           })}
         >
           <Poster item={selected} sizes="64px" />
         </div>
-        <div>
+        <div className={css({ minWidth: 0 })}>
           <h3
             className={css({
               fontSize: "19px",
@@ -223,7 +274,7 @@ function AddMediaContent({
             className={css({
               color: "muted",
               fontSize: "12px",
-              mt: "7px",
+              mt: "5px",
               display: "flex",
               alignItems: "center",
               gap: "6px",
@@ -234,15 +285,34 @@ function AddMediaContent({
             ) : (
               <TelevisionSimpleIcon size={14} />
             )}
-            {selected.year} · {selected.genres.slice(0, 2).join(" / ")}
+            {[
+              selected.year || "TBA",
+              selected.kind === "movie" ? "Movie" : "Show",
+              selected.genres.slice(0, 2).join(" / "),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </p>
+          {selected.overview && (
+            <p
+              className={css({
+                mt: "8px",
+                color: "soft",
+                fontSize: "12px",
+                lineHeight: "1.6",
+                lineClamp: 2,
+              })}
+            >
+              {selected.overview}
+            </p>
+          )}
         </div>
       </div>
-      <h3 className={css({ fontSize: "13px", fontWeight: "550", mb: "6px" })}>
-        Where should this live?
+      <h3 className={css({ fontSize: "13px", fontWeight: "550", mb: "4px" })}>
+        Where should it go?
       </h3>
-      <p className={cx(mutedStyle, css({ fontSize: "12px", mb: "17px" }))}>
-        Select one or more instances, then choose a profile for each.
+      <p className={cx(mutedStyle, css({ fontSize: "12px", mb: "14px" }))}>
+        Pick one or more instances. Each keeps its own quality profile.
       </p>
       <div
         className={css({
@@ -257,6 +327,7 @@ function AddMediaContent({
             instance={instance}
             existing={existingIds.includes(instance.id)}
             choice={choices[instance.id]}
+            savedDefault={savedDefaults[instance.id]}
             onChange={(choice) =>
               setChoices((current) => ({
                 ...current,
@@ -309,27 +380,43 @@ function AddMediaContent({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          flexWrap: "wrap",
           gap: "12px",
-          pt: "21px",
-          mt: "21px",
+          pt: "20px",
+          mt: "20px",
           borderTop: "1px solid token(colors.line)",
         })}
       >
-        <span className={css({ color: "subtle", fontSize: "11px" })}>
-          {`${targets.length} ${targets.length === 1 ? "target" : "targets"} selected`}
-        </span>
+        <p
+          aria-live="polite"
+          className={css({ color: "subtle", fontSize: "12px" })}
+        >
+          {matching.length === 0
+            ? ""
+            : matching.every((instance) => existingIds.includes(instance.id))
+              ? `Already on every ${selected.kind === "movie" ? "Radarr" : "Sonarr"} instance.`
+              : targets.length === 0
+                ? "Select an instance to continue."
+                : incomplete
+                  ? `Choose a quality profile and root folder for ${incompleteName ?? "each instance"}.`
+                  : `${targets.length} ${targets.length === 1 ? "target" : "targets"} selected`}
+        </p>
         <Button
           variant="primary"
-          disabled={saving || targets.length === 0}
+          disabled={saving || targets.length === 0 || !!incomplete}
           onClick={add}
         >
           {saving ? <Spinner /> : <PlusIcon size={15} />}
           {saving
             ? "Adding..."
-            : `Add to ${targets.length || ""} ${targets.length === 1 ? "target" : "targets"}`}
+            : targetName
+              ? `Add to ${targetName}`
+              : targets.length
+                ? `Add to ${targets.length} instances`
+                : "Add to library"}
         </Button>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -337,12 +424,14 @@ function TargetOption({
   instance,
   existing,
   choice,
+  savedDefault,
   onChange,
   disabled,
 }: {
   instance: InstanceSummary;
   existing: boolean;
   choice?: TargetChoice;
+  savedDefault?: AddDefault;
   onChange: (choice: TargetChoice) => void;
   disabled: boolean;
 }) {
@@ -360,6 +449,34 @@ function TargetOption({
   const data = options.data;
   const profile = choice?.qualityProfileId || 0;
   const folder = choice?.rootFolderPath || "";
+  // Once options load, start from the last choice for this instance, or the
+  // only option when there is just one. Only once, so a cleared choice stays
+  // cleared.
+  const defaulted = useRef(false);
+  useEffect(() => {
+    if (!data || !enabled || existing || defaulted.current) return;
+    defaulted.current = true;
+    const pick = <T,>(items: T[], saved: (item: T) => boolean) =>
+      items.find(saved) ?? (items.length === 1 ? items[0] : undefined);
+    const nextProfile =
+      profile ||
+      pick(data.profiles, (item) => item.id === savedDefault?.qualityProfileId)
+        ?.id ||
+      0;
+    const nextFolder =
+      folder ||
+      pick(
+        data.rootFolders,
+        (item) => item.path === savedDefault?.rootFolderPath,
+      )?.path ||
+      "";
+    if (nextProfile !== profile || nextFolder !== folder)
+      onChange({
+        enabled,
+        qualityProfileId: nextProfile,
+        rootFolderPath: nextFolder,
+      });
+  }, [data, enabled, existing, profile, folder, savedDefault, onChange]);
   return (
     <fieldset
       aria-label={instance.name}
@@ -397,6 +514,7 @@ function TargetOption({
           </span>
         ) : (
           <CheckField
+            className={css({ flex: 1, minHeight: "24px" })}
             disabled={disabled}
             checked={enabled}
             onChange={(checked) => {

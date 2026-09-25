@@ -147,6 +147,19 @@ export const preferencesSchema = z.strictObject({
     .nullable()
     .optional(),
   library: libraryPreferencesSchema.optional(),
+  // The last profile and root folder used when adding to each instance.
+  addDefaults: z
+    .record(
+      z.string().min(1).max(200),
+      z.strictObject({
+        qualityProfileId: z.number().int().positive(),
+        rootFolderPath: z.string().min(1).max(4096),
+      }),
+    )
+    .refine((value) => Object.keys(value).length <= 100, {
+      error: "Too many instance defaults.",
+    })
+    .optional(),
 });
 
 // Saves merge into the stored preferences, so a patch may name any subset.
