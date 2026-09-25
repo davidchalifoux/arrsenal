@@ -7,6 +7,7 @@ import {
   MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
+import type { SystemStyleObject } from "@styled-system/types";
 import Link from "next/link";
 import {
   type ComponentProps,
@@ -140,7 +141,7 @@ export function SearchTrigger() {
   );
 }
 
-const toolbarItemStyle = css({
+const toolbarItemRaw = css.raw({
   display: "inline-flex",
   alignItems: "center",
   gap: "7px",
@@ -164,10 +165,20 @@ const toolbarItemStyle = css({
   },
 });
 
-const toolbarDangerStyle = css({
+const toolbarItemStyle = css(toolbarItemRaw);
+
+const toolbarDangerRaw = css.raw({
   color: "negative",
   _hover: { color: "negative" },
 });
+
+// Merge overrides into the base object before Panda emits classes, so they
+// win regardless of stylesheet order.
+function toolbarItemClass(danger?: boolean, styles?: SystemStyleObject) {
+  return danger || styles
+    ? css(toolbarItemRaw, danger ? toolbarDangerRaw : undefined, styles)
+    : toolbarItemStyle;
+}
 
 type ToolbarItemProps = {
   icon: Icon;
@@ -176,6 +187,8 @@ type ToolbarItemProps = {
   /** Hide the label on narrow screens; the icon keeps an accessible name. */
   compact?: boolean;
   iconClassName?: string;
+  /** Style overrides; pass `css.raw({...})`. */
+  styles?: SystemStyleObject;
 };
 
 function ToolbarItemContent({
@@ -204,6 +217,7 @@ export function ToolbarButton({
   danger,
   compact = true,
   iconClassName,
+  styles,
   className,
   ...props
 }: ToolbarItemProps & Omit<ComponentProps<"button">, "children">) {
@@ -214,8 +228,7 @@ export function ToolbarButton({
         typeof label === "string" && compact ? label : props["aria-label"]
       }
       className={cx(
-        toolbarItemStyle,
-        danger && toolbarDangerStyle,
+        toolbarItemClass(danger, styles),
         typeof className === "string" ? className : undefined,
       )}
       {...props}
@@ -235,6 +248,7 @@ export function ToolbarLink({
   label,
   danger,
   compact = true,
+  styles,
   className,
   ...props
 }: ToolbarItemProps & Omit<ComponentProps<typeof Link>, "children">) {
@@ -242,8 +256,7 @@ export function ToolbarLink({
     <Link
       aria-label={typeof label === "string" && compact ? label : undefined}
       className={cx(
-        toolbarItemStyle,
-        danger && toolbarDangerStyle,
+        toolbarItemClass(danger, styles),
         typeof className === "string" ? className : undefined,
       )}
       {...props}

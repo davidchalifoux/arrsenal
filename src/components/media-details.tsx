@@ -46,7 +46,7 @@ import {
   Spinner,
 } from "./ui";
 
-const targetGridStyle = css({
+const targetGridRaw = css.raw({
   display: "grid",
   alignItems: "center",
   columnGap: "14px",
@@ -95,7 +95,7 @@ function runtimeLabel(minutes: number) {
   return hours ? `${hours}h ${rest}m` : `${rest}m`;
 }
 
-const targetActionStyle = css({
+const targetActionRaw = css.raw({
   px: { base: "0", md: "10px" },
   width: { base: "34px", md: "auto" },
   height: { base: "34px", md: "30px" },
@@ -531,17 +531,14 @@ export function MediaDetails({
             >
               <div
                 aria-hidden="true"
-                className={cx(
-                  targetGridStyle,
-                  css({
-                    display: { base: "none", md: "grid" },
-                    px: "12px",
-                    py: "5px",
-                    bg: "canvas",
-                    color: "subtle",
-                    fontSize: "10px",
-                  }),
-                )}
+                className={css(targetGridRaw, {
+                  display: { base: "none", md: "grid" },
+                  px: "12px",
+                  py: "5px",
+                  bg: "canvas",
+                  color: "subtle",
+                  fontSize: "10px",
+                })}
               >
                 <span className={css({ gridArea: "instance" })}>Instance</span>
                 <span
@@ -591,19 +588,16 @@ export function MediaDetails({
                 return (
                   <div
                     key={target.instanceId}
-                    className={cx(
-                      targetGridStyle,
-                      css({
-                        px: "12px",
-                        py: { base: "8px", md: "4px" },
-                        bg: "surface",
-                        borderTop: {
-                          base: index ? "1px solid token(colors.line)" : "none",
-                          md: "1px solid token(colors.line)",
-                        },
-                        _hover: { bg: "raised" },
-                      }),
-                    )}
+                    className={css(targetGridRaw, {
+                      px: "12px",
+                      py: { base: "8px", md: "4px" },
+                      bg: "surface",
+                      borderTop: {
+                        base: index ? "1px solid token(colors.line)" : "none",
+                        md: "1px solid token(colors.line)",
+                      },
+                      _hover: { bg: "raised" },
+                    })}
                   >
                     <div className={css({ gridArea: "instance", minWidth: 0 })}>
                       <h3
@@ -808,7 +802,7 @@ export function MediaDetails({
                         title={`Automatically search ${target.instanceName}`}
                         disabled={busy !== null}
                         onClick={() => search(target)}
-                        className={targetActionStyle}
+                        styles={targetActionRaw}
                       >
                         {busy === target.instanceId ? (
                           <Spinner size={13} />
@@ -833,7 +827,7 @@ export function MediaDetails({
                           setSearchScope(null);
                           setReleaseTarget(target);
                         }}
-                        className={targetActionStyle}
+                        styles={targetActionRaw}
                       >
                         <HandIcon size={14} />
                         <span
@@ -1096,7 +1090,7 @@ export function MediaDetails({
             }
             options={media.targets.map((target) => ({
               value: `${target.instanceId}:${target.remoteId}`,
-              label: `${target.instanceName} · ${target.qualityProfile} · ID ${target.remoteId}`,
+              label: `${target.instanceName} · ${target.qualityProfile}`,
             }))}
             onChange={(value) => {
               if (removeLock.current) return;

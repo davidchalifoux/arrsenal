@@ -12,6 +12,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { css, cva, cx } from "@styled-system/css";
+import type { SystemStyleObject } from "@styled-system/types";
 import { type ComponentProps, type ReactNode, useId } from "react";
 
 export const buttonStyle = cva({
@@ -71,16 +72,25 @@ export const buttonStyle = cva({
 export function Button({
   variant,
   size,
+  styles,
   className,
   ...props
 }: ComponentProps<typeof BaseButton> & {
   variant?: "primary" | "secondary" | "ghost" | "danger";
   size?: "sm" | "md" | "lg" | "icon";
+  /**
+   * Overrides merged into the button style before Panda emits classes, so they
+   * always win. Pass `css.raw({...})`. A `className` that sets the same
+   * property would instead leave the winner to stylesheet order.
+   */
+  styles?: SystemStyleObject;
 }) {
   return (
     <BaseButton
       className={cx(
-        buttonStyle({ variant, size }),
+        styles
+          ? css(buttonStyle.raw({ variant, size }), styles)
+          : buttonStyle({ variant, size }),
         typeof className === "string" ? className : undefined,
       )}
       {...props}
@@ -88,7 +98,7 @@ export function Button({
   );
 }
 
-export const inputStyle = css({
+export const inputRaw = css.raw({
   width: "100%",
   height: "40px",
   px: "12px",
@@ -104,6 +114,7 @@ export const inputStyle = css({
     boxShadow: "0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent)",
   },
 });
+export const inputStyle = css(inputRaw);
 export const labelStyle = css({
   display: "flex",
   flexDirection: "column",

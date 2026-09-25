@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckIcon } from "@phosphor-icons/react";
-import { css, cx } from "@styled-system/css";
+import { css } from "@styled-system/css";
 import { useState } from "react";
 import { usePreferences, useSavePreferences } from "@/lib/preferences";
 import {
@@ -12,7 +12,7 @@ import {
   themeStyle,
   themes,
 } from "@/lib/theme";
-import { inputStyle } from "./ui";
+import { inputRaw } from "./ui";
 
 // Themes apply to the page immediately; the server copy makes them stick.
 function applyTheme(theme: ThemeId, accent: string | null) {
@@ -259,15 +259,12 @@ export function ThemePicker() {
             onKeyDown={(event) => {
               if (event.key === "Enter") event.currentTarget.blur();
             }}
-            className={cx(
-              inputStyle,
-              css({
-                width: "96px",
-                height: "32px",
-                fontFamily: "mono",
-                fontSize: "12px",
-              }),
-            )}
+            className={css(inputRaw, {
+              width: "96px",
+              height: "32px",
+              fontFamily: "mono",
+              fontSize: "12px",
+            })}
           />
         </label>
         {accent && (

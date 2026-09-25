@@ -2,6 +2,7 @@
 
 import { css } from "@styled-system/css";
 import Link from "next/link";
+import { useEffect } from "react";
 import { useLibraryMedia } from "@/lib/client-data";
 import type { MediaKind } from "@/lib/types";
 import { useLibraryActions } from "./library-provider";
@@ -19,6 +20,11 @@ export function MediaScreen({
   const library = useLibraryMedia(mediaId, kind);
   const { add, notify, refresh } = useLibraryActions();
   const media = library.data?.media;
+  // Route metadata can only say "Movie details"; name the tab once loaded.
+  const title = media?.title;
+  useEffect(() => {
+    if (title) document.title = `${title} | Arrsenal`;
+  }, [title]);
   if (
     library.isPending ||
     (!media &&

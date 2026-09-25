@@ -223,7 +223,7 @@ function RuleRow({
         size="icon"
         aria-label={`Remove ${definition.label} rule`}
         onClick={onRemove}
-        className={css({ width: "32px", height: "36px" })}
+        styles={css.raw({ width: "32px", height: "36px" })}
       >
         <TrashIcon size={15} />
       </Button>
@@ -488,7 +488,7 @@ export function CustomFilterDialog({
                 onClick={() =>
                   setDraft({ ...draft, rules: [...draft.rules, defaultRule()] })
                 }
-                className={css({ color: "accent" })}
+                styles={css.raw({ color: "accent" })}
               >
                 <PlusIcon size={14} /> Add rule
               </Button>
@@ -573,7 +573,7 @@ export function CustomFilterDialog({
               variant="ghost"
               disabled={saving}
               onClick={() => onDelete(draft.id)}
-              className={css({ color: "negative" })}
+              styles={css.raw({ color: "negative" })}
             >
               Delete filter
             </Button>

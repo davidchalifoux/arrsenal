@@ -263,7 +263,7 @@ export function Calendar({ now }: { now: string }) {
                 label="Month"
                 aria-pressed={view === "month"}
                 onClick={() => setView("month")}
-                className={css({
+                styles={css.raw({
                   display: { base: "none", md: "inline-flex" },
                 })}
               />
@@ -272,7 +272,7 @@ export function Calendar({ now }: { now: string }) {
                 label="Agenda"
                 aria-pressed={view === "agenda"}
                 onClick={() => setView("agenda")}
-                className={css({
+                styles={css.raw({
                   display: { base: "none", md: "inline-flex" },
                 })}
               />
@@ -396,14 +396,17 @@ export function Calendar({ now }: { now: string }) {
         aria-label={`${title} month calendar`}
         className={cx(
           css({
-            display: { base: "none", md: "grid" },
             gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
             bg: "surface",
             border: "1px solid token(colors.line)",
             borderRadius: "14px",
             overflow: "hidden",
           }),
-          view === "agenda" && css({ display: { md: "none" } }),
+          // Whole classes per view: merging two conflicting display classes
+          // leaves the winner to stylesheet order.
+          view === "agenda"
+            ? css({ display: "none" })
+            : css({ display: { base: "none", md: "grid" } }),
         )}
       >
         {weekdays.map((day) => (
@@ -515,8 +518,10 @@ export function Calendar({ now }: { now: string }) {
       <section
         aria-label={`${title} agenda`}
         className={cx(
-          css({ display: { base: "grid", md: "none" }, gap: "24px" }),
-          view === "agenda" && css({ display: { md: "grid" } }),
+          css({ gap: "24px" }),
+          view === "agenda"
+            ? css({ display: "grid" })
+            : css({ display: { base: "grid", md: "none" } }),
         )}
       >
         {[...groups].map(([date, events]) => (

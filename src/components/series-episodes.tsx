@@ -54,7 +54,7 @@ const statusStyle = cva({
     },
   },
 });
-const cellStyle = css({
+const cellRaw = css.raw({
   px: "12px",
   py: "6px",
   height: "42px",
@@ -62,6 +62,7 @@ const cellStyle = css({
   verticalAlign: "middle",
   borderTop: "1px solid token(colors.line)",
 });
+const cellStyle = css(cellRaw);
 const dateCellStyle = css({
   px: "12px",
   py: "6px",
@@ -529,6 +530,15 @@ export function SeriesEpisodes({
               })}
             >
               <summary
+                // The visible pieces are separate inline spans, which screen
+                // readers would otherwise run together ("Season 410 episodes").
+                aria-label={[
+                  `${seasonLabel}, ${rows.length} ${rows.length === 1 ? "episode" : "episodes"}`,
+                  ...targetSummaries.map(
+                    ({ target, description, stale }) =>
+                      `${target.instanceName}: ${description}${stale ? " (may be incomplete or out of date)" : ""}`,
+                  ),
+                ].join(". ")}
                 className={css({
                   display: "flex",
                   alignItems: "center",
@@ -555,8 +565,12 @@ export function SeriesEpisodes({
                     weight="bold"
                     className={css({
                       color: "muted",
-                      transform: open ? "rotate(90deg)" : "none",
                       transition: "transform 120ms",
+                      // Static selector: Panda did not emit the rotated class
+                      // for a conditional value here.
+                      "details[open] > summary &": {
+                        transform: "rotate(90deg)",
+                      },
                     })}
                   />
                   <span
@@ -682,7 +696,11 @@ export function SeriesEpisodes({
                           <tr key={target.instanceId}>
                             <th
                               scope="row"
-                              className={`${cellStyle} ${css({ fontWeight: "500", whiteSpace: "nowrap", width: "180px" })}`}
+                              className={css(cellRaw, {
+                                fontWeight: "500",
+                                whiteSpace: "nowrap",
+                                width: "180px",
+                              })}
                             >
                               {target.instanceName}
                             </th>
@@ -706,7 +724,11 @@ export function SeriesEpisodes({
                               )}
                             </td>
                             <td
-                              className={`${cellStyle} ${css({ width: "1%", whiteSpace: "nowrap", textAlign: "right" })}`}
+                              className={css(cellRaw, {
+                                width: "1%",
+                                whiteSpace: "nowrap",
+                                textAlign: "right",
+                              })}
                             >
                               <div
                                 className={css({
@@ -746,7 +768,7 @@ export function SeriesEpisodes({
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className={css({
+                                  styles={css.raw({
                                     color: "negative",
                                     ml: "8px",
                                   })}

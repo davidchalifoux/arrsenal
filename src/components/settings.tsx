@@ -477,7 +477,7 @@ export function Settings({
                       setRemoveError(undefined);
                       setRemoving(instance);
                     }}
-                    className={css({ color: "negative" })}
+                    styles={css.raw({ color: "negative" })}
                   >
                     Disconnect
                   </Button>

@@ -1298,6 +1298,10 @@ describe("Episode actions", () => {
       .getByText("Season 1", { exact: true })
       .closest("summary");
     if (!summary) throw new Error("Season toggle missing");
+    // Screen readers get separated parts, not "Season 11 episode…".
+    expect(summary.getAttribute("aria-label")).toMatch(
+      /^Season 1, \d+ episodes?\. /,
+    );
     fireEvent.click(summary);
     const table = await screen.findByRole("table", {
       name: "Season 1 target controls",

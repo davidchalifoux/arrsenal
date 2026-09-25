@@ -1,5 +1,7 @@
 import { LibraryBrowser } from "@/components/library-browser";
 
+export const metadata = { title: "All titles | Arrsenal" };
+
 export default async function LibraryPage({
   searchParams,
 }: {

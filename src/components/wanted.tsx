@@ -211,7 +211,9 @@ export function Wanted() {
             {all.length} missing across {titles}{" "}
             {titles === 1 ? "title" : "titles"}
           </span>
-          <span>{movies} movies</span>
+          <span>
+            {movies} {movies === 1 ? "movie" : "movies"}
+          </span>
           <span>{episodes} episodes</span>
           <span className={css({ ml: "auto" })}>
             Unmonitored and downloading items are hidden

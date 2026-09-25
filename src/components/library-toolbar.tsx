@@ -161,7 +161,7 @@ function SortMenu({
 
 export type FilterMenuEntry = { id: string; name: string; count?: number };
 
-const filterEntryStyle = css({
+const filterEntryRaw = css.raw({
   display: "flex",
   alignItems: "center",
   gap: "10px",
@@ -177,6 +177,7 @@ const filterEntryStyle = css({
   _hover: { bg: "elevated", color: "ink" },
   "&[aria-pressed=true]": { bg: "elevated", color: "ink" },
 });
+const filterEntryStyle = css(filterEntryRaw);
 
 function FilterEntry({
   entry,
@@ -409,10 +410,10 @@ function FilterPopover({
                 setOpen(false);
                 onNewFilter();
               }}
-              className={cx(
-                filterEntryStyle,
-                css({ color: "accent", fontWeight: "500" }),
-              )}
+              className={css(filterEntryRaw, {
+                color: "accent",
+                fontWeight: "500",
+              })}
             >
               <PlusIcon size={16} aria-hidden="true" />
               New custom filter…
