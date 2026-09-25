@@ -65,7 +65,7 @@ export function wantedRows(items: readonly MediaItem[]): WantedRow[] {
   );
 }
 
-type Scope = "all" | "movies" | "episodes";
+type Scope = "all" | "movies" | "shows";
 
 const columns =
   "20px minmax(0, 2.2fr) minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(0, 1fr) 72px 96px";
@@ -84,7 +84,7 @@ export function Wanted() {
   const rows = all.filter((row) =>
     scope === "movies"
       ? row.media.kind === "movie"
-      : scope === "episodes"
+      : scope === "shows"
         ? row.media.kind === "series"
         : true,
   );
@@ -237,8 +237,8 @@ export function Wanted() {
             { value: "all", label: "Missing", count: all.length },
             { value: "movies", label: "Movies", count: movies },
             {
-              value: "episodes",
-              label: "Episodes",
+              value: "shows",
+              label: "Shows",
               count: all.length - movies,
             },
           ]}

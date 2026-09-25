@@ -122,7 +122,7 @@ describe("Wanted", () => {
     expect(screen.queryByText("Unmonitored")).toBeNull();
     // One missing movie reads as singular in the footer.
     expect(screen.getByText("1 movie")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /^Episodes/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Shows/ }));
     expect(
       screen.queryByRole("listitem", { name: "Dune on Movies HD" }),
     ).toBeNull();
