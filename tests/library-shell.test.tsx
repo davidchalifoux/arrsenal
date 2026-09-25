@@ -265,7 +265,7 @@ it.each([
   ).toEqual(label ? [label] : []);
 });
 
-it("updates download and wanted badges on rerender", () => {
+it("updates the download badge on rerender and never badges Wanted", () => {
   const view = renderShell();
   for (const count of [0, 1, 99, 123, 0]) {
     mocks.queue.data.items = Array.from({ length: count }, () => ({}));
@@ -292,13 +292,10 @@ it("updates download and wanted badges on rerender", () => {
       expect(
         within(activity).getByLabelText(`${count} downloads`).textContent,
       ).toBe(shown);
-      expect(
-        within(wanted).getByLabelText(`${count} wanted items`).textContent,
-      ).toBe(shown);
     } else {
       expect(activity.textContent).toBe("Activity");
-      expect(wanted.textContent).toBe("Wanted");
     }
+    expect(wanted.textContent).toBe("Wanted");
   }
 });
 

@@ -8,7 +8,7 @@ import {
   SquaresFourIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
-import { css, cx } from "@styled-system/css";
+import { css } from "@styled-system/css";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -18,7 +18,6 @@ import { useInstances, useLibrary, useQueue } from "@/lib/client-data";
 import { useLibraryActions } from "./library-provider";
 import { Logo } from "./logo";
 import { SearchTrigger, TaskStatus } from "./page-header";
-import { wantedRows } from "./wanted";
 
 type Section = "library" | "calendar" | "activity" | "wanted" | "settings";
 
@@ -96,29 +95,14 @@ const countStyle = css({
   fontSize: "11px",
   fontWeight: "600",
   lineHeight: 1,
+  bg: "elevated",
+  color: "muted",
 });
 
-function Count({
-  value,
-  label,
-  strong = false,
-}: {
-  value: number;
-  label: string;
-  strong?: boolean;
-}) {
+function Count({ value, label }: { value: number; label: string }) {
   if (value <= 0) return null;
   return (
-    <span
-      role="img"
-      aria-label={`${value} ${label}`}
-      className={cx(
-        countStyle,
-        strong
-          ? css({ bg: "accent", color: "onAccent" })
-          : css({ bg: "elevated", color: "muted" }),
-      )}
-    >
+    <span role="img" aria-label={`${value} ${label}`} className={countStyle}>
       {value > 99 ? "99+" : value}
     </span>
   );
@@ -276,19 +260,14 @@ function InstanceList() {
   );
 }
 
-function useCounts() {
-  const queue = useQueue();
-  const library = useLibrary();
-  return {
-    downloads: queue.data?.items.length ?? 0,
-    wanted: wantedRows(library.data?.items ?? []).length,
-  };
+function useDownloadCount() {
+  return useQueue().data?.items.length ?? 0;
 }
 
 function Sidebar({ pathname }: { pathname: string }) {
   const { add } = useLibraryActions();
   const section = activeSection(pathname);
-  const counts = useCounts();
+  const downloads = useDownloadCount();
   return (
     <aside
       className={css({
@@ -366,7 +345,7 @@ function Sidebar({ pathname }: { pathname: string }) {
           active={section === "activity"}
           current={section === "activity"}
         >
-          <Count value={counts.downloads} label="downloads" strong />
+          <Count value={downloads} label="downloads" />
         </SectionLink>
         <SectionLink
           href="/wanted"
@@ -374,9 +353,7 @@ function Sidebar({ pathname }: { pathname: string }) {
           icon={WarningCircleIcon}
           active={section === "wanted"}
           current={section === "wanted"}
-        >
-          <Count value={counts.wanted} label="wanted items" />
-        </SectionLink>
+        />
         <SectionLink
           href="/settings"
           label="Settings"
@@ -446,7 +423,7 @@ const mobileTabs: {
 
 function MobileNavigation({ pathname }: { pathname: string }) {
   const section = activeSection(pathname);
-  const counts = useCounts();
+  const downloads = useDownloadCount();
   return (
     <nav
       aria-label="Mobile navigation"
@@ -469,12 +446,7 @@ function MobileNavigation({ pathname }: { pathname: string }) {
     >
       {mobileTabs.map((tab) => {
         const active = section === tab.section;
-        const count =
-          tab.section === "activity"
-            ? counts.downloads
-            : tab.section === "wanted"
-              ? counts.wanted
-              : 0;
+        const count = tab.section === "activity" ? downloads : 0;
         return (
           <Link
             key={tab.href}
@@ -509,13 +481,7 @@ function MobileNavigation({ pathname }: { pathname: string }) {
                     right: "-12px",
                   })}
                 >
-                  <Count
-                    value={count}
-                    label={
-                      tab.section === "activity" ? "downloads" : "wanted items"
-                    }
-                    strong={tab.section === "activity"}
-                  />
+                  <Count value={count} label="downloads" />
                 </span>
               )}
             </span>
