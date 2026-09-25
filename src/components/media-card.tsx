@@ -200,6 +200,9 @@ export function MediaCard({
   const className = cx(
     "group",
     css({
+      position: "relative",
+      // Keeps the hover backdrop behind this card's content only.
+      isolation: "isolate",
       display: "flex",
       flexDirection: "column",
       gap: "10px",
@@ -207,6 +210,30 @@ export function MediaCard({
       textAlign: "left",
       borderRadius: "10px",
       width: "100%",
+      // A faint backdrop fades in behind the whole card on hover, reaching a
+      // little past its edges (into the grid gap).
+      _before: {
+        content: '""',
+        position: "absolute",
+        inset: "-7px -7px -9px",
+        zIndex: -1,
+        borderRadius: "14px",
+        bg: "elevated",
+        opacity: 0,
+        transform: "scale(0.97)",
+        transition: "opacity 180ms ease, transform 180ms ease",
+        pointerEvents: "none",
+      },
+      _hover: { _before: { opacity: 1, transform: "none" } },
+      _focusVisible: {
+        outline: "none",
+        _before: {
+          opacity: 1,
+          transform: "none",
+          boxShadow: "0 0 0 2px token(colors.accent)",
+        },
+      },
+      _motionReduce: { _before: { transform: "none" } },
     }),
   );
   const content = (
@@ -218,8 +245,6 @@ export function MediaCard({
           overflow: "hidden",
           borderRadius: "10px",
           bg: "surface",
-          transition: "box-shadow 150ms ease",
-          _groupHover: { boxShadow: "0 14px 28px -12px #000" },
           _after: {
             content: '""',
             position: "absolute",
