@@ -1,9 +1,9 @@
 export const themes = [
+  { id: "neutral", name: "Neutral", accent: "#d4d4d4" },
   { id: "sonarr", name: "Sonarr", accent: "#35c5f4" },
   { id: "midnight", name: "Midnight", accent: "#8b7cf6" },
   { id: "radarr", name: "Radarr", accent: "#ffc230" },
   { id: "graphite", name: "Graphite", accent: "#5fd0a0" },
-  { id: "neutral", name: "Neutral", accent: "#d4d4d4" },
   { id: "daylight", name: "Daylight", accent: "#6d5be8" },
 ] as const;
 
@@ -14,7 +14,7 @@ export const themeIds = themes.map((theme) => theme.id) as [
   ...ThemeId[],
 ];
 
-export const defaultTheme: ThemeId = "sonarr";
+export const defaultTheme: ThemeId = "neutral";
 
 export const accentSwatches = [
   { name: "Violet", value: "#8b7cf6" },

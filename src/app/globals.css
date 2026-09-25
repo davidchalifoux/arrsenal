@@ -27,7 +27,6 @@
     --on-accent: #0d0e10;
   }
 
-  :root,
   [data-theme="sonarr"] {
     color-scheme: dark;
     --canvas: #16191e;
@@ -100,6 +99,7 @@
     --scrim: #0a0a0bcc;
   }
 
+  :root,
   [data-theme="neutral"] {
     color-scheme: dark;
     --canvas: #141414;

@@ -29,14 +29,14 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-it("selects the Sonarr theme when none has been saved", () => {
+it("selects the Neutral theme when none has been saved", () => {
   const saved = state.data;
   state.data = { timeZone: null, accent: null };
   try {
     render(<ThemePicker />);
     expect(
       screen
-        .getByRole("button", { name: /Sonarr/ })
+        .getByRole("button", { name: /Neutral/ })
         .getAttribute("aria-pressed"),
     ).toBe("true");
   } finally {
