@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { z } from "zod";
-import { mediaHref } from "@/lib/client";
 import { useInstances, useLibrary } from "@/lib/client-data";
 import {
   type CustomFilter,
@@ -16,14 +15,14 @@ import {
 import {
   defaultViewOptions,
   type LibraryPreferences,
-  type PosterSize,
 } from "@/lib/library-options";
 import { usePreferences, useSavePreferences } from "@/lib/preferences";
 import { CustomFilterDialog, emptyCustomFilter } from "./custom-filter-dialog";
 import { useLibraryActions } from "./library-provider";
 import { LibraryToolbar } from "./library-toolbar";
-import { MediaCard, MediaList } from "./media-card";
+import { MediaList } from "./media-card";
 import { PageHeader } from "./page-header";
+import { PosterGrid } from "./poster-grid";
 import { Button, Notice } from "./ui";
 import {
   type LibraryCategory,
@@ -34,21 +33,6 @@ import {
   useLibraryView,
 } from "./use-library-view";
 import { ViewOptionsDialog } from "./view-options-dialog";
-
-const gridStyle = css({
-  display: "grid",
-  gridTemplateColumns:
-    "repeat(auto-fill, minmax(min(var(--poster-min), calc(50% - 8px)), 1fr))",
-  columnGap: { base: "15px", md: "20px" },
-  rowGap: "28px",
-});
-
-const posterMinWidth: Record<PosterSize, string> = {
-  small: "118px",
-  medium: "148px",
-  large: "188px",
-  huge: "240px",
-};
 
 const snapshotSchema = z.object({
   instanceFilter: z.string(),
@@ -533,26 +517,7 @@ function LibrarySection({
         </Notice>
       ) : library.isPending ? null : filtered.length ? (
         layout === "grid" ? (
-          <div
-            className={gridStyle}
-            style={
-              {
-                "--poster-min": posterMinWidth[viewOptions.posterSize],
-              } as React.CSSProperties
-            }
-          >
-            {filtered.map((item, index) => (
-              <MediaCard
-                key={item.id}
-                item={item}
-                index={index}
-                priority={index < 16}
-                sizes="(min-width: 1864px) 183px, (min-width: 1536px) calc((100vw - 400px) / 9), (min-width: 1280px) calc((100vw - 380px) / 8), (min-width: 1024px) calc((100vw - 360px) / 7), (min-width: 768px) calc((100vw - 112px) / 5), (min-width: 640px) calc((100vw - 62px) / 3), calc((100vw - 47px) / 2)"
-                href={mediaHref(item)}
-                options={viewOptions}
-              />
-            ))}
-          </div>
+          <PosterGrid items={filtered} options={viewOptions} />
         ) : (
           <MediaList
             items={filtered}

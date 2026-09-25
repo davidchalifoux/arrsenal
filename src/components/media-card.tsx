@@ -8,7 +8,7 @@ import {
 import { css, cx } from "@styled-system/css";
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { mediaHref, sizeLabel } from "@/lib/client";
 import {
   defaultViewOptions,
@@ -17,6 +17,7 @@ import {
 import { mediaSize } from "@/lib/library-selectors";
 import type { MediaItem, MediaStatus, MediaTarget } from "@/lib/types";
 import type { LibrarySort, LibrarySortDirection } from "./use-library-view";
+import { useWindowList } from "./use-window-list";
 
 // Cover two rows at the widest grid without eagerly loading the library.
 const eagerPosterCount = 12;
@@ -416,6 +417,14 @@ export function MediaList({
   onSort?: (sort: LibrarySort) => void;
 }) {
   const headerProps = { sort, sortDirection, onSort };
+  const { listRef, rows, spacerStyle, measureElement } =
+    useWindowList<HTMLDivElement>({
+      count: items.length,
+      estimateSize: useCallback(() => 36, []),
+      sizeKey: "table",
+      getItemKey: useCallback((index: number) => items[index].id, [items]),
+      overscan: 12,
+    });
   return (
     <div
       className={css({
@@ -462,12 +471,17 @@ export function MediaList({
           />
         </div>
       </div>
-      <div>
-        {items.map((item) => {
+      <div ref={listRef} style={spacerStyle}>
+        {rows.map((row) => {
+          const item = items[row.index];
           const size = mediaSize(item);
           return (
             <div
-              key={item.id}
+              key={row.key}
+              ref={measureElement}
+              data-index={row.index}
+              data-stripe={row.index % 2 ? "" : undefined}
+              data-last={row.index === items.length - 1 ? "" : undefined}
               className={css({
                 position: "relative",
                 display: "grid",
@@ -482,8 +496,9 @@ export function MediaList({
                 py: { base: "10px", md: "4px" },
                 borderBottom: "1px solid token(colors.lineSoft)",
                 fontSize: "13px",
-                _last: { borderBottom: 0 },
-                _even: {
+                // Rows are windowed, so position comes from the list index.
+                "&[data-last]": { borderBottom: 0 },
+                "&[data-stripe]": {
                   bg: "color-mix(in srgb, var(--raised) 55%, transparent)",
                 },
                 _hover: { bg: "elevated" },
