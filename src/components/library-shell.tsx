@@ -627,10 +627,9 @@ export function LibraryShell({ children }: { children: ReactNode }) {
             flexDirection: "column",
             minHeight: "calc(100dvh - 57px - env(safe-area-inset-top))",
             // Pages without an action bar still need breathing room below the header.
-            "& > :first-child:not([role=toolbar]):not(:has(> [role=toolbar]:first-child))":
-              {
-                mt: { base: "18px", lg: "24px" },
-              },
+            "& > :first-child:not([role=toolbar]):not(:has([role=toolbar]))": {
+              mt: { base: "18px", lg: "24px" },
+            },
           })}
         >
           {children}
