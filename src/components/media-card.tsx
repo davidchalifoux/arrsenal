@@ -217,7 +217,8 @@ export function MediaCard({
           overflow: "hidden",
           borderRadius: "10px",
           bg: "surface",
-          boxShadow: "0 12px 24px -14px #000",
+          transition: "box-shadow 150ms ease",
+          _groupHover: { boxShadow: "0 14px 28px -12px #000" },
           _after: {
             content: '""',
             position: "absolute",
@@ -225,8 +226,6 @@ export function MediaCard({
             borderRadius: "inherit",
             pointerEvents: "none",
             boxShadow: "inset 0 0 0 1px #ffffff12",
-            transition: "box-shadow 120ms linear",
-            _groupHover: { boxShadow: "inset 0 0 0 2px var(--accent)" },
           },
         })}
       >
