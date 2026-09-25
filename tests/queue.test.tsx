@@ -95,7 +95,7 @@ describe("DownloadQueue", () => {
         notify={mock()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Warnings" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Warnings/ }));
     expect(
       screen.queryByRole("row", { name: "Severance download" }),
     ).toBeNull();
@@ -105,12 +105,12 @@ describe("DownloadQueue", () => {
         ?.open,
     ).toBe(false);
     expect(
-      screen.getByText("Active downloads").parentElement?.textContent,
-    ).toContain("1");
+      screen.getByRole("button", { name: /^Downloading/ }).textContent,
+    ).toBe("Downloading1");
     expect(
       screen.getByText("Remaining size").parentElement?.textContent,
     ).toContain("256.0 MB");
-    fireEvent.click(screen.getByRole("button", { name: "Downloading" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Downloading/ }));
     expect(screen.queryByRole("row", { name: "Silo download" })).toBeNull();
     expect(
       screen.getByRole("row", { name: "Severance download" }),
@@ -483,5 +483,96 @@ describe("DownloadQueue", () => {
     );
     expect(api).not.toHaveBeenCalled();
     expect(props.onRefresh).not.toHaveBeenCalled();
+  });
+
+  it("selects rows and removes them together with the chosen options", async () => {
+    const apiMock = api as Mock<
+      (...args: Parameters<typeof api>) => ReturnType<typeof api>
+    >;
+    apiMock.mockResolvedValue({ success: true, message: "Removed." });
+    const notify = mock();
+    const silo = { ...download, id: 7, mediaTitle: "Silo" };
+    render(
+      <DownloadQueue
+        data={queue([download, silo])}
+        loading={false}
+        onRefresh={mock()}
+        notify={notify}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /selected$/ })).toBeNull();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all downloads" }),
+    );
+    expect(screen.getByText("2 selected")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Remove 2 selected" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Remove 2 downloads?")).toBeTruthy();
+    expect(within(dialog).getByText("Silo")).toBeTruthy();
+    fireEvent.click(
+      within(dialog).getByRole("checkbox", { name: "Blocklist this release" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Remove 2 downloads" }),
+    );
+    await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(2));
+    expect(
+      apiMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body))),
+    ).toEqual([
+      {
+        instanceId: "sonarr-hd",
+        id: -42,
+        removeFromClient: true,
+        blocklist: true,
+      },
+      {
+        instanceId: "sonarr-hd",
+        id: 7,
+        removeFromClient: true,
+        blocklist: true,
+      },
+    ]);
+    await waitFor(() =>
+      expect(notify).toHaveBeenCalledWith("Removal accepted for 2 downloads."),
+    );
+    expect(screen.queryByText("2 selected")).toBeNull();
+  });
+
+  it("grabs only the selected downloads that can be grabbed or imported", async () => {
+    const apiMock = api as Mock<
+      (...args: Parameters<typeof api>) => ReturnType<typeof api>
+    >;
+    apiMock.mockResolvedValue({ success: true, message: "Grabbed." });
+    const delayed = {
+      ...download,
+      id: 9,
+      mediaTitle: "Delayed",
+      status: "delay",
+      downloadId: undefined,
+    };
+    render(
+      <DownloadQueue
+        data={queue([download, delayed])}
+        loading={false}
+        onRefresh={mock()}
+        notify={mock()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Severance" }));
+    expect(
+      screen
+        .getByRole("button", { name: "Grab or import 0 selected" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Delayed" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Grab or import 1 selected" }),
+    );
+    await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(1));
+    expect(apiMock.mock.calls[0][1]?.method).toBe("POST");
+    expect(JSON.parse(String(apiMock.mock.calls[0][1]?.body))).toEqual({
+      instanceId: "sonarr-hd",
+      id: 9,
+    });
   });
 });

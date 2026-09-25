@@ -4,14 +4,23 @@ import {
   ArrowClockwiseIcon,
   ArrowDownIcon,
   CheckCircleIcon,
+  DownloadSimpleIcon,
   PlayIcon,
   TrashIcon,
   WarningCircleIcon,
+  XIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import { Fragment, useId, useRef, useState } from "react";
 import { api, sizeLabel } from "@/lib/client";
 import type { ActionResponse, QueueItem, QueueResponse } from "@/lib/types";
+import {
+  PageHeader,
+  PageToolbar,
+  SegmentedTabs,
+  ToolbarButton,
+  ToolbarDivider,
+} from "./page-header";
 import {
   Button,
   CheckField,
@@ -68,6 +77,26 @@ function compareQueueItems(a: QueueItem, b: QueueItem) {
   return queueProgress(b) - queueProgress(a);
 }
 
+function retryAction(item: QueueItem) {
+  const status = item.status.toLowerCase();
+  if (
+    ["delay", "downloadclientunavailable"].includes(status) &&
+    !item.downloadId
+  )
+    return "grab" as const;
+  if (status === "completed" && !!item.downloadId) return "import" as const;
+  return null;
+}
+
+function durationLabel(seconds: number) {
+  const days = Math.floor(seconds / 86_400);
+  const hours = Math.floor((seconds % 86_400) / 3_600);
+  const minutes = Math.max(1, Math.round((seconds % 3_600) / 60));
+  if (days) return `${days}d ${hours}h`;
+  if (hours) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
 const statusLabels: Record<string, string> = {
   downloading: "Downloading",
   queued: "Queued",
@@ -80,6 +109,13 @@ const statusLabels: Record<string, string> = {
   error: "Error",
   unknown: "Status unknown",
 };
+
+const checkboxStyle = css({
+  width: "15px",
+  height: "15px",
+  m: 0,
+  display: "block",
+});
 
 const headCellStyle = css({
   px: "10px",
@@ -113,7 +149,8 @@ export function DownloadQueue({
   const id = useId();
   const [instanceFilter, setInstanceFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [removing, setRemoving] = useState<QueueItem | null>(null);
+  const [removing, setRemoving] = useState<QueueItem[] | null>(null);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [removeFromClient, setRemoveFromClient] = useState(true);
   const [blocklist, setBlocklist] = useState(false);
   const [actionError, setActionError] = useState<string>();
@@ -154,10 +191,56 @@ export function DownloadQueue({
   const selectedUnavailable = errors.some(
     (error) => error.instanceId === selectedInstance,
   );
+  const selectedItems = orderedItems.filter((item) =>
+    selected.has(queueKey(item)),
+  );
+  const retryable = selectedItems.filter((item) => retryAction(item));
+  const allSelected =
+    orderedItems.length > 0 && selectedItems.length === orderedItems.length;
+  const finishSeconds = Math.max(
+    0,
+    ...items
+      .filter((item) => item.status.toLowerCase() === "downloading")
+      .map((item) => timeLeftSeconds(item.timeleft) ?? 0),
+  );
+  const warningCount = items.filter(hasWarning).length;
+  function toggle(item: QueueItem) {
+    const key = queueKey(item);
+    const next = new Set(selected);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setSelected(next);
+  }
 
-  async function mutate(item: QueueItem, action: "remove" | "retry") {
-    if (actionLock.current || loading) return;
-    if (!data || !items.some((entry) => queueKey(entry) === queueKey(item))) {
+  async function request(item: QueueItem, action: "remove" | "retry") {
+    const result = await api<ActionResponse>("/api/queue", {
+      method: action === "remove" ? "DELETE" : "POST",
+      body: JSON.stringify({
+        instanceId: item.instanceId,
+        id: item.id,
+        ...(action === "remove" ? { removeFromClient, blocklist } : {}),
+      }),
+    });
+    if (!result.success) {
+      const details = result.errors
+        ?.map((error) => `${error.instanceName}: ${error.message}`)
+        .join(" ");
+      throw new Error(
+        [result.message, details].filter(Boolean).join(" ") ||
+          "The queue action was not accepted.",
+      );
+    }
+    return result;
+  }
+
+  async function mutate(targets: QueueItem[], action: "remove" | "retry") {
+    if (actionLock.current || loading || !targets.length) return;
+    if (
+      !data ||
+      targets.some(
+        (item) => !items.some((entry) => queueKey(entry) === queueKey(item)),
+      )
+    ) {
       setActionError(
         "The queue has changed. Close this dialog and refresh before trying again.",
       );
@@ -165,50 +248,231 @@ export function DownloadQueue({
     }
     setActionError(undefined);
     actionLock.current = true;
-    setBusy({ key: queueKey(item), action });
-    try {
-      const result = await api<ActionResponse>("/api/queue", {
-        method: action === "remove" ? "DELETE" : "POST",
-        body: JSON.stringify({
-          instanceId: item.instanceId,
-          id: item.id,
-          ...(action === "remove" ? { removeFromClient, blocklist } : {}),
-        }),
-      });
-      if (!result.success) {
-        const details = result.errors
-          ?.map((error) => `${error.instanceName}: ${error.message}`)
-          .join(" ");
-        throw new Error(
-          [result.message, details].filter(Boolean).join(" ") ||
-            "The queue action was not accepted.",
+    setBusy({
+      key: targets.length === 1 ? queueKey(targets[0]) : "bulk",
+      action,
+    });
+    const failures: string[] = [];
+    let lastMessage = "";
+    for (const item of targets) {
+      try {
+        lastMessage = (await request(item, action)).message;
+      } catch (cause) {
+        failures.push(
+          cause instanceof Error
+            ? targets.length > 1
+              ? `${item.mediaTitle}: ${cause.message}`
+              : cause.message
+            : "The queue action failed. Refresh before retrying.",
         );
       }
-      if (action === "remove") setRemoving(null);
-      notify(
-        result.message ||
-          (action === "remove"
-            ? "Queue removal accepted."
-            : "Queue action accepted. Refresh to check its progress."),
-      );
-    } catch (cause) {
-      const message =
-        cause instanceof Error
-          ? cause.message
-          : "The queue action failed. Refresh before retrying.";
+    }
+    if (failures.length) {
+      const message = failures.join(" ");
       setActionError(message);
       notify(message, true);
-    } finally {
-      actionLock.current = false;
-      setBusy(null);
+    } else {
+      if (action === "remove") setRemoving(null);
+      setSelected(new Set());
+      notify(
+        targets.length > 1
+          ? action === "remove"
+            ? `Removal accepted for ${targets.length} downloads.`
+            : `Requested ${targets.length} downloads. Refresh to check their progress.`
+          : lastMessage ||
+              (action === "remove"
+                ? "Queue removal accepted."
+                : "Queue action accepted. Refresh to check its progress."),
+      );
     }
+    actionLock.current = false;
+    setBusy(null);
+  }
+
+  function openRemove(targets: QueueItem[]) {
+    setRemoving(targets);
+    setRemoveFromClient(true);
+    setBlocklist(false);
+    setActionError(undefined);
   }
 
   return (
     <section className={css({ minWidth: 0 })} aria-labelledby={`${id}-heading`}>
-      <h1 id={`${id}-heading`} className={css({ srOnly: true })}>
-        Downloads
-      </h1>
+      <PageToolbar label="Queue actions">
+        <ToolbarButton
+          icon={ArrowClockwiseIcon}
+          label={loading ? "Refreshing..." : "Refresh"}
+          disabled={loading || !!busy}
+          onClick={() => onRefresh()}
+          iconClassName={
+            loading
+              ? css({
+                  animation: "spin 1s linear infinite",
+                  _motionReduce: { animation: "none" },
+                })
+              : undefined
+          }
+        />
+        {selectedItems.length > 0 && (
+          <>
+            <ToolbarDivider />
+            <span
+              className={css({
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                height: "26px",
+                pl: "10px",
+                pr: "3px",
+                mr: "4px",
+                flexShrink: 0,
+                borderRadius: "999px",
+                bg: "color-mix(in srgb, var(--accent) 16%, transparent)",
+                fontSize: "12px",
+                fontWeight: "600",
+              })}
+            >
+              {selectedItems.length} selected
+              <button
+                type="button"
+                aria-label="Clear selection"
+                onClick={() => setSelected(new Set())}
+                className={css({
+                  width: "20px",
+                  height: "20px",
+                  display: "grid",
+                  placeItems: "center",
+                  border: 0,
+                  borderRadius: "999px",
+                  bg: "transparent",
+                  color: "soft",
+                  _hover: { color: "ink" },
+                })}
+              >
+                <XIcon size={11} weight="bold" />
+              </button>
+            </span>
+            <ToolbarButton
+              icon={DownloadSimpleIcon}
+              label="Grab"
+              aria-label={`Grab or import ${retryable.length} selected`}
+              disabled={!retryable.length || !!busy || loading}
+              onClick={() => void mutate(retryable, "retry")}
+            />
+            <ToolbarButton
+              icon={TrashIcon}
+              label="Remove"
+              aria-label={`Remove ${selectedItems.length} selected`}
+              danger
+              disabled={!!busy || loading}
+              onClick={() => openRemove(selectedItems)}
+            />
+          </>
+        )}
+      </PageToolbar>
+      <PageHeader
+        id={`${id}-heading`}
+        title="Queue"
+        actions={
+          <>
+            <dl
+              className={css({
+                display: "flex",
+                gap: "24px",
+                mr: "8px",
+              })}
+            >
+              {[
+                {
+                  label: "Remaining size",
+                  value: data ? sizeLabel(remainingSize) : "--",
+                },
+                {
+                  label: "Finishes in",
+                  value:
+                    data && finishSeconds ? durationLabel(finishSeconds) : "--",
+                },
+              ].map(({ label, value }) => (
+                <div
+                  key={label}
+                  className={css({
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-end",
+                    gap: "2px",
+                  })}
+                >
+                  <dt
+                    className={css({
+                      fontSize: "11px",
+                      color: "subtle",
+                      textTransform: "uppercase",
+                      letterSpacing: ".05em",
+                    })}
+                  >
+                    {label}
+                  </dt>
+                  <dd
+                    className={css({
+                      fontFamily: "mono",
+                      fontSize: "15px",
+                    })}
+                  >
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <div
+              className={css({
+                width: { base: "100%", sm: "200px" },
+                minWidth: 0,
+                "& button > span": {
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                },
+              })}
+            >
+              <SelectField
+                label="Filter by instance"
+                value={selectedInstance}
+                onChange={setInstanceFilter}
+                options={[
+                  { value: "all", label: "All instances" },
+                  ...Array.from(instances, ([value, label]) => ({
+                    value,
+                    label,
+                  })),
+                ]}
+              />
+            </div>
+          </>
+        }
+      >
+        <SegmentedTabs
+          label="Filter downloads by status"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            {
+              value: "all",
+              label: "All",
+              count: data ? items.length : undefined,
+            },
+            {
+              value: "downloading",
+              label: "Downloading",
+              count: data ? activeCount : undefined,
+            },
+            {
+              value: "warning",
+              label: "Warnings",
+              count: data ? warningCount : undefined,
+            },
+          ]}
+        />
+      </PageHeader>
 
       <div
         className={css({
@@ -225,7 +489,7 @@ export function DownloadQueue({
                 {error.instanceName} is unavailable.
               </strong>{" "}
               {error.message} Its downloads may be missing from this queue and
-              the totals below.
+              the totals above.
             </div>
           </Notice>
         ))}
@@ -241,127 +505,6 @@ export function DownloadQueue({
             </span>
           </Notice>
         )}
-      </div>
-
-      <div
-        className={css({
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: "12px",
-          mb: "20px",
-          minHeight: "36px",
-        })}
-      >
-        <dl
-          className={css({
-            display: "flex",
-            flexWrap: "wrap",
-            columnGap: "24px",
-            rowGap: "8px",
-            fontSize: "12px",
-          })}
-        >
-          {[
-            {
-              label: "Active downloads",
-              value: data ? String(activeCount) : "--",
-            },
-            {
-              label: "Remaining size",
-              value: data ? sizeLabel(remainingSize) : "--",
-            },
-          ].map(({ label, value }) => (
-            <div
-              key={label}
-              className={css({
-                display: "flex",
-                alignItems: "baseline",
-                gap: "8px",
-              })}
-            >
-              <dt className={css({ color: "muted" })}>{label}</dt>
-              <dd
-                className={css({
-                  fontWeight: "550",
-                  fontVariantNumeric: "tabular-nums",
-                })}
-              >
-                {value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-        <Button disabled={loading || !!busy} onClick={() => onRefresh()}>
-          {loading ? <Spinner size={15} /> : <ArrowClockwiseIcon size={15} />}
-          {loading ? "Refreshing..." : "Refresh"}
-        </Button>
-      </div>
-
-      <div
-        className={css({
-          display: "flex",
-          flexWrap: "wrap",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: "12px",
-          mb: "14px",
-          minWidth: 0,
-        })}
-      >
-        <fieldset
-          aria-label="Filter downloads by status"
-          className={css({
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "4px",
-            minWidth: 0,
-            border: 0,
-            p: 0,
-            m: 0,
-          })}
-        >
-          {[
-            { value: "all", label: "All downloads" },
-            { value: "downloading", label: "Downloading" },
-            { value: "warning", label: "Warnings" },
-          ].map((filter) => (
-            <Button
-              key={filter.value}
-              size="sm"
-              variant={statusFilter === filter.value ? "secondary" : "ghost"}
-              aria-pressed={statusFilter === filter.value}
-              onClick={() => setStatusFilter(filter.value)}
-              className={css({
-                color: statusFilter === filter.value ? "ink" : "muted",
-              })}
-            >
-              {filter.label}
-            </Button>
-          ))}
-        </fieldset>
-        <div
-          className={css({
-            width: { base: "100%", sm: "210px" },
-            minWidth: 0,
-            "& button > span": {
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            },
-          })}
-        >
-          <SelectField
-            label="Filter by instance"
-            value={selectedInstance}
-            onChange={setInstanceFilter}
-            options={[
-              { value: "all", label: "All instances" },
-              ...Array.from(instances, ([value, label]) => ({ value, label })),
-            ]}
-          />
-        </div>
       </div>
 
       <div aria-busy={loading} className={css({ minWidth: 0 })}>
@@ -459,6 +602,29 @@ export function DownloadQueue({
                 <tr>
                   <th
                     scope="col"
+                    className={`${headCellStyle} ${css({ width: "36px", pr: 0 })}`}
+                  >
+                    <input
+                      type="checkbox"
+                      aria-label="Select all downloads"
+                      checked={allSelected}
+                      ref={(input) => {
+                        if (input)
+                          input.indeterminate =
+                            selectedItems.length > 0 && !allSelected;
+                      }}
+                      onChange={() =>
+                        setSelected(
+                          allSelected
+                            ? new Set()
+                            : new Set(orderedItems.map(queueKey)),
+                        )
+                      }
+                      className={checkboxStyle}
+                    />
+                  </th>
+                  <th
+                    scope="col"
                     className={`${headCellStyle} ${css({ width: "100%" })}`}
                   >
                     Download
@@ -507,13 +673,30 @@ export function DownloadQueue({
                       : status === "completed"
                         ? 100
                         : undefined;
-                  const canGrab =
-                    ["delay", "downloadclientunavailable"].includes(status) &&
-                    !item.downloadId;
-                  const canImport = status === "completed" && !!item.downloadId;
+                  const retry = retryAction(item);
+                  const canGrab = retry === "grab";
+                  const canImport = retry === "import";
+                  const isSelected = selected.has(key);
                   return (
                     <Fragment key={key}>
-                      <tr aria-label={`${item.mediaTitle} download`}>
+                      <tr
+                        aria-label={`${item.mediaTitle} download`}
+                        aria-selected={isSelected}
+                        className={css({
+                          "&[aria-selected=true] > td": {
+                            bg: "color-mix(in srgb, var(--accent) 8%, transparent)",
+                          },
+                        })}
+                      >
+                        <td className={`${cellStyle} ${css({ pr: 0 })}`}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${item.mediaTitle}`}
+                            checked={isSelected}
+                            onChange={() => toggle(item)}
+                            className={checkboxStyle}
+                          />
+                        </td>
                         <td className={`${cellStyle} ${css({ maxWidth: 0 })}`}>
                           <span
                             className={css({
@@ -710,7 +893,7 @@ export function DownloadQueue({
                                     ? "Bypass the release delay and request a download"
                                     : "Request an import scan; manual import may still be needed"
                                 }
-                                onClick={() => void mutate(item, "retry")}
+                                onClick={() => void mutate([item], "retry")}
                               >
                                 {busy?.key === key &&
                                 busy.action === "retry" ? (
@@ -728,12 +911,7 @@ export function DownloadQueue({
                               variant="ghost"
                               aria-label={`Remove ${item.mediaTitle} from queue`}
                               disabled={!!busy || loading}
-                              onClick={() => {
-                                setRemoving(item);
-                                setRemoveFromClient(true);
-                                setBlocklist(false);
-                                setActionError(undefined);
-                              }}
+                              onClick={() => openRemove([item])}
                             >
                               <TrashIcon size={16} />
                             </Button>
@@ -744,7 +922,7 @@ export function DownloadQueue({
                         (status === "completed" && !item.downloadId)) && (
                         <tr>
                           <td
-                            colSpan={7}
+                            colSpan={8}
                             className={css({
                               px: "10px",
                               pb: "8px",
@@ -852,44 +1030,72 @@ export function DownloadQueue({
             setActionError(undefined);
           }
         }}
-        title="Remove download?"
+        title={
+          removing && removing.length > 1
+            ? `Remove ${removing.length} downloads?`
+            : "Remove download?"
+        }
         description="Choose what happens in the instance and download client."
       >
         <div className={css({ display: "grid", gap: "18px", minWidth: 0 })}>
-          <div className={cx(panelStyle, css({ p: "13px", minWidth: 0 }))}>
-            <p
-              className={css({
-                fontSize: "13px",
-                fontWeight: "550",
-                overflowWrap: "anywhere",
-              })}
-            >
-              {removing?.mediaTitle}
-            </p>
-            <p
-              title={removing?.title}
-              className={css({
-                fontSize: "11px",
-                color: "subtle",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                mt: "4px",
-              })}
-            >
-              {removing?.title}
-            </p>
-            <p
-              className={css({
-                fontSize: "11px",
-                color: "muted",
-                mt: "6px",
-                overflowWrap: "anywhere",
-              })}
-            >
-              {removing?.instanceName}
-            </p>
-          </div>
+          <ul
+            className={cx(
+              panelStyle,
+              css({
+                listStyle: "none",
+                m: 0,
+                p: "4px 13px",
+                minWidth: 0,
+                maxHeight: "220px",
+                overflowY: "auto",
+              }),
+            )}
+          >
+            {removing?.map((item) => (
+              <li
+                key={queueKey(item)}
+                className={css({
+                  py: "9px",
+                  borderBottom: "1px solid token(colors.lineSoft)",
+                  _last: { borderBottom: 0 },
+                })}
+              >
+                <p
+                  className={css({
+                    fontSize: "13px",
+                    fontWeight: "550",
+                    overflowWrap: "anywhere",
+                  })}
+                >
+                  {item.mediaTitle}
+                </p>
+                <p
+                  title={item.title}
+                  className={css({
+                    fontSize: "11px",
+                    color: "subtle",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    mt: "4px",
+                  })}
+                >
+                  {item.title}
+                </p>
+                <p
+                  className={css({
+                    fontSize: "11px",
+                    color: "muted",
+                    mt: "4px",
+                    overflowWrap: "anywhere",
+                  })}
+                >
+                  {item.instanceName}
+                  {item.downloadClient ? ` · ${item.downloadClient}` : ""}
+                </p>
+              </li>
+            ))}
+          </ul>
           <fieldset
             disabled={!!busy}
             className={css({
@@ -980,7 +1186,11 @@ export function DownloadQueue({
               ) : (
                 <TrashIcon size={15} />
               )}
-              {busy?.action === "remove" ? "Removing..." : "Remove download"}
+              {busy?.action === "remove"
+                ? "Removing..."
+                : removing && removing.length > 1
+                  ? `Remove ${removing.length} downloads`
+                  : "Remove download"}
             </Button>
           </div>
         </div>
