@@ -1182,7 +1182,7 @@ export function MediaDetails({
   );
 }
 
-function ReleaseSearch({
+export function ReleaseSearch({
   media,
   target,
   targets,
@@ -1256,44 +1256,88 @@ function ReleaseSearch({
       title="Manual search"
       description={`Find a release for ${media.title}${searchScope ? ` · ${searchScope.code}` : ""}. Your instance's indexers and quality rules are used.`}
       wide
-    >
-      <div
-        className={css({
-          display: "flex",
-          alignItems: "center",
-          gap: "12px",
-          flexWrap: "wrap",
-          mb: "20px",
-        })}
-      >
-        <SelectField
-          disabled={Boolean(searchScope) || grabbing !== null}
-          value={target.instanceId}
-          onChange={(id) => {
-            const next = targets.find((item) => item.instanceId === id);
-            if (next) {
-              onTarget(next);
-              setConfirm(null);
-            }
-          }}
-          label="Search instance"
-          options={targets.map((item) => ({
-            value: item.instanceId,
-            label: item.instanceName,
-          }))}
-        />
-        <Button
-          onClick={() => releases.refetch()}
-          disabled={releases.isFetching}
+      controls={
+        <div
+          className={css({
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            flexWrap: "wrap",
+          })}
         >
-          {releases.isFetching ? (
-            <Spinner />
-          ) : (
-            <MagnifyingGlassIcon size={15} />
-          )}
-          Search again
-        </Button>
-      </div>
+          <SelectField
+            disabled={Boolean(searchScope) || grabbing !== null}
+            value={target.instanceId}
+            onChange={(id) => {
+              const next = targets.find((item) => item.instanceId === id);
+              if (next) {
+                onTarget(next);
+                setConfirm(null);
+              }
+            }}
+            label="Search instance"
+            options={targets.map((item) => ({
+              value: item.instanceId,
+              label: item.instanceName,
+            }))}
+          />
+          <Button
+            onClick={() => releases.refetch()}
+            disabled={releases.isFetching}
+          >
+            {releases.isFetching ? (
+              <Spinner />
+            ) : (
+              <MagnifyingGlassIcon size={15} />
+            )}
+            Search again
+          </Button>
+        </div>
+      }
+      footer={
+        confirm && (
+          <>
+            <Notice error={!confirm.approved}>
+              {confirm.approved
+                ? "Send this release to your download client?"
+                : "This release was rejected by your quality rules. Grabbing it will override those rules."}
+            </Notice>
+            <p
+              className={css({
+                fontSize: "11px",
+                overflowWrap: "anywhere",
+                color: "muted",
+                my: "12px",
+              })}
+            >
+              {confirm.title}
+            </p>
+            <div
+              className={css({
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "8px",
+              })}
+            >
+              <Button
+                disabled={grabbing !== null}
+                onClick={() => setConfirm(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                disabled={grabbing !== null}
+                onClick={() => grab(confirm)}
+              >
+                {grabbing ? <Spinner /> : <ArrowDownIcon size={14} />}Confirm
+                grab
+              </Button>
+            </div>
+          </>
+        )
+      }
+    >
       {releases.isPending ? (
         <div
           className={css({
@@ -1380,52 +1424,6 @@ function ReleaseSearch({
               </Button>
             </div>
           ))}
-        </div>
-      )}
-      {confirm && (
-        <div
-          className={css({
-            borderTop: "1px solid token(colors.line)",
-            mt: "20px",
-            pt: "16px",
-          })}
-        >
-          <Notice error={!confirm.approved}>
-            {confirm.approved
-              ? "Send this release to your download client?"
-              : "This release was rejected by your quality rules. Grabbing it will override those rules."}
-          </Notice>
-          <p
-            className={css({
-              fontSize: "11px",
-              overflowWrap: "anywhere",
-              color: "muted",
-              my: "12px",
-            })}
-          >
-            {confirm.title}
-          </p>
-          <div
-            className={css({
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: "8px",
-            })}
-          >
-            <Button
-              disabled={grabbing !== null}
-              onClick={() => setConfirm(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              disabled={grabbing !== null}
-              onClick={() => grab(confirm)}
-            >
-              {grabbing ? <Spinner /> : <ArrowDownIcon size={14} />}Confirm grab
-            </Button>
-          </div>
         </div>
       )}
     </Modal>

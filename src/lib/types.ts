@@ -34,6 +34,9 @@ export interface MediaTarget {
   sizeOnDisk: number;
   episodeCount?: number;
   episodeFileCount?: number;
+  /** Regular seasons (specials excluded) and how many of them are monitored. */
+  seasonCount?: number;
+  monitoredSeasonCount?: number;
 }
 
 export interface MediaMetadata {

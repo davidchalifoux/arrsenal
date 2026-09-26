@@ -47,6 +47,8 @@ export const sortOptions: { value: LibrarySort; label: string }[] = [
   { value: "year", label: "Release year" },
   { value: "rating", label: "Rating" },
   { value: "size", label: "Size on disk" },
+  { value: "episodes", label: "Missing episodes" },
+  { value: "monitored", label: "Monitored" },
 ];
 
 function SortMenu({

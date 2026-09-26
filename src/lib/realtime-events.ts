@@ -90,6 +90,8 @@ export const realtimeMediaSchema = z.object({
       sizeOnDisk: z.number(),
       episodeCount: z.number().optional(),
       episodeFileCount: z.number().optional(),
+      seasonCount: z.number().optional(),
+      monitoredSeasonCount: z.number().optional(),
     }),
   ),
 });

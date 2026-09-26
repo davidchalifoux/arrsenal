@@ -173,6 +173,9 @@ export function normalizeMedia(
   const episodeCount = num(statistics.episodeCount);
   const episodeFileCount = num(statistics.episodeFileCount);
   const hasFile = media.hasFile === true || num(file.id) > 0;
+  const seasons = Array.isArray(media.seasons)
+    ? media.seasons.map(row).filter((season) => num(season.seasonNumber) > 0)
+    : [];
   const size =
     kind === "movie"
       ? num(media.sizeOnDisk, num(file.size))
@@ -212,7 +215,16 @@ export function normalizeMedia(
             status,
             monitored: media.monitored === true,
             sizeOnDisk: Math.max(0, size),
-            ...(kind === "series" ? { episodeCount, episodeFileCount } : {}),
+            ...(kind === "series"
+              ? {
+                  episodeCount,
+                  episodeFileCount,
+                  seasonCount: seasons.length,
+                  monitoredSeasonCount: seasons.filter(
+                    (season) => season.monitored === true,
+                  ).length,
+                }
+              : {}),
           },
         ]
       : [];

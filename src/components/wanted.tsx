@@ -4,6 +4,7 @@ import {
   ArrowClockwiseIcon,
   CheckCircleIcon,
   CheckSquareIcon,
+  HandIcon,
   MagnifyingGlassIcon,
   XIcon,
 } from "@phosphor-icons/react";
@@ -14,6 +15,7 @@ import { api, mediaHref } from "@/lib/client";
 import { useLibrary } from "@/lib/client-data";
 import type { ActionResponse, MediaItem, MediaTarget } from "@/lib/types";
 import { useLibraryActions } from "./library-provider";
+import { ReleaseSearch } from "./media-details";
 import {
   Page,
   PageHeader,
@@ -24,6 +26,7 @@ import {
   ToolbarDivider,
 } from "./page-header";
 import { Button, Notice, panelStyle, Spinner } from "./ui";
+import { useRangeSelection } from "./use-range-selection";
 
 export type WantedRow = {
   key: string;
@@ -68,16 +71,17 @@ export function wantedRows(items: readonly MediaItem[]): WantedRow[] {
 type Scope = "all" | "movies" | "shows";
 
 const columns =
-  "20px minmax(0, 2.2fr) minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(0, 1fr) 72px 96px";
+  "20px minmax(0, 2.2fr) minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(0, 1fr) 72px 72px";
 
 const checkboxStyle = css({ width: "15px", height: "15px", m: 0 });
+const rowActionRaw = css.raw({ width: "30px", height: "30px" });
 
 export function Wanted() {
   const library = useLibrary();
   const { notify, refresh } = useLibraryActions();
   const [scope, setScope] = useState<Scope>("all");
-  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
+  const [manual, setManual] = useState<WantedRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const lock = useRef(false);
   const all = wantedRows(library.data?.items ?? []);
@@ -87,6 +91,9 @@ export function Wanted() {
       : scope === "shows"
         ? row.media.kind === "series"
         : true,
+  );
+  const { selected, setSelected, checkboxProps } = useRangeSelection(
+    rows.map((row) => row.key),
   );
   const selectedRows = rows.filter((row) => selected.has(row.key));
   const allSelected = rows.length > 0 && selectedRows.length === rows.length;
@@ -130,13 +137,6 @@ export function Wanted() {
     }
     lock.current = false;
     setBusy(null);
-  }
-
-  function toggle(key: string) {
-    const next = new Set(selected);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    setSelected(next);
   }
 
   return (
@@ -353,8 +353,7 @@ export function Wanted() {
                 <input
                   type="checkbox"
                   aria-label={`Select ${row.media.title} on ${row.target.instanceName}`}
-                  checked={selected.has(row.key)}
-                  onChange={() => toggle(row.key)}
+                  {...checkboxProps(row.key)}
                   className={checkboxStyle}
                 />
                 <span className={css({ minWidth: 0 })}>
@@ -432,27 +431,49 @@ export function Wanted() {
                   className={css({
                     display: "flex",
                     justifyContent: "flex-end",
+                    gap: "2px",
                   })}
                 >
                   <Button
-                    size="sm"
+                    size="icon"
                     variant="ghost"
+                    styles={rowActionRaw}
                     disabled={busy !== null}
+                    title="Automatic search"
                     aria-label={`Search ${row.target.instanceName} for ${row.media.title}`}
                     onClick={() => void search([row], row.key)}
                   >
                     {busy === row.key ? (
                       <Spinner size={14} />
                     ) : (
-                      <MagnifyingGlassIcon size={14} />
+                      <MagnifyingGlassIcon size={15} />
                     )}
-                    Search
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    styles={rowActionRaw}
+                    title="Manual search"
+                    aria-label={`Manual search ${row.target.instanceName} for ${row.media.title}`}
+                    onClick={() => setManual(row)}
+                  >
+                    <HandIcon size={15} />
                   </Button>
                 </span>
               </li>
             ))}
           </ul>
         </div>
+      )}
+      {manual && (
+        <ReleaseSearch
+          media={manual.media}
+          target={manual.target}
+          targets={[manual.target]}
+          onClose={() => setManual(null)}
+          onTarget={() => {}}
+          notify={notify}
+        />
       )}
     </Page>
   );
