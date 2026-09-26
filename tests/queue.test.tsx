@@ -107,9 +107,6 @@ describe("DownloadQueue", () => {
     expect(
       screen.getByRole("button", { name: /^Downloading/ }).textContent,
     ).toBe("Downloading1");
-    expect(
-      screen.getByText("Remaining size").parentElement?.textContent,
-    ).toContain("256.0 MB");
     fireEvent.click(screen.getByRole("button", { name: /^Downloading/ }));
     expect(screen.queryByRole("row", { name: "Silo download" })).toBeNull();
     expect(
@@ -574,5 +571,60 @@ describe("DownloadQueue", () => {
       instanceId: "sonarr-hd",
       id: 9,
     });
+  });
+
+  it("searches downloads by title, release, and client", () => {
+    render(
+      <DownloadQueue
+        data={queue([
+          download,
+          {
+            ...download,
+            id: 7,
+            mediaTitle: "Dune",
+            title: "Dune.2021.2160p.UHD",
+            downloadClient: "SABnzbd",
+          },
+        ])}
+        loading={false}
+        onRefresh={mock()}
+        notify={mock()}
+      />,
+    );
+    const search = screen.getByRole("searchbox", { name: "Search downloads" });
+    fireEvent.change(search, { target: { value: "2160p dune" } });
+    expect(screen.getByRole("row", { name: "Dune download" })).toBeTruthy();
+    expect(
+      screen.queryByRole("row", { name: "Severance download" }),
+    ).toBeNull();
+    fireEvent.change(search, { target: { value: "qbittorrent" } });
+    expect(
+      screen.getByRole("row", { name: "Severance download" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("row", { name: "Dune download" })).toBeNull();
+    fireEvent.change(search, { target: { value: "nothing here" } });
+    expect(screen.getByText("No matching downloads")).toBeTruthy();
+  });
+
+  it("selects a range with shift-click", () => {
+    const items = ["A", "B", "C"].map((mediaTitle, index) => ({
+      ...download,
+      id: index + 1,
+      mediaTitle,
+      timeleft: `00:0${index + 1}:00`,
+    }));
+    render(
+      <DownloadQueue
+        data={queue(items)}
+        loading={false}
+        onRefresh={mock()}
+        notify={mock()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select A" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select C" }), {
+      shiftKey: true,
+    });
+    expect(screen.getByText("3 selected")).toBeTruthy();
   });
 });

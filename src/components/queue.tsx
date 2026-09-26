@@ -5,6 +5,7 @@ import {
   ArrowDownIcon,
   CheckCircleIcon,
   DownloadSimpleIcon,
+  MagnifyingGlassIcon,
   PlayIcon,
   TrashIcon,
   WarningCircleIcon,
@@ -25,6 +26,7 @@ import {
 import {
   Button,
   CheckField,
+  inputRaw,
   Modal,
   mutedStyle,
   Notice,
@@ -32,9 +34,27 @@ import {
   SelectField,
   Spinner,
 } from "./ui";
+import { useRangeSelection } from "./use-range-selection";
 
 function queueKey(item: QueueItem) {
   return `${item.instanceId}:${item.id}`;
+}
+
+/** Every search term must appear in the title, release, client, or instance. */
+export function matchesQueueSearch(item: QueueItem, query: string) {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const haystack = [
+    item.mediaTitle,
+    item.title,
+    item.quality,
+    item.instanceName,
+    item.downloadClient ?? "",
+    statusLabels[item.status.toLowerCase()] ?? item.status,
+  ]
+    .join("\n")
+    .toLowerCase();
+  return terms.every((term) => haystack.includes(term));
 }
 
 function hasWarning(item: QueueItem) {
@@ -87,15 +107,6 @@ function retryAction(item: QueueItem) {
     return "grab" as const;
   if (status === "completed" && !!item.downloadId) return "import" as const;
   return null;
-}
-
-function durationLabel(seconds: number) {
-  const days = Math.floor(seconds / 86_400);
-  const hours = Math.floor((seconds % 86_400) / 3_600);
-  const minutes = Math.max(1, Math.round((seconds % 3_600) / 60));
-  if (days) return `${days}d ${hours}h`;
-  if (hours) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
 }
 
 const statusLabels: Record<string, string> = {
@@ -153,8 +164,8 @@ export function DownloadQueue({
   const id = useId();
   const [instanceFilter, setInstanceFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [query, setQuery] = useState("");
   const [removing, setRemoving] = useState<QueueItem[] | null>(null);
-  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [removeFromClient, setRemoveFromClient] = useState(true);
   const [blocklist, setBlocklist] = useState(false);
   const [actionError, setActionError] = useState<string>();
@@ -181,17 +192,16 @@ export function DownloadQueue({
       (statusFilter === "all" ||
         (statusFilter === "downloading" &&
           item.status.toLowerCase() === "downloading") ||
-        (statusFilter === "warning" && hasWarning(item))),
+        (statusFilter === "warning" && hasWarning(item))) &&
+      matchesQueueSearch(item, query),
   );
   const orderedItems = [...filteredItems].sort(compareQueueItems);
+  const { selected, setSelected, checkboxProps } = useRangeSelection(
+    orderedItems.map(queueKey),
+  );
   const activeCount = items.filter(
     (item) => item.status.toLowerCase() === "downloading",
   ).length;
-  const remainingSize = items.reduce(
-    (total, item) =>
-      total + (Number.isFinite(item.sizeleft) ? Math.max(0, item.sizeleft) : 0),
-    0,
-  );
   const selectedUnavailable = errors.some(
     (error) => error.instanceId === selectedInstance,
   );
@@ -201,20 +211,7 @@ export function DownloadQueue({
   const retryable = selectedItems.filter((item) => retryAction(item));
   const allSelected =
     orderedItems.length > 0 && selectedItems.length === orderedItems.length;
-  const finishSeconds = Math.max(
-    0,
-    ...items
-      .filter((item) => item.status.toLowerCase() === "downloading")
-      .map((item) => timeLeftSeconds(item.timeleft) ?? 0),
-  );
   const warningCount = items.filter(hasWarning).length;
-  function toggle(item: QueueItem) {
-    const key = queueKey(item);
-    const next = new Set(selected);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    setSelected(next);
-  }
 
   async function request(item: QueueItem, action: "remove" | "retry") {
     const result = await api<ActionResponse>("/api/queue", {
@@ -384,54 +381,45 @@ export function DownloadQueue({
         title="Queue"
         actions={
           <>
-            <dl
+            <label
               className={css({
-                display: "flex",
-                gap: "24px",
-                mr: "8px",
+                position: "relative",
+                display: "block",
+                width: { base: "100%", sm: "240px" },
+                minWidth: 0,
               })}
             >
-              {[
-                {
-                  label: "Remaining size",
-                  value: data ? sizeLabel(remainingSize) : "--",
-                },
-                {
-                  label: "Finishes in",
-                  value:
-                    data && finishSeconds ? durationLabel(finishSeconds) : "--",
-                },
-              ].map(({ label, value }) => (
-                <div
-                  key={label}
-                  className={css({
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "flex-end",
-                    gap: "2px",
-                  })}
-                >
-                  <dt
-                    className={css({
-                      fontSize: "11px",
-                      color: "subtle",
-                      textTransform: "uppercase",
-                      letterSpacing: ".05em",
-                    })}
-                  >
-                    {label}
-                  </dt>
-                  <dd
-                    className={css({
-                      fontFamily: "mono",
-                      fontSize: "15px",
-                    })}
-                  >
-                    {value}
-                  </dd>
-                </div>
-              ))}
-            </dl>
+              <span className={css({ srOnly: true })}>Search downloads</span>
+              <MagnifyingGlassIcon
+                size={15}
+                aria-hidden="true"
+                className={css({
+                  position: "absolute",
+                  left: "11px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: "subtle",
+                  pointerEvents: "none",
+                })}
+              />
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && query) {
+                    event.preventDefault();
+                    setQuery("");
+                  }
+                }}
+                placeholder="Search downloads"
+                className={css(inputRaw, {
+                  height: "36px",
+                  pl: "33px",
+                  fontSize: "13px",
+                })}
+              />
+            </label>
             <div
               className={css({
                 width: { base: "100%", sm: "200px" },
@@ -571,16 +559,21 @@ export function DownloadQueue({
               {selectedUnavailable || (!items.length && errors.length)
                 ? "Check the service errors above and refresh. This does not mean your downloads have stopped."
                 : items.length
-                  ? "Try a different instance or status filter."
+                  ? query.trim()
+                    ? `Nothing matches "${query.trim()}". Try a different search or filter.`
+                    : "Try a different instance or status filter."
                   : "Downloads will appear here when Sonarr or Radarr sends them to your download client."}
             </p>
-            {(selectedInstance !== "all" || statusFilter !== "all") && (
+            {(selectedInstance !== "all" ||
+              statusFilter !== "all" ||
+              query.trim() !== "") && (
               <Button
                 size="sm"
                 className={css({ mt: "16px" })}
                 onClick={() => {
                   setInstanceFilter("all");
                   setStatusFilter("all");
+                  setQuery("");
                 }}
               >
                 Clear filters
@@ -702,8 +695,7 @@ export function DownloadQueue({
                           <input
                             type="checkbox"
                             aria-label={`Select ${item.mediaTitle}`}
-                            checked={isSelected}
-                            onChange={() => toggle(item)}
+                            {...checkboxProps(key)}
                             className={checkboxStyle}
                           />
                         </td>
