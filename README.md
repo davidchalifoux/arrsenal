@@ -4,13 +4,13 @@
 
 Arrsenal brings your movies, shows, and download queues into one web interface, even when your HD and 4K libraries live on separate instances.
 
-![Arrsenal library showing movies and TV shows across demo Sonarr and Radarr instances](docs/images/library-demo.png)
+![Arrsenal library in poster view, with movies and shows from Sonarr and Radarr instances in one sidebar layout](docs/images/library-demo.png)
 
 *Poster artwork belongs to its respective owners.*
 
 ## What you can do
 
-- Browse one library with poster and list views, search, sorting, and filters.
+- Browse one library in a Sonarr/Radarr-style layout with poster and table views, search, sorting, and saved custom filters.
 - See each title's availability and quality across your Sonarr and Radarr instances.
 - Add movies and shows to multiple instances with a quality profile and root folder for each.
 - Search for releases, inspect rejection reasons, and manage a combined download queue.

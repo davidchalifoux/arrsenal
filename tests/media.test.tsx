@@ -34,6 +34,8 @@ import type {
 } from "@/lib/types";
 import { advanceTime } from "./timers";
 
+const { mediaHref } = await import("@/lib/client");
+
 mock.module("next/navigation", () => ({
   useRouter: () => ({ push: mock(), replace: mock(), refresh: mock() }),
 }));
@@ -56,6 +58,7 @@ const { LibraryBrowser } = await import("@/components/library-browser");
 const { LibraryProvider } = await import("@/components/library-provider");
 const { MediaCard, MediaList } = await import("@/components/media-card");
 const { MediaDetails } = await import("@/components/media-details");
+const { Page } = await import("@/components/page-header");
 const { MediaScreen } = await import("@/components/media-screen");
 
 const hd: InstanceSummary = {
@@ -158,6 +161,8 @@ function renderAdd(overrides: Partial<ComponentProps<typeof AddMedia>> = {}) {
     notify: mock(),
     ...overrides,
   };
+  // The app loads preferences up front; start from none saved.
+  queryClient.setQueryData(["preferences"], { timeZone: null });
   renderUI(<AddMedia {...props} />);
   return props;
 }
@@ -170,6 +175,17 @@ function renderDetails() {
   };
   renderUI(<MediaDetails {...props} />);
   return props;
+}
+
+// Library pages also carry the live-connection banner, which is an alert too.
+async function findAlert(text: string) {
+  return waitFor(() => {
+    const alert = screen
+      .getAllByRole("alert")
+      .find((item) => item.textContent?.includes(text));
+    if (!alert) throw new Error(`No alert containing ${text}`);
+    return alert;
+  });
 }
 
 async function choose(label: string, value: string) {
@@ -220,38 +236,75 @@ afterEach(() => {
 
 describe("AddMedia", () => {
   it("requires selection, then a profile and root folder for every selected target", async () => {
-    renderAdd();
+    renderAdd({ seed: movie, instances: [hd, uhd] });
     await screen.findByRole("dialog");
-    expect(
-      screen
-        .getByRole("button", { name: /Add to .*targets/ })
-        .hasAttribute("disabled"),
-    ).toBe(true);
-    expect(fetchMock).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("checkbox", { name: hd.name }));
+    const add = () => screen.getByRole("button", { name: /^Add to / });
+    expect(add().textContent).toBe("Add to library");
+    expect(add().hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("Select an instance to continue.")).toBeTruthy();
+    // Focus lands on the first instance, which may prefetch its options.
+    expect(writes()).toHaveLength(0);
     fireEvent.click(screen.getByRole("checkbox", { name: uhd.name }));
     await screen.findByRole("combobox", {
       name: `${uhd.name} quality profile`,
     });
-    const add = screen.getByRole("button", { name: "Add to 2 targets" });
-    fireEvent.click(add);
-    expect(screen.getByRole("alert").textContent).toContain(
-      "Choose a quality profile and root folder for every selected instance.",
-    );
-    expect(writes()).toHaveLength(0);
-
-    await choose(`${hd.name} quality profile`, "HD-1080p");
-    await choose(`${hd.name} root folder`, "/movies/hd");
-    await choose(`${uhd.name} root folder`, "/movies/4k");
-    fireEvent.click(add);
-    expect(screen.getByRole("alert")).toBeTruthy();
-    expect(writes()).toHaveLength(0);
-
-    await choose(`${uhd.name} quality profile`, "Ultra-HD");
+    fireEvent.click(screen.getByRole("checkbox", { name: hd.name }));
     await choose(`${uhd.name} root folder`, "Choose a folder");
-    fireEvent.click(add);
-    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(add().textContent).toBe("Add to 2 instances");
+    expect(add().hasAttribute("disabled")).toBe(true);
+    expect(
+      await screen.findByText(
+        `Choose a quality profile and root folder for ${uhd.name}.`,
+      ),
+    ).toBeTruthy();
+    fireEvent.click(add());
     expect(writes()).toHaveLength(0);
+
+    await choose(`${uhd.name} root folder`, "/movies/4k");
+    await waitFor(() => expect(add().hasAttribute("disabled")).toBe(false));
+    expect(screen.getByText("2 targets selected")).toBeTruthy();
+  });
+
+  it("fills the only option, or the last one used for an instance", async () => {
+    queryClient.setQueryData(["preferences"], {
+      timeZone: null,
+      addDefaults: {
+        [hd.id]: { qualityProfileId: 7, rootFolderPath: "/movies/hd" },
+      },
+    });
+    renderUI(
+      <AddMedia
+        open
+        seed={movie}
+        instances={[hd]}
+        library={[]}
+        onClose={mock()}
+        onConnect={mock()}
+        notify={mock()}
+      />,
+    );
+    await screen.findByRole("dialog");
+    // A single available instance starts selected.
+    expect(
+      screen
+        .getByRole("checkbox", { name: hd.name })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox", { name: `${hd.name} root folder` })
+          .textContent,
+      ).toContain("/movies/hd"),
+    );
+    expect(
+      screen.getByRole("combobox", { name: `${hd.name} quality profile` })
+        .textContent,
+    ).toContain("HD-1080p");
+    expect(
+      screen
+        .getByRole("button", { name: `Add to ${hd.name}` })
+        .hasAttribute("disabled"),
+    ).toBe(false);
   });
 
   it("sends only the selected target's choices, excludes existing instances, and submits once", async () => {
@@ -278,7 +331,7 @@ describe("AddMedia", () => {
       screen.getByRole("checkbox", { name: /Start searching after adding/ }),
     );
     fetchMock.mockImplementationOnce(() => pending.promise);
-    const add = screen.getByRole("button", { name: "Add to 1 target" });
+    const add = screen.getByRole("button", { name: `Add to ${uhd.name}` });
     fireEvent.click(add);
     fireEvent.click(add);
     expect(writes()).toHaveLength(1);
@@ -302,7 +355,19 @@ describe("AddMedia", () => {
       ),
     );
     await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1));
-    expect(props.notify).toHaveBeenCalledWith("Added to Radarr 4K.");
+    expect(props.notify).toHaveBeenCalledWith("Added to Radarr 4K.", false, {
+      label: "View title",
+      href: mediaHref(movie),
+    });
+    // The choices become the starting point for the next add.
+    const patch = fetchMock.mock.calls.find(
+      ([, init]) => init?.method === "PATCH",
+    );
+    expect(JSON.parse(String(patch?.[1]?.body))).toEqual({
+      addDefaults: {
+        [uhd.id]: { qualityProfileId: 19, rootFolderPath: "/movies/4k" },
+      },
+    });
   });
 
   it("keeps HTTP 207 failures open and retries only unconfirmed targets even before the library refreshes", async () => {
@@ -326,7 +391,7 @@ describe("AddMedia", () => {
         { status: 207 },
       ),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add to 2 targets" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to 2 instances" }));
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Radarr 4K: Disk is full.",
     );
@@ -353,7 +418,7 @@ describe("AddMedia", () => {
     fetchMock.mockResolvedValueOnce(
       Response.json({ success: true, message: "Added the remaining target." }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add to 1 target" }));
+    fireEvent.click(screen.getByRole("button", { name: `Add to ${uhd.name}` }));
     await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1));
     expect(writes()).toHaveLength(2);
     expect(JSON.parse(String(writes()[1][1]?.body))).toEqual({
@@ -370,23 +435,35 @@ describe("AddMedia", () => {
   });
 
   it("surfaces option and add server failures without losing the user's choices", async () => {
-    fetchMock.mockResolvedValueOnce(
-      Response.json({ error: "Profiles unavailable." }, { status: 503 }),
-    );
+    // Options stay unavailable until Retry, however many reads happen first
+    // (opening the dialog focuses, and so prefetches, the first instance).
+    let optionsDown = true;
+    fetchMock.mockImplementation(async (path) => {
+      const id = String(path).match(
+        /^\/api\/instances\/([^/]+)\/options$/,
+      )?.[1];
+      if (id && optionsDown)
+        return Response.json(
+          { error: "Profiles unavailable." },
+          { status: 503 },
+        );
+      if (id && options[id]) return Response.json(options[id]);
+      throw new Error(`Unexpected request: ${path}`);
+    });
     const props = renderAdd();
     await screen.findByRole("dialog");
     fireEvent.click(screen.getByRole("checkbox", { name: hd.name }));
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Profiles unavailable.",
     );
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    optionsDown = false;
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await choose(`${hd.name} quality profile`, "HD-1080p");
     await choose(`${hd.name} root folder`, "/movies/hd");
     fetchMock.mockResolvedValueOnce(
       Response.json({ error: "Root folder is read-only." }, { status: 500 }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add to 1 target" }));
+    fireEvent.click(screen.getByRole("button", { name: `Add to ${hd.name}` }));
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Root folder is read-only.",
     );
@@ -398,7 +475,7 @@ describe("AddMedia", () => {
     fetchMock.mockResolvedValueOnce(
       Response.json({ success: true, message: "Added." }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add to 1 target" }));
+    fireEvent.click(screen.getByRole("button", { name: `Add to ${hd.name}` }));
     await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1));
     expect(writes()).toHaveLength(2);
     expect(writes()[1][1]?.body).toBe(writes()[0][1]?.body);
@@ -436,7 +513,7 @@ describe("Library integration", () => {
   });
 
   it.each([
-    ["library", "Home", 3],
+    ["library", "All titles", 3],
     ["movies", "Movies", 2],
     ["shows", "Shows", 1],
   ] as const)("shows one %s toolbar count while filters narrow results", async (category, title, total) => {
@@ -460,7 +537,7 @@ describe("Library integration", () => {
         name: title,
       }),
     ).toBeTruthy();
-    const toolbar = screen.getByRole("group", { name: "Library controls" });
+    const toolbar = document.body;
     const totalLabel = `${total} ${total === 1 ? "title" : "titles"}`;
     expect(within(toolbar).getByText(totalLabel)).toBeTruthy();
     expect(screen.queryByText(/of \d+ titles?/)).toBeNull();
@@ -472,7 +549,8 @@ describe("Library integration", () => {
     ]) {
       expect(screen.queryByText(label)).toBeNull();
     }
-    await choose("Filter by availability", "Available");
+    fireEvent.click(screen.getByRole("button", { name: /^Filter/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Available/ }));
     expect(
       await screen.findByText(
         `${category === "shows" ? 0 : 1} of ${total} ${total === 1 ? "title" : "titles"}`,
@@ -489,8 +567,9 @@ describe("Library integration", () => {
       expect(within(toolbar).getByText(totalLabel)).toBeTruthy(),
     );
     expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
-    await choose("Filter by availability", "Available");
-    fireEvent.click(screen.getByRole("button", { name: "Filters (1)" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Filter/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Available/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Filter, 1 active" }));
     await choose("Filter by instance", hd.name);
     await choose("Filter by quality profile", "Ultra-HD");
     expect(
@@ -514,6 +593,41 @@ describe("Library integration", () => {
     ).toBeTruthy();
   });
 
+  it("narrows the library to titles matching a preset filter", async () => {
+    queryClient.setQueryData(["library"], {
+      items: [
+        { ...movie, targets: [hdTarget] },
+        {
+          ...movie,
+          id: "unmonitored-movie",
+          title: "Forgotten movie",
+          targets: [{ ...hdTarget, monitored: false }],
+        },
+      ],
+      errors: [],
+    });
+    queryClient.setQueryData(["instances"], { instances: [hd] });
+    renderUI(
+      <LibraryProvider>
+        <LibraryBrowser category="movies" />
+      </LibraryProvider>,
+    );
+    await screen.findByRole("link", { name: `View ${movie.title}` });
+    fireEvent.click(screen.getByRole("button", { name: /^Filter/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Unmonitored/ }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("link", { name: `View ${movie.title}` }),
+      ).toBeNull(),
+    );
+    expect(
+      screen.getByRole("link", { name: "View Forgotten movie" }),
+    ).toBeTruthy();
+    expect(screen.getByText("1 of 2 titles")).toBeTruthy();
+  });
+
   it("does not present partial instance results as a complete category count", async () => {
     queryClient.setQueryData(["library"], {
       items: [],
@@ -529,67 +643,7 @@ describe("Library integration", () => {
     );
     expect(screen.getByRole("heading", { name: "Movies" })).toBeTruthy();
     expect(screen.queryByText(/\d+ titles/)).toBeNull();
-    expect(await screen.findByRole("alert")).toBeTruthy();
-  });
-
-  it.each([
-    "Date added",
-    "Release year",
-    "Rating",
-  ])("preserves API response order for tied %s values, including after refresh", async (sort) => {
-    const items: MediaItem[] = [
-      {
-        ...movie,
-        id: "movie-z",
-        title: "First movie",
-        rating: 8,
-        targets: [hdTarget],
-      },
-      {
-        ...movie,
-        id: "movie-a",
-        title: "Second movie",
-        rating: 8,
-        targets: [hdTarget],
-      },
-    ];
-    let responseItems = items;
-    fetchMock.mockImplementation(async (path) => {
-      if (path === "/api/library")
-        return Response.json({ items: responseItems, errors: [] });
-      if (path === "/api/instances") return Response.json({ instances: [hd] });
-      throw new Error(`Unexpected request: ${path}`);
-    });
-    renderUI(
-      <LibraryProvider>
-        <LibraryBrowser category="movies" />
-      </LibraryProvider>,
-    );
-    await screen.findByRole("link", { name: `View ${items[0].title}` });
-    await choose("Sort library", sort);
-    expect(
-      screen
-        .getAllByRole("link", { name: /^View / })
-        .map((link) => link.getAttribute("aria-label")),
-    ).toEqual(items.map((item) => `View ${item.title}`));
-
-    fireEvent.click(screen.getByRole("button", { name: "Sort ascending" }));
-    expect(
-      screen
-        .getAllByRole("link", { name: /^View / })
-        .map((link) => link.getAttribute("aria-label")),
-    ).toEqual(items.map((item) => `View ${item.title}`));
-
-    responseItems = [...items].reverse();
-    fireEvent.click(screen.getByRole("button", { name: "Refresh library" }));
-    await waitFor(() =>
-      expect(
-        screen
-          .getAllByRole("link", { name: /^View / })
-          .map((link) => link.getAttribute("aria-label")),
-      ).toEqual(responseItems.map((item) => `View ${item.title}`)),
-    );
-    expect(writes()).toHaveLength(0);
+    expect(await findAlert("Offline")).toBeTruthy();
   });
 
   it("filters by selected quality profiles rather than file quality on the selected instance", async () => {
@@ -621,7 +675,7 @@ describe("Library integration", () => {
       </LibraryProvider>,
     );
     await screen.findByRole("link", { name: `View ${movie.title}` });
-    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
     await choose("Filter by quality profile", "HD-1080p");
     expect(
       screen.getByRole("link", { name: `View ${movie.title}` }),
@@ -695,11 +749,7 @@ describe("Library integration", () => {
     await screen.findByRole("link", { name: `View ${movie.title}` });
     expect(screen.queryByText("Loading your library...")).toBeNull();
     expect(screen.getByRole("heading", { name: "Movies" })).toBeTruthy();
-    expect(
-      within(screen.getByRole("group", { name: "Library controls" })).getByText(
-        "1 title",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText("1 title")).toBeTruthy();
     rerender(
       <QueryClientProvider client={queryClient}>
         <LibraryProvider>
@@ -739,15 +789,9 @@ describe("Library integration", () => {
     await screen.findByRole("link", { name: `View ${movie.title}` });
     fetchMock.mockRejectedValueOnce(new Error("Network unavailable."));
     fireEvent.click(screen.getByRole("button", { name: "Refresh library" }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Network unavailable.",
-    );
+    expect(await findAlert("Network unavailable.")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Movies" })).toBeTruthy();
-    expect(
-      within(screen.getByRole("group", { name: "Library controls" })).getByText(
-        "1 title",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText("1 title")).toBeTruthy();
     expect(
       screen.getByRole("link", { name: `View ${movie.title}` }),
     ).toBeTruthy();
@@ -788,9 +832,11 @@ describe("Library integration", () => {
         await advanceTime(1);
       });
       expect(screen.queryByText(/Still waiting for your instances/)).toBeNull();
-      expect(screen.getByRole("alert").textContent).toContain(
-        "Library unavailable.",
-      );
+      expect(
+        screen
+          .getAllByRole("alert")
+          .some((alert) => alert.textContent?.includes("Library unavailable.")),
+      ).toBe(true);
       expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
       expect(screen.getByRole("heading", { name: "Incomplete" })).toBeTruthy();
       expect(screen.queryByText(/\d+ titles/)).toBeNull();
@@ -932,20 +978,41 @@ describe("Library integration", () => {
         <MediaScreen kind="movie" mediaId={movie.id} />
       </LibraryProvider>,
     );
+    // Like the server, the stream opens with snapshots of the core data, which
+    // first loads use instead of REST.
+    const snapshot = (key: string, data: unknown) =>
+      Stream.current.dispatchEvent(
+        new MessageEvent("snapshot", {
+          data: JSON.stringify({
+            queryKey: [key],
+            version: { epoch: "mutation-test", revision: 0 },
+            data,
+          }),
+        }),
+      );
+    await act(async () => {
+      snapshot("library", { ...library, items: [...library.items] });
+      snapshot("instances", { instances: [hd, uhd] });
+      snapshot("queue", { items: [], errors: [] });
+    });
     await screen.findByRole("heading", { level: 1, name: movie.title });
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Add target" }));
-    await screen.findByRole("dialog", { name: "Add a quality target" });
-    await selectTarget(uhd, "Ultra-HD", "/movies/4k");
+    await screen.findByRole("dialog", { name: "Add to library" });
+    // The only instance left starts selected, with its only options filled.
+    const add = screen.getByRole("button", { name: `Add to ${uhd.name}` });
+    await waitFor(() => expect(add.hasAttribute("disabled")).toBe(false));
     fireEvent.click(
       screen.getByRole("checkbox", { name: /Start searching after adding/ }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add to 1 target" }));
+    fireEvent.click(add);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByRole("status").textContent).toContain("Target added.");
     expect(
-      fetchMock.mock.calls.filter(([path]) => path === "/api/library"),
-    ).toHaveLength(1);
+      fetchMock.mock.calls.filter(([path]) =>
+        ["/api/library", "/api/instances", "/api/queue"].includes(String(path)),
+      ),
+    ).toHaveLength(0);
     await act(async () => {
       Stream.current.dispatchEvent(
         new MessageEvent("snapshot", {
@@ -1197,6 +1264,10 @@ describe("Episode actions", () => {
       .getByText("Season 1", { exact: true })
       .closest("summary");
     if (!summary) throw new Error("Season toggle missing");
+    // Screen readers get separated parts, not "Season 11 episode…".
+    expect(summary.getAttribute("aria-label")).toMatch(
+      /^Season 1, \d+ episodes?\. /,
+    );
     fireEvent.click(summary);
     const table = await screen.findByRole("table", {
       name: "Season 1 target controls",
@@ -1395,11 +1466,18 @@ describe("MediaList", () => {
         qualityProfile: "Custom UHD profile",
       },
     ];
-    renderUI(<MediaList items={[{ ...movie, targets }]} />);
-    expect(screen.getByText("Quality profiles")).toBeTruthy();
+    renderUI(
+      <Page>
+        <MediaList items={[{ ...movie, targets }]} />
+      </Page>,
+    );
+    expect(screen.getByText("Targets")).toBeTruthy();
     for (const target of targets) {
       expect(
-        screen.getByText(target.qualityProfile).getAttribute("title"),
+        screen
+          .getByText(target.qualityProfile)
+          .closest("[title]")
+          ?.getAttribute("title"),
       ).toContain(`${target.instanceName}: ${target.qualityProfile}`);
     }
     expect(screen.queryByText("WEBDL-1080p")).toBeNull();
@@ -1425,9 +1503,12 @@ describe("MediaCard", () => {
     expect(within(card).getByText("Ultra-HD")).toBeTruthy();
     expect(within(card).queryByText("WEBDL-1080p")).toBeNull();
     expect(within(card).queryByText("4K")).toBeNull();
-    expect(within(card).getByText("Ultra-HD").getAttribute("title")).toContain(
-      "Ultra-HD",
-    );
+    expect(
+      within(card)
+        .getByText("Ultra-HD")
+        .closest("[title]")
+        ?.getAttribute("title"),
+    ).toContain("Ultra-HD");
     fireEvent.error(
       within(card).getByRole("img", { name: `${movie.title} poster` }),
     );

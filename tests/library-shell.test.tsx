@@ -21,6 +21,9 @@ const mocks = {
   add: mock(),
   searchLibrary: mock(),
   queue: { data: { items: [] as unknown[] } },
+  library: {
+    data: { items: [] as unknown[], errors: [] as unknown[] },
+  },
   realtime: {
     connection: "connecting",
     instances: [],
@@ -51,21 +54,23 @@ mock.module("next/link", () => ({
 }));
 mock.module("@/lib/client-data", () => ({
   useQueue: () => mocks.queue,
+  useLibrary: () => mocks.library,
   useInstances: () => mocks.instances,
   useSyncData: () => mocks.sync,
 }));
 mock.module("@/components/library-provider", () => ({
   useLibraryActions: () => mocks,
+  useOptionalLibraryActions: () => mocks,
 }));
 const { LibraryShell } = await import("@/components/library-shell");
+const { ConnectionBanner } = await import("@/components/connection-banner");
 
-const navigationNames = ["Main navigation", "Mobile navigation"];
-const destinations = [
-  ["Home", "/"],
-  ["Movies", "/movies"],
-  ["Shows", "/shows"],
-  ["Downloads", "/queue"],
+const sections = [
+  ["Library", "/"],
   ["Calendar", "/calendar"],
+  ["Activity", "/queue"],
+  ["Wanted", "/wanted"],
+  ["Settings", "/settings"],
 ];
 
 let client: QueryClient;
@@ -82,6 +87,7 @@ beforeEach(() => {
   mocks.sync.mockImplementation(async () => {});
   mocks.pathname = "/";
   mocks.queue = { data: { items: [] } };
+  mocks.library = { data: { items: [], errors: [] } };
   mocks.instances = {
     data: {
       instances: [
@@ -99,6 +105,7 @@ afterEach(() => {
 function renderShell() {
   return render(
     <LibraryShell>
+      <ConnectionBanner />
       <h1>Library content</h1>
     </LibraryShell>,
     { wrapper },
@@ -126,44 +133,96 @@ it("shows the active instance command in the header", () => {
     },
   };
   renderShell();
-  expect(screen.getByText("Processing release 2142/2773")).toBeTruthy();
+  expect(
+    screen.getByText("Shows server · Processing release 2142/2773"),
+  ).toBeTruthy();
   expect(
     screen.getByTitle("Shows server: Processing release 2142/2773"),
   ).toBeTruthy();
 });
 
-it("shows no task indicator when no command is active", () => {
+it("lists the Arr-style sections in the sidebar and mobile tab bar", () => {
+  mocks.pathname = "/calendar";
   renderShell();
-  expect(screen.queryByText(/Processing release/)).toBeNull();
+  const main = within(
+    screen.getByRole("navigation", { name: "Main navigation" }),
+  );
+  expect(
+    main
+      .getAllByRole("link")
+      .map((link) => [link.textContent, link.getAttribute("href")]),
+  ).toEqual(sections);
+  const mobile = within(
+    screen.getByRole("navigation", { name: "Mobile navigation" }),
+  );
+  expect(
+    mobile
+      .getAllByRole("link")
+      .map((link) => [link.textContent, link.getAttribute("href")]),
+  ).toEqual(sections);
 });
 
-it("places Settings after Calendar on desktop and keeps five mobile tabs", () => {
+it("expands only the active section's sub-navigation", () => {
+  mocks.pathname = "/movies/123";
+  const view = renderShell();
+  const main = () =>
+    within(screen.getByRole("navigation", { name: "Main navigation" }));
+  expect(
+    main().getByRole("link", { name: "Movies" }).getAttribute("aria-current"),
+  ).toBe("page");
+  expect(
+    main()
+      .getByRole("link", { name: "All titles" })
+      .getAttribute("aria-current"),
+  ).toBeNull();
+  expect(main().getByRole("button", { name: "Add new" })).toBeDefined();
+  expect(main().queryByRole("link", { name: "Connections" })).toBeNull();
+  fireEvent.click(main().getByRole("button", { name: "Add new" }));
+  expect(mocks.add).toHaveBeenCalledTimes(1);
+
+  mocks.pathname = "/settings";
+  view.rerender(<LibraryShell>Settings</LibraryShell>);
+  expect(main().queryByRole("link", { name: "Movies" })).toBeNull();
+  expect(
+    main()
+      .getByRole("link", { name: "Connections" })
+      .getAttribute("aria-current"),
+  ).toBe("page");
+  mocks.pathname = "/settings/security";
+  view.rerender(<LibraryShell>Settings</LibraryShell>);
+  expect(
+    main().getByRole("link", { name: "Security" }).getAttribute("aria-current"),
+  ).toBe("page");
+  expect(
+    main()
+      .getByRole("link", { name: "Connections" })
+      .getAttribute("aria-current"),
+  ).toBeNull();
+});
+
+it("links each instance to its connection settings with a health label", () => {
+  mocks.instances = {
+    data: {
+      instances: [
+        { id: "a", name: "Movies HD", kind: "radarr", connected: true },
+        { id: "b", name: "Shows 4K", kind: "sonarr", connected: false },
+      ],
+    },
+  };
   renderShell();
-  const header = screen.getByRole("banner");
-  const settings = within(header).getAllByRole("link", { name: "Settings" });
-  expect(settings).toHaveLength(2);
-  for (const link of settings)
-    expect(link.getAttribute("href")).toBe("/settings");
-  expect(screen.getAllByRole("navigation")).toHaveLength(2);
-  for (const name of navigationNames) {
-    const nav = screen.getByRole("navigation", { name });
-    expect(
-      within(nav)
-        .getAllByRole("link")
-        .map((link) => [link.textContent, link.getAttribute("href")]),
-    ).toEqual(
-      name === "Main navigation"
-        ? [...destinations, ["Settings", "/settings"]]
-        : destinations,
-    );
-  }
+  const list = within(
+    screen.getByRole("list", { name: "Instance connections" }),
+  );
+  const healthy = list.getByRole("link", { name: /Movies HD, connected/ });
+  const down = list.getByRole("link", { name: /Shows 4K, unreachable/ });
+  expect(healthy.getAttribute("href")).toBe("/settings/connections");
+  expect(down.getAttribute("href")).toBe("/settings/connections");
 });
 
 it("preserves the home link, skip link, and main content landmark", () => {
   renderShell();
-  expect(
-    screen.getByRole("link", { name: "Arrsenal home" }).getAttribute("href"),
-  ).toBe("/");
+  for (const link of screen.getAllByRole("link", { name: "Arrsenal home" }))
+    expect(link.getAttribute("href")).toBe("/");
   expect(
     screen.getByRole("link", { name: "Skip to content" }).getAttribute("href"),
   ).toBe(`#${screen.getByRole("main").id}`);
@@ -175,76 +234,63 @@ it("preserves the home link, skip link, and main content landmark", () => {
 });
 
 it.each([
-  ["/", "Home"],
-  ["/movies", "Movies"],
-  ["/movies/123", "Movies"],
-  ["/shows", "Shows"],
-  ["/shows/123/seasons/1", "Shows"],
-  ["/queue", "Downloads"],
-  ["/queue/123", "Downloads"],
+  ["/", "Library"],
+  ["/movies", "Library"],
+  ["/shows/123/seasons/1", "Library"],
+  ["/queue", "Activity"],
+  ["/queue/123", "Activity"],
   ["/calendar", "Calendar"],
   ["/calendar/upcoming", "Calendar"],
+  ["/wanted", "Wanted"],
   ["/settings", "Settings"],
-  ["/settings/connections", "Settings"],
   ["/settings/connections/123", "Settings"],
-  ["/settings/unknown", "Settings"],
   ["/movies-extra", null],
-  ["/shows-extra", null],
   ["/queue-extra", null],
   ["/calendar-extra", null],
   ["/settings-extra", null],
-  ["/missing", null],
   ["/unknown", null],
-])("marks only the matching parent route active on %s", (pathname, label) => {
+])("marks only the matching mobile tab active on %s", (pathname, label) => {
   mocks.pathname = pathname;
   renderShell();
-  for (const name of navigationNames) {
-    expect(
-      within(screen.getByRole("navigation", { name }))
-        .getAllByRole("link")
-        .filter((link) => link.getAttribute("aria-current") === "page")
-        .map((link) => link.textContent),
-    ).toEqual(
-      label && (label !== "Settings" || name === "Main navigation")
-        ? [label]
-        : [],
-    );
-  }
-  for (const link of screen.getAllByRole("link", { name: "Settings" })) {
-    expect(link.getAttribute("aria-current")).toBe(
-      label === "Settings" ? "page" : null,
-    );
-  }
+  expect(
+    within(screen.getByRole("navigation", { name: "Mobile navigation" }))
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("aria-current") === "page")
+      .map((link) => link.textContent),
+  ).toEqual(label ? [label] : []);
 });
 
-it("updates active links and queue badges in both navigation regions on rerender", () => {
+it("updates the download badge on rerender and never badges Wanted", () => {
   const view = renderShell();
-  for (const count of [0, 1, 2, 99, 100, 123, 0]) {
-    mocks.pathname = count ? "/queue" : "/";
+  for (const count of [0, 1, 99, 123, 0]) {
     mocks.queue.data.items = Array.from({ length: count }, () => ({}));
+    mocks.library.data.items = Array.from({ length: count }, (_, index) => ({
+      id: `title-${index}`,
+      kind: "movie",
+      status: index % 2 ? "partial" : "missing",
+      targets: [
+        {
+          instanceId: "a",
+          monitored: true,
+          status: index % 2 ? "partial" : "missing",
+        },
+      ],
+    }));
     view.rerender(<LibraryShell>Downloads content</LibraryShell>);
-    for (const name of navigationNames) {
-      const nav = within(screen.getByRole("navigation", { name }));
-      const downloads = nav.getByRole("link", {
-        name: count
-          ? new RegExp(`^${count} downloads\\s*Downloads$`)
-          : "Downloads",
-      });
-      expect(downloads.getAttribute("aria-current")).toBe(
-        count ? "page" : null,
-      );
+    const nav = within(
+      screen.getByRole("navigation", { name: "Main navigation" }),
+    );
+    const activity = nav.getByRole("link", { name: /Activity/ });
+    const wanted = nav.getByRole("link", { name: /Wanted/ });
+    if (count) {
+      const shown = count > 99 ? "99+" : String(count);
       expect(
-        nav.getByRole("link", { name: "Home" }).getAttribute("aria-current"),
-      ).toBe(count ? null : "page");
-      if (count) {
-        expect(
-          within(downloads).getByLabelText(`${count} downloads`).textContent,
-        ).toBe(count > 99 ? "99+" : String(count));
-      } else {
-        expect(within(downloads).queryByLabelText(/downloads/)).toBeNull();
-        expect(downloads.textContent).toBe("Downloads");
-      }
+        within(activity).getByLabelText(`${count} downloads`).textContent,
+      ).toBe(shown);
+    } else {
+      expect(activity.textContent).toBe("Activity");
     }
+    expect(wanted.textContent).toBe("Wanted");
   }
 });
 
@@ -262,6 +308,7 @@ it("keeps cached content visible and clears only recovered or removed instance w
   const update = () =>
     view.rerender(
       <LibraryShell>
+        <ConnectionBanner />
         <h1>Library content</h1>
       </LibraryShell>,
     );
@@ -273,7 +320,7 @@ it("keeps cached content visible and clears only recovered or removed instance w
   expect(warning.textContent).not.toContain("private-");
   expect(
     within(warning)
-      .getByRole("link", { name: "Check instances" })
+      .getByRole("link", { name: "Check connection" })
       .getAttribute("href"),
   ).toBe("/settings/connections");
   expect(screen.getByRole("heading", { name: "Library content" })).toBe(
@@ -350,6 +397,7 @@ it("reports failed refreshes without replacing cached content or dismissing the 
   });
   render(
     <LibraryShell>
+      <ConnectionBanner />
       <CachedData />
     </LibraryShell>,
     { wrapper },

@@ -177,4 +177,114 @@ describe("preferences config and API", () => {
     expect(response.status).toBe(500);
     expect(await Bun.file(path).text()).toBe("unchanged");
   });
+
+  it("merges theme and accent patches with the saved time zone", async () => {
+    await patch({ timeZone: "UTC" });
+    expect(await (await patch({ theme: "radarr" })).json()).toEqual({
+      timeZone: "UTC",
+      theme: "radarr",
+    });
+    expect(await (await patch({ accent: "#35C5F4" })).json()).toEqual({
+      timeZone: "UTC",
+      theme: "radarr",
+      accent: "#35c5f4",
+    });
+    expect(await (await patch({ accent: null })).json()).toEqual({
+      timeZone: "UTC",
+      theme: "radarr",
+      accent: null,
+    });
+    expect(await readPreferences()).toEqual({
+      timeZone: "UTC",
+      theme: "radarr",
+      accent: null,
+    });
+  });
+
+  it.each([
+    { theme: "neon" },
+    { accent: "violet" },
+    { accent: "#fff" },
+  ])("rejects invalid theme payload %j", async (body) => {
+    expect((await patch(body)).status).toBe(400);
+    expect(await readdir(directory)).toEqual([]);
+  });
+
+  it("stores library view options and saved filters", async () => {
+    const library = {
+      view: {
+        posterSize: "large",
+        chipLabel: "quality",
+        showTitle: true,
+        showYear: false,
+        showTargets: true,
+        showEpisodes: true,
+        showRating: false,
+        showSize: true,
+      },
+      filters: [
+        {
+          id: "filter-4k",
+          name: "4K",
+          match: "any",
+          rules: [{ field: "target", operator: "includes", values: ["uhd"] }],
+          groups: [],
+        },
+      ],
+      defaults: { layout: "list", sort: "size", sortDirection: "desc" },
+    };
+    expect(await (await patch({ library })).json()).toEqual({
+      timeZone: null,
+      library,
+    });
+    expect(
+      (
+        await patch({
+          library: {
+            ...library,
+            filters: [library.filters[0], library.filters[0]],
+          },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (await patch({ library: { view: { posterSize: "tiny" } } })).status,
+    ).toBe(400);
+    expect(JSON.parse(JSON.stringify(await readPreferences()))).toEqual({
+      timeZone: null,
+      library,
+    });
+  });
+
+  it("stores the last add choices per instance and rejects malformed ones", async () => {
+    const addDefaults = {
+      "radarr-hd": { qualityProfileId: 7, rootFolderPath: "/movies" },
+    };
+    expect(await (await patch({ addDefaults })).json()).toEqual({
+      timeZone: null,
+      addDefaults,
+    });
+    for (const invalid of [
+      { "radarr-hd": { qualityProfileId: 0, rootFolderPath: "/movies" } },
+      { "radarr-hd": { qualityProfileId: 7, rootFolderPath: "" } },
+      { "radarr-hd": { qualityProfileId: 7, rootFolderPath: "/m", extra: 1 } },
+    ])
+      expect((await patch({ addDefaults: invalid })).status).toBe(400);
+    expect(JSON.parse(JSON.stringify(await readPreferences()))).toEqual({
+      timeZone: null,
+      addDefaults,
+    });
+  });
+
+  it("maps earlier theme IDs to their renamed themes", async () => {
+    expect(await (await patch({ theme: "daylight" })).json()).toEqual({
+      timeZone: null,
+      theme: "light",
+    });
+    expect(await (await patch({ theme: "neutral" })).json()).toEqual({
+      timeZone: null,
+      theme: "dark",
+    });
+    expect((await patch({ theme: "sepia" })).status).toBe(400);
+  });
 });

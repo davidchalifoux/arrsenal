@@ -6,18 +6,15 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
   return (
     <div
       className={css({
-        display: "grid",
-        gridTemplateColumns: {
-          base: "minmax(0, 1fr)",
-          lg: "180px minmax(0, 1fr)",
-        },
-        gap: { base: "16px", lg: "32px" },
-        alignItems: "start",
+        flex: 1,
+        minHeight: 0,
         minWidth: 0,
+        display: "flex",
+        flexDirection: "column",
       })}
     >
       <SettingsNavigation />
-      <div className={css({ minWidth: 0 })}>{children}</div>
+      {children}
     </div>
   );
 }

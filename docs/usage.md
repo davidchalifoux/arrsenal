@@ -2,7 +2,10 @@
 
 [Back to README](../README.md)
 
-- Poster and list views, title search, sorting, and filters for instances, quality, and availability.
+- A Sonarr/Radarr-style layout: a sidebar for Library, Calendar, Activity, Wanted and Settings, a search bar with ⌘K, and an action bar on every page.
+- One search for everything: ⌘K shows recently added titles, then library matches as you type, followed by movies and shows you can add. **Add new** opens the same search for the catalog only. The add dialog starts from the last profile and root folder used for each instance (saved in the server configuration), or the only option when there is one.
+- Poster and table views with sorting, and a Filter menu with availability, presets, quick instance/quality filters and saved custom filters. Custom filters combine rules (type, status, target, quality, monitoring, year, rating, genre, size, episode progress, date added) matched all/any, with nested groups.
+- **Options** sets poster size, card details and chip labels. Custom filters, view options and library defaults are saved in the server configuration, so every browser shares them.
 - Unified titles with independent quality targets across HD and 4K instances.
 - Dedicated movie and show pages with bookmarkable URLs, metadata, and quality targets.
 - Expandable show seasons with compact per-instance availability summaries. Expand a season for a target table with availability, automatic search, manual search, and file deletion, followed by individual episode availability and searches.
@@ -10,7 +13,10 @@
 - Delete individual episode files or a season's downloaded files without removing the show. Confirmations identify the instance and warn about shared episode files and automatic redownloads.
 - Catalog lookup and multi-instance adding with a quality profile and root folder per target.
 - Automatic search and manual release search, including rejection reasons and confirmed release grabs.
-- Combined download queues with progress, removal/blocklisting, pending-release grabs, and import retries.
+- Combined download queues with progress, removal/blocklisting, pending-release grabs, and import retries, one at a time or for selected rows.
+- **Wanted** lists monitored targets that are missing files and searches them individually, by selection, or all at once.
+- A month calendar and agenda of episodes and releases; busy days open a list of every event.
+- Six themes (Dark, the default, and its inverse Light, plus Sonarr, Midnight, Radarr and Graphite) and a custom accent color in **Settings > Personalization**.
 - UI-managed connections, server-side API keys, and Zod-validated local configuration. No database.
 - Optional single-account authentication in **Settings > Security**, with local password recovery.
 - **Settings > About** shows the installed version and project links, and checks GitHub's latest stable release server-side. Results are cached for one hour; an unavailable check does not block Settings.

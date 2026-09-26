@@ -8,6 +8,10 @@ The file is created when the first instance is saved. Writes are serialized and 
 
 A corrupt or unreadable config produces an error rather than being silently replaced. A process killed during a write can leave `config.lock`; stop all Arrsenal processes before removing a stale lock. See [backend details](../src/lib/server/README.md) for the data contract, limits, and recovery instructions.
 
+## Live updates
+
+While a browser has Arrsenal open, the server keeps live connections to each Sonarr and Radarr instance. They stay open for 30 seconds after the last browser disconnects, so reloads and quick tab switches don't reconnect to every instance. Set `ARRSENAL_UPSTREAM_LINGER_MS` to change this period (`0` closes them immediately).
+
 ## Backups and external edits
 
 Stop Arrsenal before copying or editing `config.json`, preserve its ownership and private permissions, and restart afterward. Back up the persistent configuration volume before replacing a container or changing versions. Do not use `docker compose down -v` unless you intend to delete saved connections, preferences, and account configuration.

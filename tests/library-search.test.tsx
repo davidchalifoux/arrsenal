@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, expect, it, mock, spyOn } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import type { AddMedia } from "@/components/add-media";
@@ -43,6 +44,12 @@ const originalLayout = Object.fromEntries(
 );
 beforeEach(() => {
   mock.clearAllMocks();
+  // Catalog lookups find nothing unless a test seeds the lookup cache.
+  spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(async () => Response.json({ items: [], errors: [] }), {
+      preconnect: fetch.preconnect,
+    }),
+  );
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(["instances"], { instances: [] });
   // jsdom has no layout; supply viewport and row measurements, not a virtualizer mock.
@@ -82,6 +89,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   client.clear();
+  mock.restore();
   for (const key of layoutProperties) {
     const descriptor = originalLayout[key];
     if (descriptor)
@@ -90,7 +98,7 @@ afterEach(() => {
   }
 });
 
-function media(title: string): MediaItem {
+function media(title: string, added = ""): MediaItem {
   return {
     id: `movie:${title}`,
     kind: "movie",
@@ -99,7 +107,7 @@ function media(title: string): MediaItem {
     overview: "",
     poster: "",
     genres: [],
-    added: "",
+    added,
     status: "available",
     targets: [],
   };
@@ -110,11 +118,16 @@ const titles = Array.from({ length: 45 }, (_, index) =>
 );
 
 function SearchTrigger() {
-  const { searchLibrary } = useLibraryActions();
+  const { searchLibrary, add } = useLibraryActions();
   return (
-    <button type="button" onClick={searchLibrary}>
-      Open library search
-    </button>
+    <>
+      <button type="button" onClick={searchLibrary}>
+        Open library search
+      </button>
+      <button type="button" onClick={() => add()}>
+        Add new
+      </button>
+    </>
   );
 }
 
@@ -131,12 +144,38 @@ function renderSearch(items: MediaItem[] = titles) {
 
 function openSearch() {
   fireEvent.click(screen.getByRole("button", { name: "Open library search" }));
-  return screen.getByRole<HTMLInputElement>("textbox", {
+  return screen.getByRole<HTMLInputElement>("combobox", {
     name: "Search library titles",
   });
 }
 
-it("trims and ignores query case, ranking exact, prefix, then substring matches alphabetically", () => {
+const options = () =>
+  within(screen.getByRole("listbox"))
+    .queryAllByRole("option")
+    .map((option) => option.textContent ?? "");
+const activeOption = (input: HTMLElement) =>
+  document.getElementById(input.getAttribute("aria-activedescendant") ?? "");
+
+it("shows recently added titles before anything is typed", () => {
+  const items = [
+    media("Oldest", "2024-01-01T00:00:00Z"),
+    media("Newest", "2026-09-01T00:00:00Z"),
+    media("Middle", "2025-05-01T00:00:00Z"),
+  ];
+  renderSearch(items);
+  openSearch();
+  expect(screen.getByText("Recently added")).toBeTruthy();
+  expect(options().map((text) => text.split("2024")[0])).toEqual([
+    "Newest",
+    "Middle",
+    "Oldest",
+  ]);
+  expect(screen.getByRole("status").textContent).toBe(
+    "3 titles in your library",
+  );
+});
+
+it("ranks library matches, previews three, and expands to the rest", () => {
   const items = [
     "The Dune Story",
     "Dune: Part Two",
@@ -144,55 +183,81 @@ it("trims and ignores query case, ranking exact, prefix, then substring matches 
     "A Dune Story",
     "Dune",
     "Dune: Part One",
-  ].map(media);
+  ].map((title) => media(title));
   renderSearch(items);
   fireEvent.change(openSearch(), { target: { value: "  dUnE  " } });
-  expect(screen.getByRole("status").textContent).toBe("5 titles found");
-  expect(
-    screen.getAllByRole("link").map((link) => link.getAttribute("href")),
-  ).toEqual([items[4], items[5], items[1], items[3], items[0]].map(mediaHref));
-  fireEvent.change(screen.getByRole("textbox"), { target: { value: "   " } });
-  expect(screen.getAllByRole("link")).toHaveLength(6);
-  expect(screen.getByRole("status").textContent).toBe(
-    "6 titles in your library",
+  expect(screen.getByText("In your library")).toBeTruthy();
+  const links = () =>
+    within(screen.getByRole("listbox"))
+      .queryAllByRole("option")
+      .filter((option) => option.tagName === "A")
+      .map((option) => option.getAttribute("href"));
+  expect(links()).toEqual([items[4], items[5], items[1]].map(mediaHref));
+  fireEvent.click(
+    screen.getByRole("option", { name: "Show all 5 library matches" }),
   );
+  expect(links()).toEqual(
+    [items[4], items[5], items[1], items[3], items[0]].map(mediaHref),
+  );
+  expect(screen.getByRole("status").textContent).toContain("5 in your library");
 });
 
-it("scrolls to the final result without pagination and resets when searching", async () => {
+it("scrolls an expanded list to the final result and resets when searching", async () => {
   renderSearch();
   const input = openSearch();
-  const first = await screen.findByRole("link", { name: /^Title 01/ });
-  const scroller = first.parentElement?.parentElement as HTMLElement;
-  expect(screen.queryByRole("link", { name: /^Title 45/ })).toBeNull();
-  fireEvent.scroll(scroller, { target: { scrollTop: 45 * 72 - 288 } });
-  const last = await screen.findByRole("link", { name: /^Title 45/ });
+  fireEvent.change(input, { target: { value: "Title" } });
+  fireEvent.click(
+    screen.getByRole("option", { name: "Show all 45 library matches" }),
+  );
+  const scroller = screen.getByRole("listbox");
+  expect(screen.queryByRole("option", { name: /^Title 45/ })).toBeNull();
+  fireEvent.scroll(scroller, { target: { scrollTop: 48 * 72 - 288 } });
+  const last = await screen.findByRole("option", { name: /^Title 45/ });
   expect(last.getAttribute("href")).toBe(mediaHref(titles[44]));
   fireEvent.change(input, { target: { value: "Title 01" } });
-  await screen.findByRole("link", { name: /^Title 01/ });
+  await screen.findByRole("option", { name: /^Title 01/ });
   expect(scroller.scrollTop).toBe(0);
-  expect(screen.queryByRole("button", { name: /Show more/ })).toBeNull();
 });
 
-it("keeps keyboard focus when navigating beyond the rendered window", async () => {
-  renderSearch();
+it("moves the highlight with the arrow keys while focus stays in the input", async () => {
+  renderSearch([media("Beta"), media("Alpha")]);
   const input = openSearch();
   await waitFor(() => expect(document.activeElement).toBe(input));
-  for (let index = 0; index < titles.length; index++) {
-    fireEvent.keyDown(document.activeElement as HTMLElement, {
-      key: "ArrowDown",
-    });
+  fireEvent.change(input, { target: { value: "a" } });
+  expect(activeOption(input)?.textContent).toContain("Alpha");
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(activeOption(input)?.textContent).toContain("Beta");
+  expect(activeOption(input)?.getAttribute("aria-selected")).toBe("true");
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(activeOption(input)?.textContent).toContain("Beta");
+  fireEvent.keyDown(input, { key: "ArrowUp" });
+  fireEvent.keyDown(input, { key: "ArrowUp" });
+  expect(activeOption(input)?.textContent).toContain("Alpha");
+  expect(document.activeElement).toBe(input);
+  expect(push).not.toHaveBeenCalled();
+});
+
+it("keeps the highlighted result rendered when navigating a long list", async () => {
+  renderSearch();
+  const input = openSearch();
+  fireEvent.change(input, { target: { value: "Title" } });
+  fireEvent.click(
+    screen.getByRole("option", { name: "Show all 45 library matches" }),
+  );
+  for (let index = 1; index < titles.length; index++) {
+    fireEvent.keyDown(input, { key: "ArrowDown" });
     await waitFor(() =>
-      expect(document.activeElement?.textContent).toContain(
-        titles[index].title,
-      ),
+      expect(activeOption(input)?.textContent).toContain(titles[index].title),
     );
   }
-  fireEvent.click(document.activeElement as HTMLElement);
+  fireEvent.keyDown(input, { key: "Enter" });
   expect(push).toHaveBeenCalledWith(mediaHref(titles[44]));
 });
 
 it("matches acronyms, non-contiguous letters, and titles without typing accents", () => {
-  const items = ["Star Wars", "Stardust", "Am\u00e9lie", "Alien"].map(media);
+  const items = ["Star Wars", "Stardust", "Am\u00e9lie", "Alien"].map((title) =>
+    media(title),
+  );
   renderSearch(items);
   const input = openSearch();
   for (const [query, item] of [
@@ -202,30 +267,14 @@ it("matches acronyms, non-contiguous letters, and titles without typing accents"
   ] as const) {
     fireEvent.change(input, { target: { value: query } });
     expect(
-      screen.getAllByRole("link").map((link) => link.getAttribute("href")),
+      within(screen.getByRole("listbox"))
+        .queryAllByRole("option")
+        .map((option) => option.getAttribute("href")),
     ).toEqual([mediaHref(item)]);
   }
 });
 
-it("moves focus with ArrowDown and ArrowUp, returning to the input before the first result", async () => {
-  renderSearch([media("Beta"), media("Alpha")]);
-  const input = openSearch();
-  await waitFor(() => expect(document.activeElement).toBe(input));
-  const [first, second] = screen.getAllByRole("link");
-  fireEvent.keyDown(input, { key: "ArrowDown" });
-  expect(document.activeElement).toBe(first);
-  fireEvent.keyDown(first, { key: "ArrowDown" });
-  expect(document.activeElement).toBe(second);
-  fireEvent.keyDown(second, { key: "ArrowDown" });
-  expect(document.activeElement).toBe(second);
-  fireEvent.keyDown(second, { key: "ArrowUp" });
-  expect(document.activeElement).toBe(first);
-  fireEvent.keyDown(first, { key: "ArrowUp" });
-  expect(document.activeElement).toBe(input);
-  expect(push).not.toHaveBeenCalled();
-});
-
-it("navigates to the top ranked result on Enter and closes search, but not for an empty result", async () => {
+it("opens the highlighted result on Enter and closes search, but not for an empty result", async () => {
   const dune = media("Dune");
   renderSearch([media("Dune: Part Two"), dune]);
   const input = openSearch();
@@ -242,27 +291,6 @@ it("navigates to the top ranked result on Enter and closes search, but not for a
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
 
-it("switches sections without replacing the dialog or losing the query", () => {
-  renderSearch();
-  const input = openSearch();
-  const dialog = screen.getByRole("dialog");
-  fireEvent.change(input, { target: { value: "Dune" } });
-  fireEvent.click(screen.getByRole("button", { name: "Add media" }));
-  expect(screen.getByRole("dialog")).toBe(dialog);
-  expect(
-    screen.getByRole<HTMLInputElement>("textbox", {
-      name: "Search movies and shows",
-    }),
-  ).toBe(input);
-  expect(input.value).toBe("Dune");
-  fireEvent.click(screen.getByRole("button", { name: "Library" }));
-  expect(screen.getByRole("textbox", { name: "Search library titles" })).toBe(
-    input,
-  );
-  expect(input.value).toBe("Dune");
-  expect(push).not.toHaveBeenCalled();
-});
-
 // Opening and reopening the real dialog can exceed 5s in CI.
 it.each([
   "ctrlKey",
@@ -270,41 +298,76 @@ it.each([
 ] as const)("%s+K toggles search and reopens with a clean query and input focus", async (modifier) => {
   renderSearch();
   fireEvent.keyDown(window, { key: "k", [modifier]: true });
-  const input = screen.getByRole("textbox");
+  const input = screen.getByRole("combobox");
   fireEvent.change(input, { target: { value: "Title" } });
   fireEvent.keyDown(input, { key: "K", [modifier]: true });
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   fireEvent.keyDown(window, { key: "k", [modifier]: true });
-  const reopened = screen.getByRole<HTMLInputElement>("textbox");
+  const reopened = screen.getByRole<HTMLInputElement>("combobox");
   expect(reopened.value).toBe("");
-  expect(screen.getByRole("link", { name: /^Title 01/ })).toBeDefined();
+  expect(screen.getByText("Recently added")).toBeTruthy();
   expect(screen.getByRole("status").textContent).toBe(
     "45 titles in your library",
   );
   await waitFor(() => expect(document.activeElement).toBe(reopened));
 }, 15_000);
 
-it("hands a metadata-only catalog result to the add dialog and shows known membership without a library row", async () => {
-  const catalog: CatalogItem = {
-    id: "movie:tmdb:438631",
-    kind: "movie",
-    tmdbId: 438631,
-    title: "Dune",
-    year: 2021,
-    overview: "",
-    poster: "",
-    genres: [],
-    existingInstanceIds: ["radarr"],
-  };
+const catalogDune: CatalogItem = {
+  id: "movie:tmdb:438631",
+  kind: "movie",
+  tmdbId: 438631,
+  title: "Dune",
+  year: 2021,
+  overview: "",
+  poster: "",
+  genres: [],
+  existingInstanceIds: ["radarr"],
+};
+
+it("lists catalog titles below library matches and hands one to the add dialog", async () => {
   client.setQueryDefaults(["lookup"], { staleTime: 60000 });
-  client.setQueryData(["lookup", "Dune"], { items: [catalog], errors: [] });
-  renderSearch([]);
+  client.setQueryData(["lookup", "Dune"], {
+    items: [catalogDune, { ...catalogDune, id: "movie:Dune", title: "Dune" }],
+    errors: [],
+  });
+  renderSearch([media("Dune")]);
   fireEvent.change(openSearch(), { target: { value: "Dune" } });
-  fireEvent.click(screen.getByRole("button", { name: "Add media" }));
-  const result = await screen.findByRole("button", {
+  expect(await screen.findByText("Add to your library")).toBeTruthy();
+  // The title already in the library is listed once, as a library match.
+  const result = await screen.findByRole("option", {
     name: /Dune.*In library/,
   });
+  expect(
+    screen.getAllByRole("option").filter((option) => option.tagName === "A"),
+  ).toHaveLength(1);
   fireEvent.click(result);
   expect(await screen.findByText("Seed: Dune")).toBeTruthy();
   expect(push).not.toHaveBeenCalled();
+});
+
+it("opens in add mode from Add new, searching only the catalog", async () => {
+  client.setQueryDefaults(["lookup"], { staleTime: 60000 });
+  client.setQueryData(["lookup", "Dune"], {
+    items: [catalogDune],
+    errors: [],
+  });
+  renderSearch([media("Dune")]);
+  fireEvent.click(screen.getByRole("button", { name: "Add new" }));
+  const input = screen.getByRole("combobox", {
+    name: "Search movies and shows",
+  });
+  expect(
+    screen.getByText("Type at least 2 characters to search TMDB and TVDB."),
+  ).toBeTruthy();
+  fireEvent.change(input, { target: { value: "Dune" } });
+  const result = await screen.findByRole("option", {
+    name: /Dune.*In library/,
+  });
+  expect(screen.queryByText("In your library")).toBeNull();
+  await waitFor(() =>
+    expect(activeOption(input)?.textContent).toContain("Dune"),
+  );
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(await screen.findByText("Seed: Dune")).toBeTruthy();
+  expect(result).toBeTruthy();
 });

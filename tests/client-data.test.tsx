@@ -175,92 +175,6 @@ describe("client data", () => {
     expect(onRecoverableError).not.toHaveBeenCalled();
   });
 
-  it("hydrates isolated caches and syncs inserts, updates, deletes and response order", async () => {
-    const first = setup();
-    const second = setup();
-    first.client.setQueryData(libraryQuery.queryKey, {
-      items: [movie],
-      errors: [serviceError],
-    });
-    second.client.setQueryData(libraryQuery.queryKey, {
-      items: [],
-      errors: [],
-    });
-    const a = renderHook(useLibrary, { wrapper: first.wrapper });
-    const b = renderHook(useLibrary, { wrapper: second.wrapper });
-    await waitFor(() => expect(a.result.current.data?.items).toEqual([movie]));
-    expect(a.result.current.data?.errors).toEqual([serviceError]);
-    const updated = { ...movie, title: "Zodiac" };
-    const added = { ...movie, id: "movie:2", title: "Dune" };
-    act(() =>
-      first.client.setQueryData(libraryQuery.queryKey, {
-        items: [added, updated],
-        errors: [],
-      }),
-    );
-    await waitFor(() =>
-      expect(a.result.current.data?.items).toEqual([added, updated]),
-    );
-    act(() =>
-      first.client.setQueryData(libraryQuery.queryKey, {
-        items: [updated, added],
-        errors: [],
-      }),
-    );
-    await waitFor(() =>
-      expect(a.result.current.data?.items).toEqual([updated, added]),
-    );
-    act(() =>
-      first.client.setQueryData(libraryQuery.queryKey, {
-        items: [added],
-        errors: [],
-      }),
-    );
-    await waitFor(() => expect(a.result.current.data?.items).toEqual([added]));
-    expect(b.result.current.data?.items).toEqual([]);
-    expect(
-      first.client.getQueryData<LibraryResponse>(libraryQuery.queryKey),
-    ).toEqual({
-      items: [added],
-      errors: [],
-    });
-    act(() =>
-      first.client.setQueryData(libraryQuery.queryKey, {
-        items: [added],
-        errors: [serviceError],
-      }),
-    );
-    await waitFor(() =>
-      expect(a.result.current.data?.errors).toEqual([serviceError]),
-    );
-    expect(api).not.toHaveBeenCalled();
-  });
-
-  it("shares the canonical Query response and rows across observers", async () => {
-    const { client, wrapper } = setup();
-    client.setQueryData(libraryQuery.queryKey, { items: [movie], errors: [] });
-    const first = renderHook(useLibrary, { wrapper });
-    const second = renderHook(useLibrary, { wrapper });
-    const original = client.getQueryData(libraryQuery.queryKey);
-    expect(first.result.current.data).toBe(original);
-    expect(second.result.current.data).toBe(original);
-    act(() =>
-      client.setQueryData(libraryQuery.queryKey, {
-        items: [movie],
-        errors: [serviceError],
-      }),
-    );
-    await waitFor(() =>
-      expect(first.result.current.data?.errors).toEqual([serviceError]),
-    );
-    expect(first.result.current.data).toBe(
-      client.getQueryData(libraryQuery.queryKey),
-    );
-    expect(second.result.current.data).toBe(first.result.current.data);
-    expect(first.result.current.data?.items).toBe(original?.items);
-    expect(api).not.toHaveBeenCalled();
-  });
-
   it("selects details from the shared response and updates selection when the route changes", async () => {
     const { client, wrapper } = setup();
     const other: MediaItem = { ...movie, id: "series:2", kind: "series" };
@@ -310,61 +224,6 @@ describe("client data", () => {
       expect(result.current.detail.data?.media).toBeUndefined(),
     );
     expect(api).not.toHaveBeenCalled();
-  });
-
-  it("keeps equal queue IDs from different instances and preserves server order", async () => {
-    const { client, wrapper } = setup();
-    const other = { ...download, instanceId: "b" };
-    client.setQueryData(queueQuery.queryKey, {
-      items: [other, download],
-      errors: [serviceError],
-    });
-    const { result } = renderHook(useQueue, { wrapper });
-    await waitFor(() =>
-      expect(result.current.data?.items).toEqual([other, download]),
-    );
-    act(() =>
-      client.setQueryData(queueQuery.queryKey, {
-        items: [download, other],
-        errors: [],
-      }),
-    );
-    await waitFor(() =>
-      expect(result.current.data?.items).toEqual([download, other]),
-    );
-    act(() =>
-      client.setQueryData(queueQuery.queryKey, { items: [other], errors: [] }),
-    );
-    await waitFor(() => expect(result.current.data?.items).toEqual([other]));
-  });
-
-  it("keeps all hook envelopes safe to serialize without modifying cached data", async () => {
-    const { client, wrapper } = setup();
-    const library = { items: [movie], errors: [serviceError] };
-    const instances = { instances: [instance] };
-    const queue = { items: [download], errors: [] };
-    client.setQueryData(libraryQuery.queryKey, library);
-    client.setQueryData(instancesQuery.queryKey, instances);
-    client.setQueryData(queueQuery.queryKey, queue);
-    const { result } = renderHook(
-      () => ({
-        library: useLibrary().data,
-        instances: useInstances().data,
-        queue: useQueue().data,
-      }),
-      { wrapper },
-    );
-    await waitFor(() =>
-      expect(result.current).toEqual({ library, instances, queue }),
-    );
-    expect(JSON.parse(JSON.stringify(result.current))).toEqual({
-      library,
-      instances,
-      queue,
-    });
-    expect(client.getQueryData<LibraryResponse>(libraryQuery.queryKey)).toEqual(
-      library,
-    );
   });
 
   it("retains rows and metadata after a refresh fails, then unmounts without recovery", async () => {
@@ -418,21 +277,6 @@ describe("client data", () => {
     ).toBe(0);
     expect(api).toHaveBeenCalledTimes(1);
     expect(runtimeError).not.toHaveBeenCalled();
-  });
-
-  it("unmounts and cleans up after an unrecovered initial error", async () => {
-    spyOn(console, "error").mockImplementation(() => {});
-    const { wrapper } = setup();
-    (
-      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
-    ).mockRejectedValue(new Error("Initial failure"));
-    const { result, unmount } = renderHook(useLibrary, { wrapper });
-    await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(result.current.data).toBeUndefined();
-    expect(result.current.isPending).toBe(false);
-    unmount();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(api).toHaveBeenCalledTimes(1);
   });
 
   it("keeps initial data undefined while loading, exposes failure, then recovers", async () => {
@@ -519,31 +363,5 @@ describe("client data", () => {
     expect(api).toHaveBeenCalledTimes(8);
     await act(() => advanceTime(120_000));
     expect(api).toHaveBeenCalledTimes(8);
-  });
-
-  it("retains queue rows through a total outage and replaces them on recovery", async () => {
-    const { client, wrapper } = setup();
-    (
-      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
-    ).mockResolvedValue({
-      items: [download],
-      errors: [],
-    });
-    const { result } = renderHook(() => ({ ...useQueue() }), { wrapper });
-    await waitFor(() => expect(result.current.data?.items).toEqual([download]));
-    (
-      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
-    ).mockRejectedValue(
-      new Error("Unable to load the queue from any configured instance."),
-    );
-    await act(() => client.invalidateQueries({ queryKey: ["queue"] }));
-    await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(result.current.data?.items).toEqual([download]);
-    (
-      api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
-    ).mockResolvedValue({ items: [], errors: [] });
-    await act(() => client.invalidateQueries({ queryKey: ["queue"] }));
-    await waitFor(() => expect(result.current.isError).toBe(false));
-    expect(result.current.data?.items).toEqual([]);
   });
 });

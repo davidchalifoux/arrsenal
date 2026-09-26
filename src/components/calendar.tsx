@@ -1,7 +1,14 @@
 "use client";
 
-import { CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react";
-import { css } from "@styled-system/css";
+import {
+  ArrowClockwiseIcon,
+  CalendarDotIcon,
+  CaretLeftIcon,
+  CaretRightIcon,
+  ListBulletsIcon,
+  SquaresFourIcon,
+} from "@phosphor-icons/react";
+import { css, cx } from "@styled-system/css";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
@@ -9,7 +16,15 @@ import { mediaHref } from "@/lib/client";
 import { calendarQuery } from "@/lib/queries";
 import { useTimezonePreference } from "@/lib/timezone-preference";
 import type { CalendarEvent } from "@/lib/types";
-import { Button, mutedStyle } from "./ui";
+import {
+  Page,
+  PageHeader,
+  PageToolbar,
+  pageFooterStyle,
+  ToolbarButton,
+  ToolbarDivider,
+} from "./page-header";
+import { Button, Modal, mutedStyle } from "./ui";
 
 const labels = {
   episode: "Episode airs",
@@ -17,6 +32,13 @@ const labels = {
   digital: "Digital release",
   physical: "Physical release",
 };
+const typeColors: Record<CalendarEvent["type"], string> = {
+  episode: "var(--info)",
+  theatrical: "var(--accent)",
+  digital: "var(--positive)",
+  physical: "var(--warning)",
+};
+
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function monthQuery(first: Date) {
@@ -44,9 +66,11 @@ function localDate(date: Date, timeZone: string) {
 function Event({
   event,
   timeZone,
+  compact = false,
 }: {
   event: CalendarEvent;
   timeZone: string;
+  compact?: boolean;
 }) {
   const validIdentity =
     event.mediaId &&
@@ -54,23 +78,91 @@ function Event({
       ? /^movie:tmdb:[1-9]\d*$/
       : /^series:tvdb:[1-9]\d*$/
     ).test(event.mediaId);
+  const color = typeColors[event.type];
   return (
     <li
       className={css({
-        bg: "elevated",
-        borderLeft: "2px solid",
-        borderColor: event.type === "episode" ? "accent" : "muted",
-        borderRadius: "4px",
-        p: "8px",
-        fontSize: "11px",
+        position: "relative",
+        minWidth: 0,
+        borderRadius: "7px",
+        p: compact ? "4px 7px" : "10px 12px",
+        fontSize: compact ? "12px" : "13px",
         overflowWrap: "anywhere",
+        _hover: { filter: "brightness(1.15)" },
       })}
+      style={{
+        background: `color-mix(in srgb, ${color} ${compact ? 12 : 9}%, transparent)`,
+      }}
     >
-      <div className={css({ color: "muted", fontSize: "10px", mb: "4px" })}>
-        {labels[event.type]}
+      <div
+        className={css({
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          minWidth: 0,
+          fontWeight: "500",
+        })}
+      >
+        <span
+          aria-hidden="true"
+          className={css({
+            width: "6px",
+            height: "6px",
+            borderRadius: "999px",
+            flexShrink: 0,
+          })}
+          style={{ background: color }}
+        />
+        <span
+          className={css({
+            minWidth: 0,
+            overflow: compact ? "hidden" : undefined,
+            textOverflow: compact ? "ellipsis" : undefined,
+            whiteSpace: compact ? "nowrap" : undefined,
+          })}
+        >
+          {validIdentity && event.mediaId ? (
+            <Link
+              className={css({
+                color: "ink",
+                _after: { content: '""', position: "absolute", inset: 0 },
+              })}
+              href={mediaHref({
+                id: event.mediaId,
+                kind: event.kind,
+                title: event.title,
+              })}
+            >
+              {event.title}
+            </Link>
+          ) : (
+            <strong className={css({ fontWeight: "500" })}>
+              {event.title}
+            </strong>
+          )}
+          {event.type === "episode" && (
+            <span className={css({ color: "muted", fontWeight: "400" })}>
+              {" · "}S{String(event.seasonNumber).padStart(2, "0")}E
+              {String(event.episodeNumber).padStart(2, "0")}
+            </span>
+          )}
+        </span>
+      </div>
+      <div
+        className={css({
+          pl: "12px",
+          mt: "1px",
+          color: "muted",
+          fontSize: "11px",
+          overflow: compact ? "hidden" : undefined,
+          textOverflow: compact ? "ellipsis" : undefined,
+          whiteSpace: compact ? "nowrap" : undefined,
+        })}
+      >
+        {!(compact && event.airDateUtc) && <span>{labels[event.type]}</span>}
         {event.airDateUtc && (
           <>
-            {" / "}
+            {compact ? "" : " · "}
             <time dateTime={event.airDateUtc}>
               {new Intl.DateTimeFormat(undefined, {
                 timeZone,
@@ -82,33 +174,25 @@ function Event({
           </>
         )}
       </div>
-      {validIdentity && event.mediaId ? (
-        <Link
-          className={css({
-            fontWeight: "600",
-            _hover: { textDecoration: "underline" },
-          })}
-          href={mediaHref({
-            id: event.mediaId,
-            kind: event.kind,
-            title: event.title,
-          })}
-        >
-          {event.title}
-        </Link>
-      ) : (
-        <strong>{event.title}</strong>
+      {!compact && (
+        <>
+          {event.type === "episode" && event.episodeTitle && (
+            <p className={css({ pl: "12px", mt: "3px", color: "soft" })}>
+              {event.episodeTitle}
+            </p>
+          )}
+          <p
+            className={css({
+              pl: "12px",
+              mt: "3px",
+              color: "subtle",
+              fontSize: "11px",
+            })}
+          >
+            {event.sources.map((source) => source.instanceName).join(", ")}
+          </p>
+        </>
       )}
-      {event.type === "episode" && (
-        <p className={css({ color: "muted", mt: "4px" })}>
-          S{String(event.seasonNumber).padStart(2, "0")}E
-          {String(event.episodeNumber).padStart(2, "0")}
-          {event.episodeTitle && ` / ${event.episodeTitle}`}
-        </p>
-      )}
-      <p className={css({ color: "subtle", mt: "4px", fontSize: "10px" })}>
-        {event.sources.map((source) => source.instanceName).join(", ")}
-      </p>
     </li>
   );
 }
@@ -120,6 +204,8 @@ export function Calendar({ now }: { now: string }) {
   const timeZone = preference ?? "UTC";
   const today = localDate(new Date(now), timeZone);
   const [selectedMonth, setMonth] = useState<string | null>(null);
+  const [view, setView] = useState<"month" | "agenda">("month");
+  const [openDay, setOpenDay] = useState<string | null>(null);
   const month = selectedMonth ?? `${today.slice(0, 7)}-01`;
   const first = new Date(`${month}T00:00:00Z`);
   const next = new Date(first);
@@ -164,50 +250,104 @@ export function Calendar({ now }: { now: string }) {
     date.setUTCMonth(date.getUTCMonth() + offset);
     void client.prefetchQuery(monthQuery(date));
   }
+  const eventCount = items.length;
   return (
-    <section>
-      <div
-        className={css({
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "12px",
-          mb: "12px",
-        })}
-      >
-        <h1
-          aria-live="polite"
-          className={css({
-            fontSize: "20px",
-            fontWeight: "550",
-            letterSpacing: "-.4px",
-          })}
+    <Page
+      toolbar={
+        <PageToolbar
+          label="Calendar actions"
+          actions={
+            <>
+              <ToolbarButton
+                icon={SquaresFourIcon}
+                label="Month"
+                aria-pressed={view === "month"}
+                onClick={() => setView("month")}
+                styles={css.raw({
+                  display: { base: "none", md: "inline-flex" },
+                })}
+              />
+              <ToolbarButton
+                icon={ListBulletsIcon}
+                label="Agenda"
+                aria-pressed={view === "agenda"}
+                onClick={() => setView("agenda")}
+                styles={css.raw({
+                  display: { base: "none", md: "inline-flex" },
+                })}
+              />
+            </>
+          }
         >
-          {title}
-        </h1>
-        <div className={css({ display: "flex", gap: "8px" })}>
-          <Button
+          <ToolbarButton
+            icon={ArrowClockwiseIcon}
+            label="Refresh"
+            aria-label="Refresh calendar"
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          />
+          <ToolbarButton
+            icon={CalendarDotIcon}
+            label="Today"
+            aria-label="Today"
+            onClick={() => setMonth(`${today.slice(0, 7)}-01`)}
+          />
+          <ToolbarDivider />
+          <ToolbarButton
+            icon={CaretLeftIcon}
+            label="Previous"
             aria-label="Previous month"
             onClick={() => move(-1)}
             onMouseEnter={() => prefetchMonth(-1)}
             onFocus={() => prefetchMonth(-1)}
-          >
-            <CaretLeftIcon />
-          </Button>
-          <Button onClick={() => setMonth(`${today.slice(0, 7)}-01`)}>
-            Today
-          </Button>
-          <Button
+          />
+          <ToolbarButton
+            icon={CaretRightIcon}
+            label="Next"
             aria-label="Next month"
             onClick={() => move(1)}
             onMouseEnter={() => prefetchMonth(1)}
             onFocus={() => prefetchMonth(1)}
-          >
-            <CaretRightIcon />
-          </Button>
-        </div>
-      </div>
+          />
+        </PageToolbar>
+      }
+      footer={
+        <footer className={pageFooterStyle}>
+          {(Object.keys(labels) as CalendarEvent["type"][]).map((type) => (
+            <span
+              key={type}
+              className={css({
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+              })}
+            >
+              <span
+                aria-hidden="true"
+                className={css({
+                  width: "7px",
+                  height: "7px",
+                  borderRadius: "2px",
+                })}
+                style={{ background: typeColors[type] }}
+              />
+              {labels[type]}
+            </span>
+          ))}
+        </footer>
+      }
+    >
+      <PageHeader
+        title={<span aria-live="polite">{title}</span>}
+        actions={
+          <span className={css({ fontSize: "12px", color: "subtle" })}>
+            {query.data
+              ? `${eventCount} ${eventCount === 1 ? "event" : "events"} · `
+              : ""}
+            times in {timeZone}
+          </span>
+        }
+      />
       {preferenceError && (
         <p role="alert" className={css({ color: "negative", mb: "16px" })}>
           {preferenceError}
@@ -254,25 +394,36 @@ export function Calendar({ now }: { now: string }) {
         )}
       <section
         aria-label={`${title} month calendar`}
-        className={css({
-          display: { base: "none", md: "grid" },
-          gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-          gap: "1px",
-          bg: "line",
-          border: "1px solid token(colors.line)",
-          borderRadius: "8px",
-          overflow: "hidden",
-          mt: "16px",
-        })}
+        className={cx(
+          css({
+            gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+            bg: "surface",
+            border: "1px solid token(colors.line)",
+            borderRadius: "14px",
+            overflow: "hidden",
+          }),
+          // Whole classes per view: merging two conflicting display classes
+          // leaves the winner to stylesheet order.
+          view === "agenda"
+            ? css({ display: "none" })
+            : css({ display: { base: "none", md: "grid" } }),
+        )}
       >
         {weekdays.map((day) => (
           <div
             key={day}
             className={css({
-              bg: "surface",
-              p: "10px",
+              bg: "raised",
+              px: "12px",
+              height: "34px",
+              display: "flex",
+              alignItems: "center",
               fontSize: "11px",
-              color: "muted",
+              fontWeight: "600",
+              letterSpacing: ".05em",
+              textTransform: "uppercase",
+              color: "subtle",
+              borderBottom: "1px solid token(colors.line)",
             })}
           >
             {day}
@@ -282,67 +433,81 @@ export function Calendar({ now }: { now: string }) {
           const day = index - first.getUTCDay() + 1;
           const date = `${month.slice(0, 7)}-${String(day).padStart(2, "0")}`;
           const events = groups.get(date) ?? [];
+          const inMonth = day > 0 && day <= days;
           return (
             <div
               key={date}
               className={css({
-                bg: "canvas",
-                minHeight: "130px",
+                minHeight: "132px",
                 p: "8px",
                 minWidth: 0,
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+                borderRight: "1px solid token(colors.lineSoft)",
+                borderBottom: "1px solid token(colors.lineSoft)",
+                "&:nth-child(7n)": { borderRight: 0 },
               })}
+              style={
+                inMonth
+                  ? undefined
+                  : {
+                      background:
+                        "color-mix(in srgb, var(--canvas) 60%, transparent)",
+                    }
+              }
             >
-              {day > 0 && day <= days && (
+              {inMonth && (
                 <>
                   <time
                     dateTime={date}
                     aria-current={date === today ? "date" : undefined}
                     className={css({
-                      display: "inline-block",
-                      mb: "8px",
+                      alignSelf: "flex-start",
+                      minWidth: "24px",
+                      height: "24px",
+                      px: "6px",
+                      display: "grid",
+                      placeItems: "center",
+                      borderRadius: "999px",
                       fontSize: "12px",
-                      borderRadius: "4px",
-                      px: "5px",
+                      fontWeight: date === today ? "700" : "500",
                       bg: date === today ? "accent" : "transparent",
-                      color: date === today ? "canvas" : "muted",
+                      color: date === today ? "onAccent" : "soft",
                     })}
                   >
                     {day}
                   </time>
-                  <ul className={css({ display: "grid", gap: "6px" })}>
+                  <ul className={css({ display: "grid", gap: "4px" })}>
                     {events.slice(0, 2).map((event) => (
-                      <Event key={event.id} event={event} timeZone={timeZone} />
+                      <Event
+                        key={event.id}
+                        event={event}
+                        timeZone={timeZone}
+                        compact
+                      />
                     ))}
                   </ul>
                   {events.length > 2 && (
-                    <details className={css({ mt: "8px" })}>
-                      <summary
-                        className={css({
-                          color: "muted",
-                          fontSize: "11px",
-                          cursor: "pointer",
-                          py: "4px",
-                          _hover: { color: "ink" },
-                        })}
-                      >
-                        {events.length - 2} more events
-                      </summary>
-                      <ul
-                        className={css({
-                          display: "grid",
-                          gap: "6px",
-                          mt: "6px",
-                        })}
-                      >
-                        {events.slice(2).map((event) => (
-                          <Event
-                            key={event.id}
-                            event={event}
-                            timeZone={timeZone}
-                          />
-                        ))}
-                      </ul>
-                    </details>
+                    <button
+                      type="button"
+                      onClick={() => setOpenDay(date)}
+                      aria-label={`Show all ${events.length} events on ${new Date(date).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" })}`}
+                      className={css({
+                        alignSelf: "flex-start",
+                        px: "7px",
+                        py: "1px",
+                        border: 0,
+                        borderRadius: "5px",
+                        bg: "elevated",
+                        color: "soft",
+                        fontSize: "11px",
+                        fontWeight: "600",
+                        _hover: { color: "ink" },
+                      })}
+                    >
+                      +{events.length - 2} more
+                    </button>
                   )}
                 </>
               )}
@@ -352,19 +517,21 @@ export function Calendar({ now }: { now: string }) {
       </section>
       <section
         aria-label={`${title} agenda`}
-        className={css({
-          display: { base: "grid", md: "none" },
-          gap: "24px",
-          mt: "20px",
-        })}
+        className={cx(
+          css({ gap: "24px" }),
+          view === "agenda"
+            ? css({ display: "grid" })
+            : css({ display: { base: "grid", md: "none" } }),
+        )}
       >
         {[...groups].map(([date, events]) => (
           <section key={date}>
             <h3
               className={css({
                 fontSize: "13px",
+                fontWeight: "600",
                 mb: "10px",
-                color: "muted",
+                color: "soft",
               })}
             >
               <time dateTime={date}>
@@ -385,6 +552,31 @@ export function Calendar({ now }: { now: string }) {
           </section>
         ))}
       </section>
-    </section>
+      <Modal
+        open={openDay !== null}
+        onOpenChange={(open) => {
+          if (!open) setOpenDay(null);
+        }}
+        title={
+          openDay
+            ? new Date(openDay).toLocaleDateString("en-US", {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+                timeZone: "UTC",
+              })
+            : ""
+        }
+        description={
+          openDay ? `${groups.get(openDay)?.length ?? 0} events` : undefined
+        }
+      >
+        <ul className={css({ display: "grid", gap: "6px" })}>
+          {(openDay ? (groups.get(openDay) ?? []) : []).map((event) => (
+            <Event key={event.id} event={event} timeZone={timeZone} />
+          ))}
+        </ul>
+      </Modal>
+    </Page>
   );
 }

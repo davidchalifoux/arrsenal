@@ -1,8 +1,13 @@
 "use client";
 
 import { type Query, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { instancesQuery, libraryQuery, queueQuery } from "./queries";
+import {
+  beginBootstrap,
+  deliverBootstrap,
+  endBootstrap,
+} from "./realtime-bootstrap";
 import {
   type RealtimeEvent,
   type RealtimePatch,
@@ -44,6 +49,14 @@ export function useRealtime(): RealtimeConnection {
   const [connection, setConnection] =
     useState<RealtimeConnection["connection"]>("connecting");
   const [instances, setInstances] = useState<RealtimeStatus["instances"]>([]);
+
+  // Layout effects run before any query's mount fetch, so first loads know to
+  // wait for the stream's snapshots.
+  useLayoutEffect(() => {
+    if (typeof EventSource === "undefined") return;
+    beginBootstrap();
+    return endBootstrap;
+  }, []);
 
   useEffect(() => {
     if (typeof EventSource === "undefined") {
@@ -141,10 +154,24 @@ export function useRealtime(): RealtimeConnection {
       }
     }
 
+    // Every new stream opens with a reset hint. On the first connection it
+    // would only re-read data this page is loading or just loaded, so skip
+    // those; reconnects reset everything themselves in onOpen.
+    const startedAt = Date.now();
+    let firstReset = true;
+
     function invalidate(event: RealtimeEvent) {
       if (stopped) return;
+      const initial = event.reset === true && firstReset && !needsRecovery;
+      if (event.reset) firstReset = false;
       for (const query of cache.getAll()) {
         if (!matches(query, event)) continue;
+        if (
+          initial &&
+          (query.state.fetchStatus === "fetching" ||
+            query.state.dataUpdatedAt >= startedAt)
+        )
+          continue;
         dirty.add(query);
         query.invalidate();
       }
@@ -170,6 +197,7 @@ export function useRealtime(): RealtimeConnection {
 
     function onError() {
       if (stopped) return;
+      endBootstrap();
       delivery++;
       received.clear();
       setConnection("disconnected");
@@ -198,6 +226,20 @@ export function useRealtime(): RealtimeConnection {
       const key = JSON.stringify(snapshot.queryKey);
       if (!core[key]) return;
       const query = cache.find({ queryKey: snapshot.queryKey, exact: true });
+      if (
+        !isPatch &&
+        deliverBootstrap(
+          String(snapshot.queryKey[0]),
+          "data" in snapshot
+            ? { ...snapshot.data, _realtime: snapshot.version }
+            : undefined,
+          { keep: !query },
+        )
+      ) {
+        // A first-load query took this snapshot as its result.
+        if (query) dirty.delete(query);
+        return;
+      }
       if (!query) return;
       const version = snapshot.version;
       if (streamEpoch && streamEpoch !== version.epoch) return;

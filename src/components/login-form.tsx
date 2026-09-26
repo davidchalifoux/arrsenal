@@ -1,8 +1,8 @@
 "use client";
 
 import { css, cx } from "@styled-system/css";
-import Image from "next/image";
 import { useId, useState } from "react";
+import { Logo } from "./logo";
 import {
   Button,
   inputStyle,
@@ -67,14 +67,9 @@ export function LoginForm() {
           }),
         )}
       >
-        <Image
-          src="/logo.svg"
-          width={40}
-          height={40}
-          alt="Arrsenal"
-          loading="eager"
-          className={css({ mb: "20px" })}
-        />
+        <span role="img" aria-label="Arrsenal" className={css({ mb: "20px" })}>
+          <Logo size={40} />
+        </span>
         <h1
           id={`${id}-heading`}
           className={css({ fontSize: "24px", fontWeight: "600", mb: "8px" })}

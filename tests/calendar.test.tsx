@@ -93,7 +93,15 @@ it("renders month and date-grouped agenda with UTC episode times, distinct relea
     minute: "2-digit",
     timeZoneName: "short",
   }).format(new Date("2026-09-02T23:30:00Z"));
-  expect(screen.getAllByText(time)).toHaveLength(2);
+  // Four events share the day, so the grid shows two and the rest open in a dialog.
+  expect(screen.getAllByText(time)).toHaveLength(1);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Show all 4 events on September 2" }),
+  );
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText(time)).toBeTruthy();
+  expect(within(dialog).getByRole("link", { name: "Show" })).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close dialog" }));
   for (const label of [
     "Theatrical release",
     "Digital release",
@@ -172,7 +180,7 @@ it("retains events with partial errors and does not claim completeness", () => {
   expect(screen.getByRole("alert").textContent).toContain(
     "Offline Radarr: Timed out Calendar may be incomplete.",
   );
-  expect(screen.getAllByRole("link", { name: "Show" })).toHaveLength(2);
+  expect(screen.getAllByRole("link", { name: "Show" })).toHaveLength(1);
 });
 
 it.each([
@@ -329,18 +337,30 @@ it.each([
     "February 2024 agenda",
   ]) {
     const section = screen.getByLabelText(label);
-    expect(section.querySelectorAll("li")).toHaveLength(6);
+    const agenda = label.endsWith("agenda");
+    expect(section.querySelectorAll("li")).toHaveLength(agenda ? 6 : 4);
     expect(section.querySelectorAll("time[datetime*='T']")).toHaveLength(0);
     for (const date of ["2024-02-01", "2024-02-29"]) {
       const time = section.querySelector(`time[datetime='${date}']`);
-      const group = label.endsWith("agenda")
-        ? time?.closest("section")
-        : time?.parentElement;
-      for (const type of ["theatrical", "digital", "physical"]) {
-        expect(
-          within(group as HTMLElement).getByText(`${type} movie ${date}`),
-        ).toBeTruthy();
+      const group = agenda ? time?.closest("section") : time?.parentElement;
+      if (agenda) {
+        for (const type of ["theatrical", "digital", "physical"])
+          expect(
+            within(group as HTMLElement).getByText(`${type} movie ${date}`),
+          ).toBeTruthy();
+        continue;
       }
+      fireEvent.click(
+        within(group as HTMLElement).getByRole("button", {
+          name: /^Show all 3/,
+        }),
+      );
+      const dialog = screen.getByRole("dialog");
+      for (const type of ["theatrical", "digital", "physical"])
+        expect(within(dialog).getByText(`${type} movie ${date}`)).toBeTruthy();
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Close dialog" }),
+      );
     }
   }
   expect(screen.queryByText(/movie 2024-01-31/)).toBeNull();
@@ -431,7 +451,8 @@ it("keeps an empty desktop calendar through preference and query loading, then p
   useQuery.mockReturnValue({ data, isPending: false, isError: false });
   view.rerender(<Calendar now="2026-09-06T12:00:00Z" />);
   frame = screen.getByLabelText("September 2026 month calendar");
-  expect(frame.querySelectorAll("li")).toHaveLength(5);
+  // Two of the four September 2 events plus the September 3 event.
+  expect(frame.querySelectorAll("li")).toHaveLength(3);
 });
 
 it("shows a preference error without hiding the calendar or fallback-zone events", () => {
@@ -439,14 +460,22 @@ it("shows a preference error without hiding the calendar or fallback-zone events
   render(<Calendar now="2026-09-06T12:00:00Z" />);
   expect(screen.getByRole("alert").textContent).toBe(preference.error);
   expect(screen.getByLabelText("September 2026 month calendar")).toBeTruthy();
-  expect(screen.getAllByText("Show")).toHaveLength(2);
+  expect(screen.getAllByText("Show")).toHaveLength(1);
   const time = new Intl.DateTimeFormat(undefined, {
     timeZone: "UTC",
     hour: "numeric",
     minute: "2-digit",
     timeZoneName: "short",
   }).format(new Date("2026-09-02T23:30:00Z"));
-  expect(screen.getAllByText(time)).toHaveLength(2);
+  // Four events share the day, so the grid shows two and the rest open in a dialog.
+  expect(screen.getAllByText(time)).toHaveLength(1);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Show all 4 events on September 2" }),
+  );
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText(time)).toBeTruthy();
+  expect(within(dialog).getByRole("link", { name: "Show" })).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close dialog" }));
 });
 
 it.each([

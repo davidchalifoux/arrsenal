@@ -4,7 +4,7 @@ import { css } from "@styled-system/css";
 import { useRouter } from "next/navigation";
 import { useInstances, useSyncData } from "@/lib/client-data";
 import { useLibraryActions } from "./library-provider";
-import { PageHeader } from "./page-header";
+import { Page, PageHeader } from "./page-header";
 import { Settings } from "./settings";
 import { Notice, Spinner } from "./ui";
 
@@ -15,7 +15,7 @@ export function SettingsScreen({ autoOpen = false }: { autoOpen?: boolean }) {
   const router = useRouter();
   if (instances.isPending)
     return (
-      <section>
+      <Page>
         <PageHeader title="Connections" />
         <div
           className={css({
@@ -28,26 +28,26 @@ export function SettingsScreen({ autoOpen = false }: { autoOpen?: boolean }) {
           <Spinner />
           Loading connections...
         </div>
-      </section>
+      </Page>
     );
   return (
-    <>
-      {instances.isError && (
-        <div className={css({ mb: "16px" })}>
-          <Notice error>{instances.error.message}</Notice>
-        </div>
-      )}
-      <Settings
-        instances={instances.data?.instances ?? []}
-        onRefresh={() => {
-          void sync("all");
-        }}
-        notify={notify}
-        autoOpen={autoOpen}
-        onAutoOpened={() =>
-          router.replace("/settings/connections", { scroll: false })
-        }
-      />
-    </>
+    <Settings
+      notice={
+        instances.isError && (
+          <div className={css({ mb: "16px" })}>
+            <Notice error>{instances.error.message}</Notice>
+          </div>
+        )
+      }
+      instances={instances.data?.instances ?? []}
+      onRefresh={() => {
+        void sync("all");
+      }}
+      notify={notify}
+      autoOpen={autoOpen}
+      onAutoOpened={() =>
+        router.replace("/settings/connections", { scroll: false })
+      }
+    />
   );
 }

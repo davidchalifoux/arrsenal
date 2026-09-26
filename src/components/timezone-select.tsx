@@ -165,7 +165,7 @@ export function TimezoneSelect({
               overflow: "hidden",
               bg: "surface",
               color: "ink",
-              border: "1px solid #414141",
+              border: "1px solid token(colors.lineStrong)",
               borderRadius: "10px",
               boxShadow: "0 16px 48px #0008",
               outline: "none",

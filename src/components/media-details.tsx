@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowClockwiseIcon,
   ArrowDownIcon,
   ArrowLeftIcon,
   ArrowSquareOutIcon,
@@ -16,9 +17,9 @@ import {
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { api, sizeLabel } from "@/lib/client";
 import type {
   ActionResponse,
@@ -27,7 +28,13 @@ import type {
   Release,
 } from "@/lib/types";
 import { Poster } from "./media-card";
-import { PageToolbar } from "./page-header";
+import {
+  Page,
+  PageToolbar,
+  ToolbarButton,
+  ToolbarDivider,
+  ToolbarLink,
+} from "./page-header";
 import { SeriesEpisodes } from "./series-episodes";
 import {
   Button,
@@ -39,7 +46,7 @@ import {
   Spinner,
 } from "./ui";
 
-const targetGridStyle = css({
+const targetGridRaw = css.raw({
   display: "grid",
   alignItems: "center",
   columnGap: "14px",
@@ -69,7 +76,26 @@ const movieTargetGridStyle = css({
     lg: '"instance profile status disk actions"',
   },
 });
-const targetActionStyle = css({
+const heroBadgeStyle = css({
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "6px",
+  height: "22px",
+  px: "8px",
+  borderRadius: "6px",
+  bg: "color-mix(in srgb, var(--ink) 9%, transparent)",
+  color: "ink",
+  fontSize: "11px",
+  fontWeight: "600",
+});
+
+function runtimeLabel(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return hours ? `${hours}h ${rest}m` : `${rest}m`;
+}
+
+const targetActionRaw = css.raw({
   px: { base: "0", md: "10px" },
   width: { base: "34px", md: "auto" },
   height: { base: "34px", md: "30px" },
@@ -78,11 +104,16 @@ const targetActionStyle = css({
 export function MediaDetails({
   media,
   onAddTarget,
+  onRefresh,
   notify,
+  notice,
 }: {
   media: MediaItem;
   onAddTarget: (item: MediaItem) => void;
+  onRefresh?: () => void;
   notify: (message: string, error?: boolean) => void;
+  /** Page-level notices, shown under the title header. */
+  notice?: ReactNode;
 }) {
   const router = useRouter();
   const [removeTarget, setRemoveTarget] = useState<MediaTarget | null>(null);
@@ -121,6 +152,37 @@ export function MediaDetails({
       searchLock.current = false;
       setBusy(null);
     }
+  }
+  async function searchAll() {
+    if (searchLock.current) return;
+    searchLock.current = true;
+    setBusy("all");
+    setError("");
+    const failures: string[] = [];
+    for (const target of media.targets) {
+      try {
+        const result = await api<ActionResponse>("/api/search", {
+          method: "POST",
+          body: JSON.stringify({
+            instanceId: target.instanceId,
+            remoteId: target.remoteId,
+            kind: media.kind,
+          }),
+        });
+        if (!result.success) throw new Error(result.message);
+      } catch (cause) {
+        failures.push(
+          `${target.instanceName}: ${cause instanceof Error ? cause.message : "Search failed."}`,
+        );
+      }
+    }
+    if (failures.length) setError(failures.join(" "));
+    else
+      notify(
+        `Searching ${media.targets.length} ${media.targets.length === 1 ? "target" : "targets"} for ${media.title}.`,
+      );
+    searchLock.current = false;
+    setBusy(null);
   }
   async function remove() {
     if (!removeTarget || removeLock.current) return;
@@ -166,13 +228,17 @@ export function MediaDetails({
     setRemoving(false);
   }
   return (
-    <>
-      <article className={css({ minWidth: 0, width: "100%" })}>
+    <Page
+      toolbar={
         <PageToolbar
+          label={`${media.kind === "movie" ? "Movie" : "Show"} actions`}
           actions={
             media.targets.length > 0 && (
-              <Button
-                variant="danger"
+              <ToolbarButton
+                icon={TrashIcon}
+                label="Remove"
+                aria-label={`Remove ${media.kind === "movie" ? "movie" : "show"}`}
+                danger
                 disabled={removing}
                 onClick={() => {
                   if (removeLock.current) return;
@@ -180,171 +246,249 @@ export function MediaDetails({
                   setDeleteFiles(false);
                   setRemoveError("");
                 }}
-              >
-                <TrashIcon size={15} />
-                Remove {media.kind === "movie" ? "movie" : "show"}
-              </Button>
+              />
             )
           }
         >
-          <Link
+          <ToolbarLink
+            icon={ArrowLeftIcon}
+            label={media.kind === "movie" ? "Movies" : "Shows"}
+            aria-label={`Back to ${media.kind === "movie" ? "Movies" : "Shows"}`}
             href={media.kind === "movie" ? "/movies" : "/shows"}
-            className={css({
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "8px",
-              color: "muted",
-              fontSize: "12px",
-              _hover: { color: "ink" },
-            })}
-          >
-            <ArrowLeftIcon size={15} /> Back to{" "}
-            {media.kind === "movie" ? "Movies" : "Shows"}
-          </Link>
+          />
+          <ToolbarDivider />
+          {onRefresh && (
+            <ToolbarButton
+              icon={ArrowClockwiseIcon}
+              label="Refresh"
+              aria-label="Refresh title"
+              onClick={onRefresh}
+            />
+          )}
+          <ToolbarButton
+            icon={MagnifyingGlassIcon}
+            label="Search"
+            aria-label="Search every target"
+            disabled={!media.targets.length || busy !== null}
+            onClick={() => void searchAll()}
+          />
+          <ToolbarButton
+            icon={HandIcon}
+            label="Interactive"
+            aria-label="Interactive search"
+            disabled={!media.targets.length}
+            onClick={() => setReleaseTarget(media.targets[0])}
+          />
+          <ToolbarButton
+            icon={PlusIcon}
+            label="Add target"
+            onClick={() => onAddTarget(media)}
+          />
         </PageToolbar>
-        <div
+      }
+    >
+      <article className={css({ minWidth: 0, width: "100%" })}>
+        <header
           className={css({
-            display: "flex",
-            flexDirection: { base: "column", sm: "row" },
-            gap: { base: "18px", md: "26px" },
+            position: "relative",
+            overflow: "hidden",
+            mx: { base: "-16px", lg: "-28px" },
+            mt: { base: "-18px", lg: "-24px" },
             mb: "26px",
+            bg: "sidebar",
+            borderBottom: "1px solid token(colors.line)",
           })}
         >
+          {media.backdrop && (
+            <Image
+              src={media.backdrop}
+              alt=""
+              aria-hidden="true"
+              fill
+              priority
+              sizes="100vw"
+              className={css({ objectFit: "cover", opacity: 0.4 })}
+            />
+          )}
+          <div
+            aria-hidden="true"
+            className={css({
+              position: "absolute",
+              inset: 0,
+              background:
+                "linear-gradient(to bottom, color-mix(in srgb, var(--canvas) 35%, transparent), var(--canvas))",
+            })}
+          />
           <div
             className={css({
-              width: { base: "130px", md: "190px" },
-              aspectRatio: "2 / 3",
-              flexShrink: 0,
               position: "relative",
-              borderRadius: "7px",
-              overflow: "hidden",
-              alignSelf: "flex-start",
+              display: "flex",
+              flexDirection: { base: "column", sm: "row" },
+              alignItems: { sm: "flex-end" },
+              gap: { base: "18px", md: "32px" },
+              px: { base: "16px", lg: "36px" },
+              pt: { base: "24px", md: "40px" },
+              pb: { base: "22px", md: "30px" },
             })}
           >
-            <Poster
-              item={media}
-              sizes="(min-width: 768px) 190px, 130px"
-              priority
-            />
-          </div>
-          <div className={css({ minWidth: 0, pt: "3px" })}>
-            <h1
-              className={css({
-                fontSize: { base: "28px", md: "36px" },
-                fontWeight: "600",
-                letterSpacing: "-.9px",
-                lineHeight: "1.2",
-                mb: "10px",
-              })}
-            >
-              {media.title}
-            </h1>
-            <p className={cx(mutedStyle, css({ mb: "20px" }))}>
-              {[
-                media.year || "Release date unknown",
-                media.kind === "movie" ? "Movie" : "Show",
-                ...media.genres,
-              ].join(" · ")}
-            </p>
             <div
               className={css({
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "14px",
-                alignItems: "center",
-                mb: "14px",
-                color: "muted",
-                fontSize: "12px",
+                width: { base: "120px", md: "184px" },
+                aspectRatio: "2 / 3",
+                flexShrink: 0,
+                position: "relative",
+                borderRadius: "12px",
+                overflow: "hidden",
+                boxShadow: "0 24px 48px -16px #000",
+                outline: "1px solid #ffffff14",
               })}
             >
-              {media.rating ? (
-                <span
-                  className={css({
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "5px",
-                    color: "ink",
-                  })}
-                >
-                  <StarIcon size={15} weight="fill" />
-                  {media.rating.toFixed(1)}
-                  <span className={css({ color: "subtle", fontSize: "10px" })}>
-                    / 10
-                  </span>
-                </span>
-              ) : null}
-              {media.runtime ? (
-                <span
-                  className={css({
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "5px",
-                  })}
-                >
-                  <ClockIcon size={14} />
-                  {media.runtime} min
-                </span>
-              ) : null}
-              <span
+              <Poster
+                item={media}
+                sizes="(min-width: 768px) 184px, 120px"
+                priority
+              />
+            </div>
+            <div className={css({ minWidth: 0, flexGrow: 1 })}>
+              <div
                 className={css({
                   display: "flex",
-                  alignItems: "center",
-                  gap: "5px",
+                  flexWrap: "wrap",
+                  gap: "8px",
+                  mb: "12px",
                 })}
               >
-                <HardDrivesIcon size={14} />
-                Total on disk:{" "}
-                {sizeLabel(
-                  media.targets.reduce(
-                    (sum, target) => sum + target.sizeOnDisk,
-                    0,
-                  ),
+                <span className={heroBadgeStyle}>
+                  {media.kind === "movie" ? "Movie" : "Show"}
+                </span>
+                {media.targets.length > 0 && (
+                  <span className={heroBadgeStyle}>
+                    <span
+                      aria-hidden="true"
+                      className={css({
+                        width: "6px",
+                        height: "6px",
+                        borderRadius: "999px",
+                        bg: media.targets.some((target) => target.monitored)
+                          ? "positive"
+                          : "faint",
+                      })}
+                    />
+                    {media.targets.some((target) => target.monitored)
+                      ? "Monitored"
+                      : "Unmonitored"}
+                  </span>
                 )}
-              </span>
-            </div>
-            <p
-              className={cx(
-                mutedStyle,
-                css({
-                  fontSize: { base: "12px", md: "13px" },
-                  lineHeight: "1.8",
-                  maxWidth: "780px",
-                }),
-              )}
-            >
-              {media.overview || "No overview is available for this title."}
-            </p>
-            {(media.tmdbId || media.tvdbId) && (
-              <a
-                href={
-                  media.tmdbId
-                    ? `https://www.themoviedb.org/${media.kind === "movie" ? "movie" : "tv"}/${media.tmdbId}`
-                    : `https://www.thetvdb.com/?tab=series&id=${media.tvdbId}`
-                }
-                target="_blank"
-                rel="noreferrer"
+                <span className={heroBadgeStyle} title="Total on disk">
+                  <HardDrivesIcon size={12} aria-hidden="true" />
+                  <span className={css({ srOnly: true })}>Total on disk: </span>
+                  {sizeLabel(
+                    media.targets.reduce(
+                      (sum, target) => sum + target.sizeOnDisk,
+                      0,
+                    ),
+                  )}
+                </span>
+              </div>
+              <h1
                 className={css({
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  fontSize: "11px",
-                  color: "subtle",
-                  mt: "16px",
-                  _hover: { color: "accent" },
+                  fontSize: { base: "28px", md: "40px" },
+                  fontWeight: "700",
+                  letterSpacing: "-1.2px",
+                  lineHeight: "1.08",
+                  mb: "12px",
                 })}
               >
-                View on {media.tmdbId ? "TMDB" : "TVDB"}
-                <ArrowSquareOutIcon size={13} />
-              </a>
-            )}
+                {media.title}
+              </h1>
+              <p
+                className={css({
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  gap: "6px 12px",
+                  mb: "14px",
+                  color: "soft",
+                  fontSize: "14px",
+                })}
+              >
+                <span>{media.year || "Release date unknown"}</span>
+                {media.runtime ? (
+                  <span
+                    className={css({
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "5px",
+                    })}
+                  >
+                    <ClockIcon size={14} aria-hidden="true" />
+                    {runtimeLabel(media.runtime)}
+                  </span>
+                ) : null}
+                {media.rating ? (
+                  <span
+                    className={css({
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "5px",
+                    })}
+                  >
+                    <StarIcon
+                      size={14}
+                      weight="fill"
+                      color="var(--warning)"
+                      aria-hidden="true"
+                    />
+                    {media.rating.toFixed(1)}
+                    <span className={css({ srOnly: true })}>out of 10</span>
+                  </span>
+                ) : null}
+                {media.genres.length > 0 && (
+                  <span className={css({ color: "muted" })}>
+                    {media.genres.slice(0, 3).join(", ")}
+                  </span>
+                )}
+              </p>
+              <p
+                className={css({
+                  color: "soft",
+                  fontSize: { base: "13px", md: "14px" },
+                  lineHeight: "1.65",
+                  maxWidth: "760px",
+                  lineClamp: 3,
+                })}
+                title={media.overview || undefined}
+              >
+                {media.overview || "No overview is available for this title."}
+              </p>
+              {(media.tmdbId || media.tvdbId) && (
+                <a
+                  href={
+                    media.tmdbId
+                      ? `https://www.themoviedb.org/${media.kind === "movie" ? "movie" : "tv"}/${media.tmdbId}`
+                      : `https://www.thetvdb.com/?tab=series&id=${media.tvdbId}`
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  className={css({
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    fontSize: "12px",
+                    color: "muted",
+                    mt: "12px",
+                    _hover: { color: "accent" },
+                  })}
+                >
+                  View on {media.tmdbId ? "TMDB" : "TVDB"}
+                  <ArrowSquareOutIcon size={13} />
+                </a>
+              )}
+            </div>
           </div>
-        </div>
-        <div
-          className={css({
-            borderTop: "1px solid token(colors.line)",
-            pt: media.kind === "series" ? "16px" : "22px",
-          })}
-        >
+        </header>
+        {notice}
+        <div>
           <div
             className={css({
               display: "flex",
@@ -362,7 +506,7 @@ export function MediaDetails({
                 fontWeight: "550",
               })}
             >
-              Quality targets
+              Targets
               <span
                 className={css({
                   color: "subtle",
@@ -373,14 +517,9 @@ export function MediaDetails({
                 {media.targets.length}
               </span>
             </h2>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => onAddTarget(media)}
-            >
-              <PlusIcon size={13} />
-              Add target
-            </Button>
+            <span className={css({ fontSize: "12px", color: "subtle" })}>
+              Each target keeps its own profile, file and status
+            </span>
           </div>
           {media.kind === "series" && media.targets.length > 0 ? (
             <div
@@ -392,17 +531,14 @@ export function MediaDetails({
             >
               <div
                 aria-hidden="true"
-                className={cx(
-                  targetGridStyle,
-                  css({
-                    display: { base: "none", md: "grid" },
-                    px: "12px",
-                    py: "5px",
-                    bg: "canvas",
-                    color: "subtle",
-                    fontSize: "10px",
-                  }),
-                )}
+                className={css(targetGridRaw, {
+                  display: { base: "none", md: "grid" },
+                  px: "12px",
+                  py: "5px",
+                  bg: "canvas",
+                  color: "subtle",
+                  fontSize: "10px",
+                })}
               >
                 <span className={css({ gridArea: "instance" })}>Instance</span>
                 <span
@@ -452,19 +588,16 @@ export function MediaDetails({
                 return (
                   <div
                     key={target.instanceId}
-                    className={cx(
-                      targetGridStyle,
-                      css({
-                        px: "12px",
-                        py: { base: "8px", md: "4px" },
-                        bg: "surface",
-                        borderTop: {
-                          base: index ? "1px solid token(colors.line)" : "none",
-                          md: "1px solid token(colors.line)",
-                        },
-                        _hover: { bg: "#202020" },
-                      }),
-                    )}
+                    className={css(targetGridRaw, {
+                      px: "12px",
+                      py: { base: "8px", md: "4px" },
+                      bg: "surface",
+                      borderTop: {
+                        base: index ? "1px solid token(colors.line)" : "none",
+                        md: "1px solid token(colors.line)",
+                      },
+                      _hover: { bg: "raised" },
+                    })}
                   >
                     <div className={css({ gridArea: "instance", minWidth: 0 })}>
                       <h3
@@ -669,7 +802,7 @@ export function MediaDetails({
                         title={`Automatically search ${target.instanceName}`}
                         disabled={busy !== null}
                         onClick={() => search(target)}
-                        className={targetActionStyle}
+                        styles={targetActionRaw}
                       >
                         {busy === target.instanceId ? (
                           <Spinner size={13} />
@@ -694,7 +827,7 @@ export function MediaDetails({
                           setSearchScope(null);
                           setReleaseTarget(target);
                         }}
-                        className={targetActionStyle}
+                        styles={targetActionRaw}
                       >
                         <HandIcon size={14} />
                         <span
@@ -751,7 +884,7 @@ export function MediaDetails({
                         base: index ? "1px solid token(colors.line)" : "none",
                         lg: "1px solid token(colors.line)",
                       },
-                      _hover: { bg: "#202020" },
+                      _hover: { bg: "raised" },
                     }),
                   )}
                 >
@@ -764,20 +897,6 @@ export function MediaDetails({
                       gap: "10px",
                     })}
                   >
-                    <span
-                      className={css({
-                        width: "30px",
-                        height: "30px",
-                        flexShrink: 0,
-                        display: "grid",
-                        placeItems: "center",
-                        borderRadius: "7px",
-                        bg: "#303030",
-                        color: "#c7c7c7",
-                      })}
-                    >
-                      <HardDrivesIcon size={17} />
-                    </span>
                     <div className={css({ minWidth: 0 })}>
                       <h3
                         title={target.instanceName}
@@ -971,7 +1090,7 @@ export function MediaDetails({
             }
             options={media.targets.map((target) => ({
               value: `${target.instanceId}:${target.remoteId}`,
-              label: `${target.instanceName} · ${target.qualityProfile} · ID ${target.remoteId}`,
+              label: `${target.instanceName} · ${target.qualityProfile}`,
             }))}
             onChange={(value) => {
               if (removeLock.current) return;
@@ -1059,7 +1178,7 @@ export function MediaDetails({
           searchScope={searchScope}
         />
       )}
-    </>
+    </Page>
   );
 }
 

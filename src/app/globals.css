@@ -1,10 +1,156 @@
 @layer reset, base, tokens, recipes, utilities;
 
 @layer base {
-  :root {
+  [data-theme="midnight"] {
     color-scheme: dark;
-    background: #111111;
-    color: #f0f0f0;
+    --canvas: #0d0e10;
+    --sidebar: #111215;
+    --toolbar: #0f1013;
+    --surface: #111215;
+    --raised: #15161a;
+    --control: #17181c;
+    --elevated: #1c1d22;
+    --line: #1f2126;
+    --line-soft: #1a1b1f;
+    --line-strong: #2a2c33;
+    --ink: #eceef1;
+    --soft: #c9ccd3;
+    --muted: #9ea2ab;
+    --subtle: #858993;
+    --faint: #5c606a;
+    --positive: #5fcf8f;
+    --warning: #f0b45b;
+    --negative: #f2878a;
+    --info: #6aa8ff;
+    --scrim: #07080acc;
+    --accent: #8b7cf6;
+    --on-accent: #0d0e10;
+  }
+
+  [data-theme="sonarr"] {
+    color-scheme: dark;
+    --canvas: #16191e;
+    --sidebar: #1c2027;
+    --toolbar: #181b20;
+    --surface: #1c2027;
+    --raised: #21252c;
+    --control: #22262d;
+    --elevated: #2b3038;
+    --line: #2b3038;
+    --line-soft: #252930;
+    --line-strong: #3a4049;
+    --ink: #eef1f4;
+    --soft: #cdd3db;
+    --muted: #a3abb6;
+    --subtle: #8a929e;
+    --faint: #5e6570;
+    --positive: #5fcf8f;
+    --warning: #f0b45b;
+    --negative: #f2878a;
+    --info: #6aa8ff;
+    --scrim: #0b0d10cc;
+  }
+
+  [data-theme="radarr"] {
+    color-scheme: dark;
+    --canvas: #171613;
+    --sidebar: #1d1b17;
+    --toolbar: #191815;
+    --surface: #1d1b17;
+    --raised: #22201b;
+    --control: #23211c;
+    --elevated: #2e2b24;
+    --line: #2e2b24;
+    --line-soft: #27241f;
+    --line-strong: #3d392f;
+    --ink: #f2efe8;
+    --soft: #d4cfc4;
+    --muted: #aaa498;
+    --subtle: #8f897c;
+    --faint: #625d53;
+    --positive: #5fcf8f;
+    --warning: #f0b45b;
+    --negative: #f2878a;
+    --info: #6aa8ff;
+    --scrim: #0c0b09cc;
+  }
+
+  [data-theme="graphite"] {
+    color-scheme: dark;
+    --canvas: #161618;
+    --sidebar: #1b1b1e;
+    --toolbar: #18181a;
+    --surface: #1b1b1e;
+    --raised: #202023;
+    --control: #222226;
+    --elevated: #2a2a2e;
+    --line: #2a2a2e;
+    --line-soft: #242427;
+    --line-strong: #38383d;
+    --ink: #ededee;
+    --soft: #cfcfd2;
+    --muted: #a5a5aa;
+    --subtle: #8b8b90;
+    --faint: #5f5f64;
+    --positive: #5fcf8f;
+    --warning: #f0b45b;
+    --negative: #f2878a;
+    --info: #6aa8ff;
+    --scrim: #0a0a0bcc;
+  }
+
+  :root,
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --canvas: #141414;
+    --sidebar: #191919;
+    --toolbar: #161616;
+    --surface: #191919;
+    --raised: #1e1e1e;
+    --control: #202020;
+    --elevated: #292929;
+    --line: #292929;
+    --line-soft: #222222;
+    --line-strong: #373737;
+    --ink: #ededed;
+    --soft: #cfcfcf;
+    --muted: #a6a6a6;
+    --subtle: #8c8c8c;
+    --faint: #5f5f5f;
+    --positive: #5fcf8f;
+    --warning: #f0b45b;
+    --negative: #f2878a;
+    --info: #6aa8ff;
+    --scrim: #0a0a0acc;
+  }
+
+  [data-theme="light"] {
+    color-scheme: light;
+    --canvas: #f5f5f5;
+    --sidebar: #ececec;
+    --toolbar: #efefef;
+    --surface: #ffffff;
+    --raised: #f7f7f7;
+    --control: #ffffff;
+    --elevated: #e5e5e5;
+    --line: #dcdcdc;
+    --line-soft: #e8e8e8;
+    --line-strong: #c8c8c8;
+    --ink: #171717;
+    --soft: #333333;
+    --muted: #555555;
+    --subtle: #666666;
+    --faint: #9c9c9c;
+    --positive: #1f8a4c;
+    --warning: #9a6200;
+    --negative: #c23a42;
+    --info: #2f6fd6;
+    --scrim: #17171766;
+  }
+
+  :root {
+    background: var(--canvas);
+    color: var(--ink);
     font-family: var(--font-geist-sans), sans-serif;
     font-size: 14px;
     -webkit-font-smoothing: antialiased;
@@ -19,10 +165,11 @@
 
   body {
     margin: 0;
+    background: var(--canvas);
   }
 
   html {
-    scroll-padding-top: 90px;
+    scroll-padding-top: 110px;
     scroll-padding-bottom: calc(90px + env(safe-area-inset-bottom));
   }
 
@@ -49,24 +196,29 @@
     cursor: not-allowed;
   }
 
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--accent);
+  }
+
   :focus-visible {
-    outline: 2px solid #e5e5e5;
-    outline-offset: 4px;
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
   }
 
   ::selection {
-    color: #111111;
-    background: #e5e5e5;
+    color: var(--on-accent);
+    background: var(--accent);
   }
 
   ::-webkit-scrollbar {
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
   }
 
   ::-webkit-scrollbar-thumb {
     border-radius: 10px;
-    background: #3c3c3c;
+    background: var(--line-strong);
   }
 
   input[type="search"]::-webkit-search-cancel-button {

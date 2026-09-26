@@ -55,6 +55,15 @@ const queueTopics: RealtimeTopic[] = ["queue", "library", "episodes"];
 const instanceTopics: RealtimeTopic[] = ["instances"];
 const optionTopics: RealtimeTopic[] = ["options", "library"];
 const pageTopics: RealtimeTopic[] = ["episodes", "calendar", "options"];
+
+// How long upstream connections stay open after the last browser stream
+// closes. A reload closes one stream before opening the next; without a grace
+// period every reload would reconnect to every instance and make browsers
+// re-read their pages.
+function upstreamLingerMs() {
+  const value = Number(process.env.ARRSENAL_UPSTREAM_LINGER_MS ?? 30_000);
+  return Number.isFinite(value) ? value : 30_000;
+}
 const maxPendingHints = 64;
 
 function messageTopics(message: unknown): readonly RealtimeTopic[] | undefined {
@@ -106,6 +115,7 @@ function createManager() {
   let generation = 0;
   const hints = new Map<string, RealtimeEvent>();
   let hintTimer: Timer | undefined;
+  let lingerTimer: Timer | undefined;
 
   function invalidate(event: RealtimeEvent) {
     if (!listeners.size || hints.has("*")) return;
@@ -375,28 +385,45 @@ function createManager() {
         // A subscriber may already have closed while joining the manager.
       }
       if (listeners.size === 1) {
-        generation++;
-        unsubscribeChanges = subscribeResourceChanges(invalidate);
-        unsubscribeConfig = subscribeInstanceChanges(() => {
+        if (lingerTimer) {
+          // Upstream connections are still open from the last browser (for
+          // example across a page reload): keep them instead of restarting.
+          clearTimeout(lingerTimer);
+          lingerTimer = undefined;
+        } else {
+          generation++;
+          unsubscribeChanges = subscribeResourceChanges(invalidate);
+          unsubscribeConfig = subscribeInstanceChanges(() => {
+            void reconcile();
+          });
           void reconcile();
-        });
-        void reconcile();
+        }
       }
       return () => {
         if (!listeners.delete(subscription) || listeners.size) return;
-        generation++;
-        unsubscribeConfig?.();
-        unsubscribeConfig = undefined;
-        unsubscribeChanges?.();
-        unsubscribeChanges = undefined;
-        reconcileRequested = false;
-        clearTimeout(hintTimer);
-        hintTimer = undefined;
-        hints.clear();
-        for (const entry of connections.values()) remove(entry);
+        const linger = upstreamLingerMs();
+        if (linger <= 0) return stop();
+        lingerTimer = setTimeout(() => {
+          lingerTimer = undefined;
+          if (!listeners.size) stop();
+        }, linger);
+        lingerTimer.unref();
       };
     },
   };
+
+  function stop() {
+    generation++;
+    unsubscribeConfig?.();
+    unsubscribeConfig = undefined;
+    unsubscribeChanges?.();
+    unsubscribeChanges = undefined;
+    reconcileRequested = false;
+    clearTimeout(hintTimer);
+    hintTimer = undefined;
+    hints.clear();
+    for (const entry of connections.values()) remove(entry);
+  }
 }
 
 const state = globalThis as typeof globalThis & {

@@ -12,14 +12,21 @@ import {
   PlusIcon,
   SquaresFourIcon,
   TelevisionIcon,
-  TrashIcon,
+  WarningIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
-import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useEffectEvent,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { z } from "zod";
 import { api } from "@/lib/client";
 import type { ActionResponse, InstanceSummary } from "@/lib/types";
-import { PageHeader } from "./page-header";
+import { Page, PageHeader, PageToolbar, ToolbarButton } from "./page-header";
 import {
   Button,
   inputStyle,
@@ -28,7 +35,6 @@ import {
   mutedStyle,
   Notice,
   panelStyle,
-  SelectField,
   Spinner,
 } from "./ui";
 
@@ -78,6 +84,8 @@ const emptyForm: InstanceForm = {
   apiKey: "",
 };
 const fieldErrorStyle = css({ color: "negative", fontSize: "12px" });
+const connectionColumns =
+  "minmax(0, 1.4fr) minmax(0, 1.6fr) 130px minmax(170px, auto)";
 
 export function Settings({
   instances,
@@ -86,6 +94,7 @@ export function Settings({
   autoOpen = false,
   onAutoOpened,
   onDismiss,
+  notice,
 }: {
   instances: InstanceSummary[];
   onRefresh: () => void;
@@ -93,6 +102,8 @@ export function Settings({
   autoOpen?: boolean;
   onAutoOpened?: () => void;
   onDismiss?: () => void;
+  /** Page-level notices, shown under the page title. */
+  notice?: ReactNode;
 }) {
   const id = useId();
   const [open, setOpen] = useState(false);
@@ -271,32 +282,75 @@ export function Settings({
   }
 
   return (
-    <section className={css({ minWidth: 0 })} aria-labelledby={`${id}-heading`}>
-      <PageHeader
-        id={`${id}-heading`}
-        title="Connections"
-        actions={
-          <Button
-            size="sm"
-            variant="secondary"
+    <Page
+      className={css({ minWidth: 0 })}
+      aria-labelledby={`${id}-heading`}
+      toolbar={
+        <PageToolbar label="Connection actions">
+          <ToolbarButton
+            icon={PlusIcon}
+            label="Add instance"
             onClick={() => changeOpen(true)}
-          >
-            <PlusIcon size={15} /> Add instance
-          </Button>
-        }
-      />
+          />
+          {instances.length > 0 && (
+            <ToolbarButton
+              icon={ArrowClockwiseIcon}
+              label="Refresh status"
+              title="Refresh all instance statuses"
+              onClick={() => onRefresh()}
+            />
+          )}
+        </PageToolbar>
+      }
+    >
+      <PageHeader id={`${id}-heading`} title="Connections">
+        <p
+          className={css({
+            width: "100%",
+            order: 1,
+            mt: "-8px",
+            color: "muted",
+            fontSize: "13px",
+          })}
+        >
+          Sonarr and Radarr instances Arrsenal reads from and sends changes to.
+          API keys stay on the server.
+        </p>
+      </PageHeader>
+      {notice}
 
       {instances.length ? (
         <div
           className={css({
-            display: "grid",
-            gridTemplateColumns: {
-              base: "minmax(0, 1fr)",
-              lg: "repeat(2, minmax(0, 1fr))",
-            },
-            gap: "16px",
+            border: "1px solid token(colors.line)",
+            borderRadius: "14px",
+            overflow: "hidden",
+            bg: "surface",
           })}
         >
+          <div
+            aria-hidden="true"
+            className={css({
+              display: { base: "none", md: "grid" },
+              gridTemplateColumns: connectionColumns,
+              gap: "16px",
+              alignItems: "center",
+              height: "38px",
+              px: "18px",
+              bg: "raised",
+              borderBottom: "1px solid token(colors.line)",
+              fontSize: "11px",
+              fontWeight: "600",
+              letterSpacing: ".05em",
+              textTransform: "uppercase",
+              color: "subtle",
+            })}
+          >
+            <span>Instance</span>
+            <span>URL</span>
+            <span>Status</span>
+            <span className={css({ textAlign: "right" })}>Actions</span>
+          </div>
           {instances.map((instance) => {
             const healthy =
               instance.connected && instance.hasApiKey && !instance.error;
@@ -305,167 +359,153 @@ export function Settings({
               <article
                 key={instance.id}
                 aria-label={`${instance.name} connection`}
-                className={cx(panelStyle, css({ p: "20px", minWidth: 0 }))}
+                className={css({
+                  display: "grid",
+                  gridTemplateColumns: {
+                    base: "minmax(0, 1fr) auto",
+                    md: connectionColumns,
+                  },
+                  gap: "8px 16px",
+                  alignItems: "center",
+                  minHeight: "64px",
+                  px: "18px",
+                  py: "12px",
+                  borderBottom: "1px solid token(colors.lineSoft)",
+                  _last: { borderBottom: 0 },
+                })}
+                style={
+                  healthy
+                    ? undefined
+                    : {
+                        background:
+                          "color-mix(in srgb, var(--warning) 5%, transparent)",
+                      }
+                }
               >
-                <div
-                  className={css({
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "12px",
-                  })}
-                >
-                  <div
+                <div className={css({ minWidth: 0 })}>
+                  <h2
                     className={css({
-                      display: "grid",
-                      placeItems: "center",
-                      width: "40px",
-                      height: "40px",
-                      borderRadius: "10px",
-                      bg: "elevated",
-                      color: sonarr ? "info" : "warning",
-                      flexShrink: 0,
+                      fontSize: "14px",
+                      fontWeight: "600",
+                      overflowWrap: "anywhere",
                     })}
                   >
-                    {sonarr ? (
-                      <TelevisionIcon size={21} />
-                    ) : (
-                      <FilmSlateIcon size={21} />
-                    )}
-                  </div>
-                  <div className={css({ minWidth: 0, flex: 1 })}>
-                    <h2
-                      className={css({
-                        fontSize: "15px",
-                        fontWeight: "550",
-                        overflowWrap: "anywhere",
-                      })}
-                    >
-                      {instance.name}
-                    </h2>
-                    <p
-                      className={css({
-                        color: "muted",
-                        fontSize: "11px",
-                        mt: "3px",
-                      })}
-                    >
-                      {sonarr ? "Sonarr / Shows" : "Radarr / Movies"}
-                    </p>
-                  </div>
-                  <span
+                    {instance.name}
+                  </h2>
+                  <p
                     className={css({
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      color: healthy ? "positive" : "negative",
-                      fontSize: "11px",
-                      flexShrink: 0,
+                      color: "muted",
+                      fontSize: "12px",
+                      mt: "2px",
                     })}
                   >
-                    <span
-                      className={css({
-                        width: "5px",
-                        height: "5px",
-                        borderRadius: "50%",
-                        bg: "currentColor",
-                      })}
-                    />
-                    {healthy ? "Connected" : "Unavailable"}
-                  </span>
+                    {sonarr ? "Sonarr" : "Radarr"} ·{" "}
+                    <span>{instance.version || "Version not reported"}</span>
+                  </p>
                 </div>
                 <p
                   title={instance.url}
                   className={css({
-                    color: "muted",
+                    display: { base: "none", md: "block" },
+                    fontFamily: "mono",
                     fontSize: "12px",
-                    overflowWrap: "anywhere",
-                    my: "18px",
+                    color: "muted",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
                   })}
                 >
                   {instance.url}
                 </p>
-                {!healthy && (
-                  <Notice error>
-                    <span
-                      className={css({ overflowWrap: "anywhere", minWidth: 0 })}
-                    >
-                      {instance.error ||
-                        (!instance.hasApiKey
-                          ? "The API key is missing. Edit this instance to add its API key."
-                          : "Could not reach this instance. Check its URL and network, then refresh status.")}
-                    </span>
-                  </Notice>
-                )}
+                <span
+                  className={css({
+                    justifySelf: "start",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    height: "24px",
+                    px: "9px",
+                    borderRadius: "999px",
+                    fontSize: "12px",
+                    fontWeight: "500",
+                    color: healthy ? "positive" : "warning",
+                  })}
+                  style={{
+                    background: `color-mix(in srgb, var(${healthy ? "--positive" : "--warning"}) 12%, transparent)`,
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={css({
+                      width: "6px",
+                      height: "6px",
+                      borderRadius: "50%",
+                      bg: "currentColor",
+                    })}
+                  />
+                  {healthy ? "Connected" : "Unavailable"}
+                </span>
                 <div
                   className={css({
                     display: "flex",
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "10px",
-                    borderTop: "1px solid token(colors.line)",
-                    pt: "14px",
-                    mt: healthy ? "0" : "16px",
+                    justifyContent: "flex-end",
+                    gap: "4px",
+                    gridColumn: { base: "1 / -1", md: "auto" },
                   })}
                 >
-                  <p
-                    className={css({
-                      fontSize: "11px",
-                      color: "subtle",
-                      overflowWrap: "anywhere",
-                      minWidth: 0,
-                    })}
+                  <Button
+                    size="sm"
+                    aria-label={`Edit ${instance.name}`}
+                    onClick={() => {
+                      setEditing(instance);
+                      setForm({
+                        kind: instance.kind,
+                        name: instance.name,
+                        url: instance.url,
+                        apiKey: "",
+                      });
+                      changeOpen(true);
+                    }}
                   >
-                    Version{" "}
-                    <span className={css({ color: "muted" })}>
-                      {instance.version || "Not reported"}
-                    </span>
-                  </p>
-                  <div
-                    className={css({
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: "5px",
-                    })}
+                    <PencilSimpleIcon size={14} /> Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Disconnect ${instance.name}`}
+                    onClick={() => {
+                      setRemoveError(undefined);
+                      setRemoving(instance);
+                    }}
+                    styles={css.raw({ color: "negative" })}
                   >
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label={`Edit ${instance.name}`}
-                      onClick={() => {
-                        setEditing(instance);
-                        setForm({
-                          kind: instance.kind,
-                          name: instance.name,
-                          url: instance.url,
-                          apiKey: "",
-                        });
-                        changeOpen(true);
-                      }}
-                    >
-                      <PencilSimpleIcon size={14} /> Edit
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      title="Refresh all instance statuses"
-                      onClick={() => onRefresh()}
-                    >
-                      <ArrowClockwiseIcon size={14} /> Refresh status
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      aria-label={`Disconnect ${instance.name}`}
-                      onClick={() => {
-                        setRemoveError(undefined);
-                        setRemoving(instance);
-                      }}
-                    >
-                      <TrashIcon size={15} />
-                    </Button>
-                  </div>
+                    Disconnect
+                  </Button>
                 </div>
+                {!healthy && (
+                  <p
+                    role="alert"
+                    className={css({
+                      gridColumn: "1 / -1",
+                      display: "flex",
+                      gap: "8px",
+                      color: "warning",
+                      fontSize: "12px",
+                      lineHeight: "1.5",
+                      overflowWrap: "anywhere",
+                    })}
+                  >
+                    <WarningIcon
+                      size={14}
+                      aria-hidden="true"
+                      className={css({ flexShrink: 0, mt: "2px" })}
+                    />
+                    {instance.error ||
+                      (!instance.hasApiKey
+                        ? "The API key is missing. Edit this instance to add its API key."
+                        : "Could not reach this instance. Check its URL and network, then refresh status.")}
+                  </p>
+                )}
               </article>
             );
           })}
@@ -630,21 +670,72 @@ export function Settings({
                 m: 0,
               })}
             >
-              <div className={labelStyle}>
-                <span>Instance type</span>
-                <SelectField
-                  label="Instance type"
-                  value={form.kind}
-                  onChange={(value) => {
-                    if (value === "sonarr" || value === "radarr")
-                      changeField("kind", value);
-                  }}
-                  options={[
-                    { label: "Sonarr - Shows", value: "sonarr" },
-                    { label: "Radarr - Movies", value: "radarr" },
-                  ]}
-                />
-              </div>
+              <fieldset
+                aria-label="Instance type"
+                className={css({
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gap: "10px",
+                  m: 0,
+                  p: 0,
+                  border: 0,
+                  minWidth: 0,
+                })}
+              >
+                {(
+                  [
+                    ["sonarr", "Sonarr", "Shows"],
+                    ["radarr", "Radarr", "Movies"],
+                  ] as const
+                ).map(([kind, name, hint]) => (
+                  <label
+                    key={kind}
+                    className={css({
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                      p: "12px 14px",
+                      borderRadius: "11px",
+                      border: "1px solid token(colors.lineStrong)",
+                      bg: "canvas",
+                      cursor: "pointer",
+                      "&:has(input:checked)": {
+                        borderColor: "accent",
+                        bg: "elevated",
+                        boxShadow:
+                          "0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent)",
+                      },
+                    })}
+                  >
+                    <input
+                      type="radio"
+                      name={`${id}-kind`}
+                      value={kind}
+                      checked={form.kind === kind}
+                      onChange={() => changeField("kind", kind)}
+                      className={css({ m: 0 })}
+                    />
+                    <span
+                      className={css({
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "1px",
+                      })}
+                    >
+                      <span
+                        className={css({ fontSize: "14px", fontWeight: "600" })}
+                      >
+                        {name}
+                      </span>
+                      <span
+                        className={css({ fontSize: "12px", color: "muted" })}
+                      >
+                        {hint}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
               <label className={labelStyle} htmlFor={`${id}-name`}>
                 Instance name
                 <input
@@ -926,6 +1017,6 @@ export function Settings({
           </div>
         </div>
       </Modal>
-    </section>
+    </Page>
   );
 }

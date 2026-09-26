@@ -11,23 +11,23 @@ export function QueueScreen() {
   const queue = useQueue();
   const { notify } = useLibraryActions();
   return (
-    <>
-      {queue.isError && (
-        <div className={css({ mb: "16px" })}>
-          <Notice error>
-            {queue.error.message}
-            {queue.data && " Showing the last loaded queue."}
-          </Notice>
-        </div>
-      )}
-      <DownloadQueue
-        data={queue.data}
-        loading={queue.isPending || queue.isFetching}
-        onRefresh={() => {
-          void sync("queue");
-        }}
-        notify={notify}
-      />
-    </>
+    <DownloadQueue
+      data={queue.data}
+      loading={queue.isPending || queue.isFetching}
+      onRefresh={() => {
+        void sync("queue");
+      }}
+      notify={notify}
+      notice={
+        queue.isError && (
+          <div className={css({ mb: "16px" })}>
+            <Notice error>
+              {queue.error.message}
+              {queue.data && " Showing the last loaded queue."}
+            </Notice>
+          </div>
+        )
+      }
+    />
   );
 }

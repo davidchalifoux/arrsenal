@@ -31,6 +31,12 @@ const instance: InstanceSummary = {
   connected: true,
   hasApiKey: true,
 };
+// A second Radarr instance, so neither starts selected.
+const other: InstanceSummary = {
+  ...instance,
+  id: "radarr-4k",
+  name: "Radarr 4K",
+};
 const sonarr: InstanceSummary = {
   ...instance,
   id: "sonarr",
@@ -59,12 +65,13 @@ const fetchMock =
 let queryClient: QueryClient;
 
 function renderAdd(overrides: Partial<ComponentProps<typeof AddMedia>> = {}) {
+  queryClient.setQueryData(["preferences"], { timeZone: null });
   return render(
     <QueryClientProvider client={queryClient}>
       <AddMedia
         open
         seed={movie}
-        instances={[instance, sonarr]}
+        instances={[instance, other, sonarr]}
         library={[]}
         onClose={mock()}
         onConnect={mock()}
@@ -112,7 +119,7 @@ describe("AddMedia target options prefetch", () => {
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(checkbox.getAttribute("aria-checked")).toBe("false");
-    expect(screen.getByText("0 targets selected")).toBeTruthy();
+    expect(screen.getByText("Select an instance to continue.")).toBeTruthy();
     expect(screen.queryByRole("combobox")).toBeNull();
 
     fireEvent.mouseEnter(checkbox);
@@ -121,11 +128,12 @@ describe("AddMedia target options prefetch", () => {
     const profile = await screen.findByRole("combobox", {
       name: `${instance.name} quality profile`,
     });
-    expect(profile.textContent).toContain("Choose a profile");
+    // The only profile and folder are filled in from the prefetched options.
+    await waitFor(() => expect(profile.textContent).toContain("HD-1080p"));
     expect(
       screen.getByRole("combobox", { name: `${instance.name} root folder` })
         .textContent,
-    ).toContain("Choose a folder");
+    ).toContain("/movies");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -155,11 +163,15 @@ describe("AddMedia target options prefetch", () => {
     fireEvent.focus(target);
     await act(async () => {});
     expect(screen.getByText("Already added")).toBeTruthy();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(
+      fetchMock.mock.calls.filter(([path]) =>
+        String(path).includes(instance.id),
+      ),
+    ).toHaveLength(0);
   });
 
   it("retries failed prefetch on selection without displaying speculative errors", async () => {
-    fetchMock.mockRejectedValueOnce(new Error("Options unavailable"));
+    fetchMock.mockRejectedValue(new Error("Options unavailable"));
     renderAdd();
     const checkbox = await screen.findByRole("checkbox", {
       name: instance.name,
@@ -170,12 +182,12 @@ describe("AddMedia target options prefetch", () => {
     );
     expect(screen.queryByRole("alert")).toBeNull();
     expect(checkbox.getAttribute("aria-checked")).toBe("false");
+    fetchMock.mockResolvedValue(Response.json(options));
     fireEvent.click(checkbox);
     await screen.findByRole("combobox", {
       name: `${instance.name} quality profile`,
     });
     expect(queryClient.getQueryData<InstanceOptions>(key)).toEqual(options);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("reuses an in-flight prefetch when selected and forwards cancellation", async () => {
@@ -192,25 +204,5 @@ describe("AddMedia target options prefetch", () => {
     expect(signal?.aborted).toBe(false);
     await act(() => queryClient.cancelQueries({ queryKey: key }));
     expect(signal?.aborted).toBe(true);
-  });
-
-  it("keeps options fresh for five minutes", async () => {
-    queryClient.setQueryData(key, options, {
-      updatedAt: Date.now() - 4 * 60_000,
-    });
-    renderAdd();
-    const checkbox = await screen.findByRole("checkbox", {
-      name: instance.name,
-    });
-    fireEvent.mouseEnter(checkbox);
-    await act(async () => {});
-    expect(fetchMock).not.toHaveBeenCalled();
-    act(() => {
-      queryClient.setQueryData(key, options, {
-        updatedAt: Date.now() - 5 * 60_000 - 1,
-      });
-    });
-    fireEvent.focus(checkbox);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   });
 });

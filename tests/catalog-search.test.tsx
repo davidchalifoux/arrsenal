@@ -63,7 +63,7 @@ it("debounces rapid changes for 250ms and uses the trimmed query", async () => {
   expect(api).toHaveBeenCalledTimes(1);
 });
 
-it("hides previous results immediately and clears without another request", async () => {
+it("keeps previous results, marked stale, until the next arrive, and clears without another request", async () => {
   const { result, rerender } = renderHook(
     ({ term }) => useCatalogSearch(term, true),
     { wrapper, initialProps: { term: "Dune" } },
@@ -71,13 +71,19 @@ it("hides previous results immediately and clears without another request", asyn
   await advance(251);
   await advance(1);
   expect(result.current.data).toEqual({ items: [], errors: [] });
+  expect(result.current.isStale).toBe(false);
   rerender({ term: "Alien" });
-  expect(result.current.data).toBeUndefined();
+  expect(result.current.data).toEqual({ items: [], errors: [] });
   expect(result.current.isDebouncing).toBe(true);
+  expect(result.current.isStale).toBe(true);
+  await advance(251);
+  await advance(1);
+  expect(result.current.isStale).toBe(false);
   rerender({ term: "" });
+  expect(result.current.isStale).toBe(false);
   await advance(251);
   expect(result.current.data).toBeUndefined();
-  expect(api).toHaveBeenCalledTimes(1);
+  expect(api).toHaveBeenCalledTimes(2);
 });
 
 it("blocks short queries and disabled lookups", async () => {
@@ -109,9 +115,9 @@ it("cancels obsolete in-flight requests when the term changes", async () => {
     api as Mock<(...args: Parameters<typeof api>) => ReturnType<typeof api>>
   ).mock.calls[0][1]?.signal;
   rerender({ term: "Alien" });
-  expect(signal?.aborted).toBe(true);
   expect(result.current.data).toBeUndefined();
   await advance(250);
+  expect(signal?.aborted).toBe(true);
   expect(api).toHaveBeenLastCalledWith("/api/lookup?term=Alien", {
     signal: expect.any(AbortSignal),
   });

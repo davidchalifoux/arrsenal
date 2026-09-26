@@ -12,6 +12,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { css, cva, cx } from "@styled-system/css";
+import type { SystemStyleObject } from "@styled-system/types";
 import { type ComponentProps, type ReactNode, useId } from "react";
 
 export const buttonStyle = cva({
@@ -20,9 +21,9 @@ export const buttonStyle = cva({
     alignItems: "center",
     justifyContent: "center",
     gap: "8px",
-    borderRadius: "7px",
-    fontSize: "12px",
-    fontWeight: "550",
+    borderRadius: "8px",
+    fontSize: "13px",
+    fontWeight: "500",
     whiteSpace: "nowrap",
     transition: "background 150ms, color 150ms, border-color 150ms",
     flexShrink: 0,
@@ -32,32 +33,36 @@ export const buttonStyle = cva({
     variant: {
       primary: {
         bg: "accent",
-        color: "#191919",
+        color: "onAccent",
+        fontWeight: "600",
         border: "1px solid transparent",
-        _hover: { bg: "#ffffff" },
+        _hover: { filter: "brightness(1.08)" },
       },
       secondary: {
-        bg: "surface",
-        border: "1px solid token(colors.line)",
+        bg: "elevated",
+        border: "1px solid token(colors.lineStrong)",
         color: "ink",
-        _hover: { bg: "elevated", borderColor: "#414141" },
+        _hover: {
+          bg: "color-mix(in srgb, var(--elevated) 70%, var(--ink) 8%)",
+        },
       },
       ghost: {
-        color: "muted",
+        color: "soft",
         border: "1px solid transparent",
         _hover: { bg: "elevated", color: "ink" },
       },
       danger: {
-        bg: "#372323",
+        bg: "color-mix(in srgb, var(--negative) 12%, transparent)",
         color: "negative",
-        border: "1px solid #553535",
-        _hover: { bg: "#4a2c2c" },
+        border:
+          "1px solid color-mix(in srgb, var(--negative) 32%, transparent)",
+        _hover: { bg: "color-mix(in srgb, var(--negative) 20%, transparent)" },
       },
     },
     size: {
-      sm: { height: "30px", px: "10px" },
-      md: { height: "36px", px: "13px" },
-      lg: { height: "42px", px: "17px", fontSize: "13px" },
+      sm: { height: "30px", px: "10px", fontSize: "12px" },
+      md: { height: "36px", px: "14px" },
+      lg: { height: "42px", px: "18px", fontSize: "14px" },
       icon: { width: "34px", height: "34px", p: 0 },
     },
   },
@@ -67,16 +72,25 @@ export const buttonStyle = cva({
 export function Button({
   variant,
   size,
+  styles,
   className,
   ...props
 }: ComponentProps<typeof BaseButton> & {
   variant?: "primary" | "secondary" | "ghost" | "danger";
   size?: "sm" | "md" | "lg" | "icon";
+  /**
+   * Overrides merged into the button style before Panda emits classes, so they
+   * always win. Pass `css.raw({...})`. A `className` that sets the same
+   * property would instead leave the winner to stylesheet order.
+   */
+  styles?: SystemStyleObject;
 }) {
   return (
     <BaseButton
       className={cx(
-        buttonStyle({ variant, size }),
+        styles
+          ? css(buttonStyle.raw({ variant, size }), styles)
+          : buttonStyle({ variant, size }),
         typeof className === "string" ? className : undefined,
       )}
       {...props}
@@ -84,24 +98,28 @@ export function Button({
   );
 }
 
-export const inputStyle = css({
+export const inputRaw = css.raw({
   width: "100%",
-  height: "41px",
+  height: "40px",
   px: "12px",
   bg: "canvas",
-  border: "1px solid token(colors.line)",
-  borderRadius: "7px",
-  fontSize: "13px",
+  border: "1px solid token(colors.lineStrong)",
+  borderRadius: "9px",
+  fontSize: "14px",
   color: "ink",
   outline: "none",
   _placeholder: { color: "subtle" },
-  _focus: { borderColor: "accent", boxShadow: "0 0 0 2px #e5e5e512" },
+  _focus: {
+    borderColor: "accent",
+    boxShadow: "0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent)",
+  },
 });
+export const inputStyle = css(inputRaw);
 export const labelStyle = css({
   display: "flex",
   flexDirection: "column",
   gap: "8px",
-  color: "#d8d8d8",
+  color: "soft",
   fontSize: "12px",
   fontWeight: "500",
 });
@@ -112,7 +130,7 @@ export const mutedStyle = css({
 });
 export const panelStyle = css({
   border: "1px solid token(colors.line)",
-  borderRadius: "10px",
+  borderRadius: "14px",
   bg: "surface",
 });
 
@@ -152,17 +170,16 @@ export function SelectField({
     >
       <Select.Trigger
         aria-label={label}
-        className={cx(
-          buttonStyle({ variant: "secondary" }),
-          css({
-            minWidth: "0",
-            width: compact ? "auto" : "100%",
-            justifyContent: "space-between",
-            gap: "16px",
-            fontSize: "12px",
-            fontWeight: "400",
-          }),
-        )}
+        className={css(buttonStyle.raw({ variant: "secondary", size: "md" }), {
+          minWidth: "0",
+          width: compact ? "auto" : "100%",
+          justifyContent: "space-between",
+          gap: "12px",
+          px: "12px",
+          fontSize: "13px",
+          fontWeight: "400",
+          textAlign: "left",
+        })}
       >
         <Select.Value />
         <Select.Icon>
@@ -173,11 +190,11 @@ export function SelectField({
         <Select.Positioner sideOffset={6} className={css({ zIndex: 100 })}>
           <Select.Popup
             className={css({
-              bg: "#202020",
-              border: "1px solid #414141",
-              borderRadius: "8px",
+              bg: "raised",
+              border: "1px solid token(colors.lineStrong)",
+              borderRadius: "10px",
               padding: "5px",
-              boxShadow: "0 12px 40px #0006",
+              boxShadow: "0 16px 48px -12px #000a",
               minWidth: "var(--anchor-width)",
               maxHeight: "min(320px, var(--available-height))",
               overflowY: "auto",
@@ -190,16 +207,16 @@ export function SelectField({
                   value={option.value}
                   className={css({
                     px: "10px",
-                    py: "9px",
-                    fontSize: "12px",
-                    borderRadius: "4px",
+                    py: "8px",
+                    fontSize: "13px",
+                    borderRadius: "7px",
                     cursor: "pointer",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
                     gap: "24px",
                     outline: "none",
-                    _highlighted: { bg: "#353535", color: "accent" },
+                    _highlighted: { bg: "elevated", color: "ink" },
                   })}
                 >
                   <Select.ItemText>{option.label}</Select.ItemText>
@@ -221,24 +238,29 @@ export function CheckField({
   onChange,
   children,
   disabled = false,
+  className,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   children: ReactNode;
   disabled?: boolean;
+  className?: string;
 }) {
   const id = useId();
   return (
     <label
       htmlFor={id}
-      className={css({
-        display: "flex",
-        alignItems: "center",
-        gap: "10px",
-        cursor: "pointer",
-        fontSize: "12px",
-        lineHeight: "1.6",
-      })}
+      className={cx(
+        css({
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          cursor: "pointer",
+          fontSize: "12px",
+          lineHeight: "1.6",
+        }),
+        className,
+      )}
     >
       <Checkbox.Root
         id={id}
@@ -248,13 +270,13 @@ export function CheckField({
         className={css({
           width: "17px",
           height: "17px",
-          border: "1px solid #555555",
+          border: "1px solid token(colors.lineStrong)",
           borderRadius: "4px",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           flexShrink: 0,
-          _checked: { bg: "accent", color: "#191919", borderColor: "accent" },
+          _checked: { bg: "accent", color: "onAccent", borderColor: "accent" },
         })}
       >
         <Checkbox.Indicator>
@@ -275,6 +297,7 @@ export function Modal({
   wide = false,
   initialFocus,
   command = false,
+  placement = "center",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -283,8 +306,12 @@ export function Modal({
   children: ReactNode;
   wide?: boolean;
   initialFocus?: ComponentProps<typeof Dialog.Popup>["initialFocus"];
+  /** A command palette: no visible header, and the content manages scrolling. */
   command?: boolean;
+  /** Top-anchored dialogs grow downward instead of re-centering as they change. */
+  placement?: "center" | "top";
 }) {
+  const top = command || placement === "top";
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
@@ -292,8 +319,8 @@ export function Modal({
           className={css({
             position: "fixed",
             inset: 0,
-            bg: "#050505b8",
-            backdropFilter: "blur(7px)",
+            bg: "scrim",
+            backdropFilter: "blur(4px)",
             zIndex: 60,
             transition: "opacity 180ms",
             _startingStyle: { opacity: 0 },
@@ -307,11 +334,11 @@ export function Modal({
             zIndex: 61,
             overflowY: "auto",
             display: "flex",
-            alignItems: command ? "flex-start" : "center",
+            alignItems: top ? "flex-start" : "center",
             justifyContent: "center",
             px: { base: "12px", md: "32px" },
             pb: { base: "12px", md: "32px" },
-            pt: command ? "min(15dvh, 120px)" : { base: "12px", md: "32px" },
+            pt: top ? "min(12dvh, 96px)" : { base: "12px", md: "32px" },
           })}
         >
           <Dialog.Popup
@@ -320,12 +347,14 @@ export function Modal({
               width: "100%",
               maxWidth: command ? "720px" : wide ? "800px" : "540px",
               maxHeight: command ? "calc(85dvh - 24px)" : "calc(100dvh - 40px)",
-              overflowY: "auto",
+              overflowY: command ? "hidden" : "auto",
+              display: command ? "flex" : "block",
+              flexDirection: "column",
               bg: "surface",
-              border: "1px solid #414141",
-              borderRadius: "14px",
-              boxShadow: "0 24px 100px #0008",
-              p: command ? "16px 16px 0" : { base: "20px", md: "28px" },
+              border: "1px solid token(colors.lineStrong)",
+              borderRadius: "16px",
+              boxShadow: "0 40px 80px -20px #000c",
+              p: command ? 0 : { base: "20px", md: "28px" },
               outline: "none",
               transition: "opacity 180ms, transform 180ms",
               _startingStyle: {
@@ -338,43 +367,49 @@ export function Modal({
               },
             })}
           >
-            <div
-              className={css({
-                display: "flex",
-                alignItems: "flex-start",
-                justifyContent: "space-between",
-                gap: "16px",
-                mb: command ? "12px" : "22px",
-              })}
-            >
-              <div>
-                <Dialog.Title
-                  className={css({
-                    fontSize: command ? "14px" : "21px",
-                    fontWeight: "600",
-                    letterSpacing: "-.5px",
-                  })}
-                >
-                  {title}
-                </Dialog.Title>
-                {description && (
-                  <Dialog.Description
-                    className={cx(
-                      mutedStyle,
-                      css({ mt: "6px", maxWidth: "590px" }),
-                    )}
-                  >
-                    {description}
-                  </Dialog.Description>
-                )}
-              </div>
-              <Dialog.Close
-                aria-label="Close dialog"
-                className={buttonStyle({ variant: "ghost", size: "icon" })}
+            {command ? (
+              <Dialog.Title className={css({ srOnly: true })}>
+                {title}
+              </Dialog.Title>
+            ) : (
+              <div
+                className={css({
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: "16px",
+                  mb: "22px",
+                })}
               >
-                <XIcon size={19} />
-              </Dialog.Close>
-            </div>
+                <div>
+                  <Dialog.Title
+                    className={css({
+                      fontSize: "18px",
+                      fontWeight: "600",
+                      letterSpacing: "-.3px",
+                    })}
+                  >
+                    {title}
+                  </Dialog.Title>
+                  {description && (
+                    <Dialog.Description
+                      className={cx(
+                        mutedStyle,
+                        css({ mt: "6px", maxWidth: "590px" }),
+                      )}
+                    >
+                      {description}
+                    </Dialog.Description>
+                  )}
+                </div>
+                <Dialog.Close
+                  aria-label="Close dialog"
+                  className={buttonStyle({ variant: "ghost", size: "icon" })}
+                >
+                  <XIcon size={19} />
+                </Dialog.Close>
+              </div>
+            )}
             {children}
           </Dialog.Popup>
         </Dialog.Viewport>
@@ -399,11 +434,15 @@ export function Notice({
         alignItems: "flex-start",
         padding: "12px 14px",
         border: "1px solid",
-        borderColor: error ? "#633a35" : "#414141",
-        bg: error ? "#30211f" : "#242424",
-        color: error ? "negative" : "#bfbfbf",
-        borderRadius: "7px",
-        fontSize: "12px",
+        borderColor: error
+          ? "color-mix(in srgb, var(--negative) 32%, transparent)"
+          : "line",
+        bg: error
+          ? "color-mix(in srgb, var(--negative) 10%, transparent)"
+          : "raised",
+        color: error ? "negative" : "soft",
+        borderRadius: "10px",
+        fontSize: "13px",
         lineHeight: "1.6",
       })}
     >
@@ -415,3 +454,52 @@ export function Notice({
     </div>
   );
 }
+
+export const menuPopupStyle = css({
+  minWidth: "220px",
+  maxHeight: "min(420px, var(--available-height))",
+  overflowY: "auto",
+  p: "6px",
+  bg: "raised",
+  border: "1px solid token(colors.lineStrong)",
+  borderRadius: "12px",
+  boxShadow: "0 24px 60px -12px #000c",
+  outline: "none",
+  transition: "opacity 120ms, transform 120ms",
+  _startingStyle: { opacity: 0, transform: "translateY(-4px)" },
+  _endingStyle: { opacity: 0, transform: "translateY(-4px)" },
+});
+
+export const menuItemStyle = css({
+  display: "flex",
+  alignItems: "center",
+  gap: "10px",
+  minHeight: "34px",
+  px: "10px",
+  borderRadius: "8px",
+  fontSize: "13px",
+  color: "soft",
+  cursor: "pointer",
+  outline: "none",
+  userSelect: "none",
+  _highlighted: { bg: "elevated", color: "ink" },
+  "&[data-checked]": { color: "ink" },
+});
+
+export const menuLabelStyle = css({
+  px: "10px",
+  pt: "8px",
+  pb: "6px",
+  fontSize: "11px",
+  fontWeight: "600",
+  letterSpacing: ".06em",
+  textTransform: "uppercase",
+  color: "subtle",
+});
+
+export const menuSeparatorStyle = css({
+  height: "1px",
+  bg: "lineStrong",
+  my: "6px",
+  mx: "4px",
+});

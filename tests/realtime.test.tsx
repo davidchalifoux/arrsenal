@@ -1161,3 +1161,122 @@ it("reconnects with a fresh epoch baseline and ignores patches from obsolete str
   ).toBe("New epoch");
   expect(fetch).not.toHaveBeenCalled();
 });
+
+const streamedLibrary = (title: string) => ({
+  items: [{ ...movie, title }],
+  errors: [],
+});
+
+function renderFirstLoad(wrapper: ReturnType<typeof setup>["wrapper"]) {
+  return renderHook(
+    () => {
+      useRealtime();
+      return useQuery(libraryQuery);
+    },
+    { wrapper },
+  );
+}
+
+it("fills a first load from the stream's snapshot instead of REST", async () => {
+  const { wrapper } = setup();
+  const fetcher = spyOn(globalThis, "fetch");
+  const { result } = renderFirstLoad(wrapper);
+  const stream = latestStream();
+  act(() => {
+    stream.emit("open");
+    // The server marks every topic stale on connect, then sends snapshots.
+    stream.invalidate(["library", "queue", "instances", "calendar"]);
+    stream.snapshot(["library"], streamedLibrary("Streamed"), 1);
+  });
+  await tick();
+  expect(result.current.data?.items[0].title).toBe("Streamed");
+  await tick(1000);
+  expect(fetcher).not.toHaveBeenCalled();
+
+  // Later reads go to REST as usual.
+  fetcher.mockResolvedValueOnce(
+    Response.json({
+      ...streamedLibrary("Fetched"),
+      _realtime: { epoch: "server-a", revision: 2 },
+    }),
+  );
+  await act(async () => {
+    await result.current.refetch();
+  });
+  await tick();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(result.current.data?.items[0].title).toBe("Fetched");
+});
+
+it.each([
+  ["the stream fails", (stream: Stream) => stream.emit("error"), 0],
+  ["no snapshot arrives in time", () => {}, 2000],
+] as const)("falls back to REST when %s", async (_case, trigger, wait) => {
+  const { wrapper } = setup();
+  const fetcher = spyOn(globalThis, "fetch").mockResolvedValue(
+    Response.json(streamedLibrary("Fetched")),
+  );
+  const { result } = renderFirstLoad(wrapper);
+  await tick(0);
+  expect(fetcher).not.toHaveBeenCalled();
+  act(() => trigger(latestStream()));
+  await tick(wait);
+  for (let step = 0; step < 5; step++) await tick(10);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher.mock.calls[0][0]).toBe("/api/library");
+  expect(result.current.data?.items[0].title).toBe("Fetched");
+});
+
+it("shows a streamed error on first load without a REST request", async () => {
+  const { wrapper } = setup();
+  const fetcher = spyOn(globalThis, "fetch");
+  const { result } = renderFirstLoad(wrapper);
+  act(() =>
+    latestStream().emit(
+      "snapshot",
+      JSON.stringify({
+        queryKey: ["library"],
+        error: "Sonarr is unreachable.",
+        version: { epoch: "server-a", revision: 1 },
+      }),
+    ),
+  );
+  for (let step = 0; step < 5; step++) await tick(10);
+  expect(result.current.error?.message).toBe("Sonarr is unreachable.");
+  await tick(2500);
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["loaded during this page", 0, 0],
+  ["loaded before the stream started", -60_000, 1],
+] as const)("applies the stream's opening reset only to data %s", async (_case, age, refetches) => {
+  const { wrapper } = setup();
+  const queryFn = mock(async () => ({ events: [] }));
+  renderHook(
+    () => {
+      useRealtime();
+      return useQuery({
+        queryKey: ["calendar", "2026-09-01", "2026-10-01"],
+        queryFn,
+        initialData: { events: [] },
+        initialDataUpdatedAt: Date.now() + age,
+      });
+    },
+    { wrapper },
+  );
+  const stream = latestStream();
+  act(() => {
+    stream.emit("open");
+    stream.emit(
+      "invalidate",
+      JSON.stringify({ topics: ["calendar"], reset: true }),
+    );
+  });
+  await tick(500);
+  expect(queryFn).toHaveBeenCalledTimes(refetches);
+  // Later hints still refresh it.
+  act(() => stream.invalidate(["calendar"]));
+  await tick(500);
+  expect(queryFn).toHaveBeenCalledTimes(refetches + 1);
+});

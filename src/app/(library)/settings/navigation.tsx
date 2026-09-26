@@ -17,13 +17,22 @@ export function SettingsNavigation() {
     <nav
       aria-label="Settings sections"
       className={css({
+        // Phones only: a single row of sections above the page, which the
+        // desktop sidebar replaces.
+        display: { base: "block", lg: "none" },
+        flexShrink: 0,
         minWidth: 0,
-        pr: { lg: "16px" },
-        pb: { base: "16px", lg: "8px" },
+        px: "12px",
+        py: "6px",
+        bg: "sidebar",
+        borderBottom: "1px solid token(colors.line)",
+        overflowX: "auto",
+        scrollbarWidth: "none",
       })}
     >
       <p
         className={css({
+          srOnly: true,
           color: "subtle",
           fontSize: "11px",
           fontWeight: "600",
@@ -39,8 +48,6 @@ export function SettingsNavigation() {
       <div
         className={css({
           display: "flex",
-          flexDirection: { base: "row", lg: "column" },
-          flexWrap: "wrap",
           gap: "4px",
         })}
       >
@@ -63,7 +70,9 @@ export function SettingsNavigation() {
                 display: "flex",
                 alignItems: "center",
                 gap: "8px",
-                minHeight: { base: "40px", lg: "32px" },
+                flexShrink: 0,
+                whiteSpace: "nowrap",
+                minHeight: "36px",
                 px: "10px",
                 borderRadius: "7px",
                 color: "muted",

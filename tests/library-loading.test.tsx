@@ -24,7 +24,11 @@ import { renderToString } from "react-dom/server";
 import type { InstanceSummary, MediaItem, QueueItem } from "@/lib/types";
 import { advanceTime } from "./timers";
 
-mock.module("@/lib/client", () => ({ api: mock() }));
+mock.module("@/lib/client", () => ({
+  api: mock(),
+  mediaHref: () => "/",
+  sizeLabel: () => "",
+}));
 mock.module("next/image", () => ({
   // Whitelist DOM props so Next-only options such as preload never leak.
   default: ({
@@ -289,6 +293,8 @@ describe("LibraryLoading", () => {
     // Keep jsdom from navigating; the real Link's React onClick still runs.
     link.addEventListener("click", (event) => event.preventDefault());
     fireEvent.click(link);
+    // The splash fades out over the revealed route before unmounting.
+    await act(() => advanceTime(320));
     expect(screen.queryByRole("status")).toBeNull();
     expectBlocked(screen.getByText("Route content"), false);
     for (const name of names)

@@ -1,11 +1,16 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { matchSorter } from "match-sorter";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./client";
 import type { CatalogResponse } from "./types";
 
+/**
+ * Looks up catalog titles 250ms after typing stops. Results for the previous
+ * query stay available (flagged `isStale`) until the next ones arrive, so the
+ * list doesn't collapse and re-grow on every keystroke.
+ */
 export function useCatalogSearch(term: string, enabled: boolean) {
   const query = term.trim();
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -16,30 +21,36 @@ export function useCatalogSearch(term: string, enabled: boolean) {
   }, [query]);
 
   const isDebouncing = query !== debouncedQuery;
-  const canSearch = enabled && query.length >= 2 && !isDebouncing;
+  const active = enabled && query.length >= 2;
   const results = useQuery({
-    queryKey: ["lookup", query],
+    queryKey: ["lookup", debouncedQuery],
     queryFn: ({ signal }) =>
-      api<CatalogResponse>(`/api/lookup?term=${encodeURIComponent(query)}`, {
-        signal,
-      }),
-    enabled: canSearch,
+      api<CatalogResponse>(
+        `/api/lookup?term=${encodeURIComponent(debouncedQuery)}`,
+        { signal },
+      ),
+    enabled: active && debouncedQuery.length >= 2,
+    placeholderData: keepPreviousData,
   });
   const data = useMemo(
     () =>
-      canSearch && results.data
+      active && results.data
         ? {
             ...results.data,
-            items: matchSorter(results.data.items, query, { keys: ["title"] }),
+            items: matchSorter(results.data.items, debouncedQuery, {
+              keys: ["title"],
+            }),
           }
         : undefined,
-    [canSearch, results.data, query],
+    [active, results.data, debouncedQuery],
   );
 
   return {
     ...results,
     data,
-    isError: canSearch && results.isError,
-    isDebouncing,
+    isError: active && !isDebouncing && results.isError,
+    isFetching: active && results.isFetching,
+    isDebouncing: active && isDebouncing,
+    isStale: active && (isDebouncing || results.isPlaceholderData),
   };
 }

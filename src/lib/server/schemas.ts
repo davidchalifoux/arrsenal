@@ -1,6 +1,8 @@
 import "server-only";
 
 import { z } from "zod";
+import { libraryPreferencesSchema } from "@/lib/library-options";
+import { hexColorPattern, legacyThemeIds, themeIds } from "@/lib/theme";
 import { isPosterSource } from "../image-sources";
 
 const objectError = { error: "A JSON object is required." };
@@ -137,7 +139,41 @@ export const preferencesSchema = z.strictObject({
         return z.NEVER;
       }
     }),
+  theme: z
+    .preprocess(
+      (value) =>
+        typeof value === "string" ? (legacyThemeIds[value] ?? value) : value,
+      z.enum(themeIds),
+    )
+    .optional(),
+  accent: z
+    .string()
+    .regex(hexColorPattern, { error: "Enter a hex color, such as #8b7cf6." })
+    .transform((value) => value.toLowerCase())
+    .nullable()
+    .optional(),
+  library: libraryPreferencesSchema.optional(),
+  // The last profile and root folder used when adding to each instance.
+  addDefaults: z
+    .record(
+      z.string().min(1).max(200),
+      z.strictObject({
+        qualityProfileId: z.number().int().positive(),
+        rootFolderPath: z.string().min(1).max(4096),
+      }),
+    )
+    .refine((value) => Object.keys(value).length <= 100, {
+      error: "Too many instance defaults.",
+    })
+    .optional(),
 });
+
+// Saves merge into the stored preferences, so a patch may name any subset.
+export const preferencesPatchSchema = preferencesSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    error: "Include at least one preference.",
+  });
 
 export const usernameSchema = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/, {
   error:
