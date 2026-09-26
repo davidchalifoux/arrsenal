@@ -288,6 +288,8 @@ export function CheckField({
   );
 }
 
+const modalGutter = { base: "20px", md: "28px" };
+
 export function Modal({
   open,
   onOpenChange,
@@ -298,6 +300,8 @@ export function Modal({
   initialFocus,
   command = false,
   placement = "center",
+  controls,
+  footer,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -310,6 +314,10 @@ export function Modal({
   command?: boolean;
   /** Top-anchored dialogs grow downward instead of re-centering as they change. */
   placement?: "center" | "top";
+  /** Pinned under the title while the body scrolls. */
+  controls?: ReactNode;
+  /** Pinned below the scrolling body. */
+  footer?: ReactNode;
 }) {
   const top = command || placement === "top";
   return (
@@ -347,14 +355,14 @@ export function Modal({
               width: "100%",
               maxWidth: command ? "720px" : wide ? "800px" : "540px",
               maxHeight: command ? "calc(85dvh - 24px)" : "calc(100dvh - 40px)",
-              overflowY: command ? "hidden" : "auto",
-              display: command ? "flex" : "block",
+              // The header stays put; only the body scrolls.
+              overflow: "hidden",
+              display: "flex",
               flexDirection: "column",
               bg: "surface",
               border: "1px solid token(colors.lineStrong)",
               borderRadius: "16px",
               boxShadow: "0 40px 80px -20px #000c",
-              p: command ? 0 : { base: "20px", md: "28px" },
               outline: "none",
               transition: "opacity 180ms, transform 180ms",
               _startingStyle: {
@@ -368,49 +376,98 @@ export function Modal({
             })}
           >
             {command ? (
-              <Dialog.Title className={css({ srOnly: true })}>
-                {title}
-              </Dialog.Title>
+              <>
+                <Dialog.Title className={css({ srOnly: true })}>
+                  {title}
+                </Dialog.Title>
+                {children}
+              </>
             ) : (
-              <div
-                className={css({
-                  display: "flex",
-                  alignItems: "flex-start",
-                  justifyContent: "space-between",
-                  gap: "16px",
-                  mb: "22px",
-                })}
-              >
-                <div>
-                  <Dialog.Title
+              <>
+                <div
+                  data-controls={controls ? "" : undefined}
+                  className={css({
+                    flexShrink: 0,
+                    px: modalGutter,
+                    pt: modalGutter,
+                    pb: "22px",
+                    "&[data-controls]": {
+                      pb: "16px",
+                      borderBottom: "1px solid token(colors.line)",
+                    },
+                  })}
+                >
+                  <div
                     className={css({
-                      fontSize: "18px",
-                      fontWeight: "600",
-                      letterSpacing: "-.3px",
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      gap: "16px",
                     })}
                   >
-                    {title}
-                  </Dialog.Title>
-                  {description && (
-                    <Dialog.Description
-                      className={cx(
-                        mutedStyle,
-                        css({ mt: "6px", maxWidth: "590px" }),
+                    <div>
+                      <Dialog.Title
+                        className={css({
+                          fontSize: "18px",
+                          fontWeight: "600",
+                          letterSpacing: "-.3px",
+                        })}
+                      >
+                        {title}
+                      </Dialog.Title>
+                      {description && (
+                        <Dialog.Description
+                          className={cx(
+                            mutedStyle,
+                            css({ mt: "6px", maxWidth: "590px" }),
+                          )}
+                        >
+                          {description}
+                        </Dialog.Description>
                       )}
+                    </div>
+                    <Dialog.Close
+                      aria-label="Close dialog"
+                      className={buttonStyle({
+                        variant: "ghost",
+                        size: "icon",
+                      })}
                     >
-                      {description}
-                    </Dialog.Description>
+                      <XIcon size={19} />
+                    </Dialog.Close>
+                  </div>
+                  {controls && (
+                    <div className={css({ mt: "20px" })}>{controls}</div>
                   )}
                 </div>
-                <Dialog.Close
-                  aria-label="Close dialog"
-                  className={buttonStyle({ variant: "ghost", size: "icon" })}
+                <div
+                  data-controls={controls ? "" : undefined}
+                  className={css({
+                    flexGrow: 1,
+                    minHeight: 0,
+                    overflowY: "auto",
+                    overscrollBehavior: "contain",
+                    px: modalGutter,
+                    pb: modalGutter,
+                    "&[data-controls]": { pt: "16px" },
+                  })}
                 >
-                  <XIcon size={19} />
-                </Dialog.Close>
-              </div>
+                  {children}
+                </div>
+                {footer && (
+                  <div
+                    className={css({
+                      flexShrink: 0,
+                      px: modalGutter,
+                      py: "16px",
+                      borderTop: "1px solid token(colors.line)",
+                    })}
+                  >
+                    {footer}
+                  </div>
+                )}
+              </>
             )}
-            {children}
           </Dialog.Popup>
         </Dialog.Viewport>
       </Dialog.Portal>
