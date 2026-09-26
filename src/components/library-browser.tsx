@@ -16,6 +16,7 @@ import {
   defaultViewOptions,
   type LibraryPreferences,
 } from "@/lib/library-options";
+import { librarySorts } from "@/lib/library-selectors";
 import { usePreferences, useSavePreferences } from "@/lib/preferences";
 import { CustomFilterDialog, emptyCustomFilter } from "./custom-filter-dialog";
 import { useLibraryActions } from "./library-provider";
@@ -38,7 +39,7 @@ const snapshotSchema = z.object({
   instanceFilter: z.string(),
   quality: z.string(),
   status: z.enum(["all", "available", "incomplete", "downloading"]),
-  sort: z.enum(["recent", "title", "year", "rating", "size"]),
+  sort: z.enum(librarySorts),
   sortDirection: z.enum(["asc", "desc"]),
   layout: z.enum(["grid", "list"]),
   filterId: z.string().max(80).nullable().default(null),

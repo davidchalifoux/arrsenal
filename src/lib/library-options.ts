@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { customFilterSchema } from "./library-filters";
+import { librarySorts } from "./library-selectors";
 
 export const posterSizes = ["small", "medium", "large", "huge"] as const;
 export type PosterSize = (typeof posterSizes)[number];
@@ -51,7 +52,7 @@ export const defaultViewOptions: LibraryViewOptions = {
 
 export const libraryDefaultsSchema = z.strictObject({
   layout: z.enum(["grid", "list"]),
-  sort: z.enum(["recent", "title", "year", "rating", "size"]),
+  sort: z.enum(librarySorts),
   sortDirection: z.enum(["asc", "desc"]),
 });
 export type LibraryDefaults = z.infer<typeof libraryDefaultsSchema>;

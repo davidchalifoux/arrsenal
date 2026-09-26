@@ -1231,6 +1231,9 @@ const mediaResource = z.object({
       sizeOnDisk: number.optional(),
     })
     .optional(),
+  seasons: z
+    .array(z.object({ seasonNumber: number, monitored: z.boolean() }))
+    .optional(),
   images: z
     .array(
       z.object({

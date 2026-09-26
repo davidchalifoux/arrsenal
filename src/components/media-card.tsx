@@ -3,6 +3,7 @@
 import {
   ArrowDownIcon,
   ArrowUpIcon,
+  BookmarkSimpleIcon,
   FilmSlateIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
@@ -14,7 +15,11 @@ import {
   defaultViewOptions,
   type LibraryViewOptions,
 } from "@/lib/library-options";
-import { mediaSize } from "@/lib/library-selectors";
+import {
+  mediaMonitoring,
+  mediaSize,
+  targetMonitoring,
+} from "@/lib/library-selectors";
 import type { MediaItem, MediaStatus, MediaTarget } from "@/lib/types";
 import type { LibrarySort, LibrarySortDirection } from "./use-library-view";
 import { useScrollList } from "./use-scroll-list";
@@ -354,6 +359,11 @@ function EpisodeProgress({ item }: { item: MediaItem }) {
       </span>
       <span
         className={css({
+          // A fixed slot keeps every bar the same length; the mono font makes
+          // 9ch fit counts up to "999 / 999".
+          minWidth: "9ch",
+          flexShrink: 0,
+          textAlign: "right",
           fontFamily: "mono",
           fontSize: "11px",
           color: "muted",
@@ -366,8 +376,54 @@ function EpisodeProgress({ item }: { item: MediaItem }) {
   );
 }
 
+function MonitoredCell({ item }: { item: MediaItem }) {
+  const { state, label } = mediaMonitoring(item);
+  const detail =
+    item.targets.length > 1
+      ? item.targets
+          .map(
+            (target) =>
+              `${target.instanceName}: ${targetMonitoring(target).label}`,
+          )
+          .join("\n")
+      : undefined;
+  return (
+    <span
+      title={detail}
+      data-state={state}
+      className={css({
+        display: "flex",
+        alignItems: "center",
+        gap: "6px",
+        minWidth: 0,
+        fontSize: "12px",
+        color: "soft",
+        whiteSpace: "nowrap",
+        "&[data-state=partial]": { color: "warning" },
+        "&[data-state=unmonitored]": { color: "subtle" },
+      })}
+    >
+      <BookmarkSimpleIcon
+        size={13}
+        aria-hidden="true"
+        weight={
+          state === "monitored"
+            ? "fill"
+            : state === "partial"
+              ? "duotone"
+              : "regular"
+        }
+        className={css({ flexShrink: 0 })}
+      />
+      <span className={css({ overflow: "hidden", textOverflow: "ellipsis" })}>
+        {label}
+      </span>
+    </span>
+  );
+}
+
 const tableColumns =
-  "minmax(0, 2.6fr) 64px 72px minmax(0, 2fr) minmax(0, 1.2fr) 96px 104px";
+  "minmax(0, 2.6fr) 64px 72px minmax(0, 2fr) minmax(0, 1.2fr) 124px 96px 104px";
 
 const addedFormat = new Intl.DateTimeFormat(undefined, {
   month: "short",
@@ -481,7 +537,8 @@ export function MediaList({
           <SortHeader label="Year" sortKey="year" {...headerProps} />
           <SortHeader label="Type" {...headerProps} />
           <SortHeader label="Targets" {...headerProps} />
-          <SortHeader label="Episodes" {...headerProps} />
+          <SortHeader label="Episodes" sortKey="episodes" {...headerProps} />
+          <SortHeader label="Monitored" sortKey="monitored" {...headerProps} />
           <SortHeader
             label="On disk"
             sortKey="size"
@@ -586,6 +643,9 @@ export function MediaList({
               </span>
               <span className={css({ display: { base: "none", md: "block" } })}>
                 <EpisodeProgress item={item} />
+              </span>
+              <span className={css({ display: { base: "none", md: "block" } })}>
+                <MonitoredCell item={item} />
               </span>
               <span
                 className={css({
