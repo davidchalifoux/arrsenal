@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/davidchalifoux/arrsenal/compare/v0.6.1...v0.7.0) (2026-09-26)
+
+
+### Features
+
+* redesign the UI in a Sonarr/Radarr-style layout ([#33](https://github.com/davidchalifoux/arrsenal/issues/33)) ([8f900d9](https://github.com/davidchalifoux/arrsenal/commit/8f900d9c7e7ffd649e0a35494a92127ea2c644ad))
+
 ## [0.6.1](https://github.com/davidchalifoux/arrsenal/compare/v0.6.0...v0.6.1) (2026-09-21)
 
 
