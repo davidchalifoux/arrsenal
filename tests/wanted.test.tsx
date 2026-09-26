@@ -7,6 +7,7 @@ import {
   type Mock,
   mock,
 } from "bun:test";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
   fireEvent,
@@ -164,5 +165,55 @@ describe("Wanted", () => {
       "Severance (Shows HD): Offline",
     );
     expect(state.notify).not.toHaveBeenCalled();
+  });
+
+  it("opens a manual search beside the automatic one", async () => {
+    apiMock.mockResolvedValue({ items: [] });
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <Wanted />
+      </QueryClientProvider>,
+    );
+    const row = screen.getByRole("listitem", { name: "Dune on Movies HD" });
+    fireEvent.click(
+      within(row).getByRole("button", {
+        name: "Manual search Movies HD for Dune",
+      }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Manual search" }),
+    ).toBeTruthy();
+    await waitFor(() =>
+      expect(String(apiMock.mock.calls[0][0])).toBe(
+        "/api/releases?instanceId=hd&remoteId=1&kind=movie",
+      ),
+    );
+  });
+
+  it("selects every row between two clicks when shift is held", () => {
+    state.items = ["A", "B", "C", "D", "E"].map((title, index) =>
+      item({ id: `movie:tmdb:${index}`, title }),
+    );
+    render(<Wanted />);
+    const box = (title: string) =>
+      screen.getByRole("checkbox", { name: `Select ${title} on Movies HD` });
+    const checked = () =>
+      ["A", "B", "C", "D", "E"].filter(
+        (title) => (box(title) as HTMLInputElement).checked,
+      );
+    fireEvent.click(box("B"));
+    fireEvent.click(box("E"), { shiftKey: true });
+    expect(checked()).toEqual(["B", "C", "D", "E"]);
+    // Overshooting and shift-clicking a closer row shrinks the range...
+    fireEvent.click(box("C"), { shiftKey: true });
+    expect(checked()).toEqual(["B", "C"]);
+    // ...and it can flip to the other side of the anchor.
+    fireEvent.click(box("A"), { shiftKey: true });
+    expect(checked()).toEqual(["A", "B"]);
+    // Shift-clicking from a cleared anchor clears the range instead.
+    fireEvent.click(box("E"));
+    fireEvent.click(box("E"));
+    fireEvent.click(box("A"), { shiftKey: true });
+    expect(checked()).toEqual([]);
   });
 });
