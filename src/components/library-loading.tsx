@@ -56,7 +56,9 @@ export function LibraryLoading({ children }: { children: ReactNode }) {
     <StartupContext value={finish}>
       <div
         hidden={phase === "loading"}
-        inert={phase !== "done"}
+        // Usable as soon as the splash starts fading; the splash ignores
+        // pointer events and is hidden from assistive technology by then.
+        inert={phase === "loading"}
         className={
           phase === "leaving"
             ? css({ animation: `fadeIn ${exitMs}ms ease-out both` })
@@ -68,6 +70,8 @@ export function LibraryLoading({ children }: { children: ReactNode }) {
       {phase !== "done" && (
         <div
           data-leaving={phase === "leaving" ? "" : undefined}
+          // While fading out it is decoration: stop announcing "loading".
+          aria-hidden={phase === "leaving" ? true : undefined}
           className={css({
             position: "fixed",
             inset: 0,

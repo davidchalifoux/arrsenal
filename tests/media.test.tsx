@@ -435,16 +435,28 @@ describe("AddMedia", () => {
   });
 
   it("surfaces option and add server failures without losing the user's choices", async () => {
-    fetchMock.mockResolvedValueOnce(
-      Response.json({ error: "Profiles unavailable." }, { status: 503 }),
-    );
+    // Options stay unavailable until Retry, however many reads happen first
+    // (opening the dialog focuses, and so prefetches, the first instance).
+    let optionsDown = true;
+    fetchMock.mockImplementation(async (path) => {
+      const id = String(path).match(
+        /^\/api\/instances\/([^/]+)\/options$/,
+      )?.[1];
+      if (id && optionsDown)
+        return Response.json(
+          { error: "Profiles unavailable." },
+          { status: 503 },
+        );
+      if (id && options[id]) return Response.json(options[id]);
+      throw new Error(`Unexpected request: ${path}`);
+    });
     const props = renderAdd();
     await screen.findByRole("dialog");
     fireEvent.click(screen.getByRole("checkbox", { name: hd.name }));
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Profiles unavailable.",
     );
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    optionsDown = false;
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await choose(`${hd.name} quality profile`, "HD-1080p");
     await choose(`${hd.name} root folder`, "/movies/hd");
