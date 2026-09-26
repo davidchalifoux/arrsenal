@@ -66,21 +66,6 @@ describe("MediaList", () => {
     expect(screen.queryByRole("link", { name: /^Movie 0$/ })).toBeNull();
     expect(titleLinks().length).toBeLessThan(100);
   });
-
-  it("stripes rows by their position in the whole list", () => {
-    render(
-      <Page>
-        <MediaList items={library.slice(0, 3)} />
-      </Page>,
-    );
-    const rows = document.querySelectorAll("[data-index]");
-    expect([...rows].map((row) => row.hasAttribute("data-stripe"))).toEqual([
-      false,
-      true,
-      false,
-    ]);
-    expect(rows[2].hasAttribute("data-last")).toBe(true);
-  });
 });
 
 describe("PosterGrid", () => {

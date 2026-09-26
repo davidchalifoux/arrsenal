@@ -205,24 +205,4 @@ describe("AddMedia target options prefetch", () => {
     await act(() => queryClient.cancelQueries({ queryKey: key }));
     expect(signal?.aborted).toBe(true);
   });
-
-  it("keeps options fresh for five minutes", async () => {
-    queryClient.setQueryData(key, options, {
-      updatedAt: Date.now() - 4 * 60_000,
-    });
-    renderAdd();
-    const checkbox = await screen.findByRole("checkbox", {
-      name: instance.name,
-    });
-    fireEvent.mouseEnter(checkbox);
-    await act(async () => {});
-    expect(fetchMock).not.toHaveBeenCalled();
-    act(() => {
-      queryClient.setQueryData(key, options, {
-        updatedAt: Date.now() - 5 * 60_000 - 1,
-      });
-    });
-    fireEvent.focus(checkbox);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-  });
 });

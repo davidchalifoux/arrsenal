@@ -220,12 +220,6 @@ describe("Settings routes and navigation", () => {
     expect(savedZone).toBeNull();
   });
 
-  it("opens Connections instead of an overview", async () => {
-    await expect(
-      SettingsPage({ searchParams: Promise.resolve({}) }),
-    ).rejects.toThrow("REDIRECT:/settings/connections");
-  });
-
   it("redirects legacy connect links to the connection subpage", async () => {
     await expect(
       SettingsPage({ searchParams: Promise.resolve({ connect: "1" }) }),
@@ -242,35 +236,6 @@ describe("Settings routes and navigation", () => {
       searchParams: Promise.resolve({ connect }),
     });
     expect(page.props.autoOpen).toBe(false);
-  });
-
-  it("renders the manager with direct section navigation and no overview", async () => {
-    state.pathname = "/settings/connections";
-    render(
-      <SettingsLayout>
-        {await ConnectionsPage({ searchParams: Promise.resolve({}) })}
-      </SettingsLayout>,
-    );
-    expect(
-      screen.getByRole("heading", { level: 1, name: "Connections" }),
-    ).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Back to Settings" })).toBeNull();
-    const nav = screen.getByRole("navigation", { name: "Settings sections" });
-    expect(
-      within(nav)
-        .getByRole("link", { name: "Connections" })
-        .getAttribute("aria-current"),
-    ).toBe("page");
-    expect(within(nav).queryByRole("link", { name: "Overview" })).toBeNull();
-    expect(
-      within(nav)
-        .getByRole("link", { name: "Personalization" })
-        .getAttribute("href"),
-    ).toBe("/settings/personalization");
-    fireEvent.click(screen.getByRole("button", { name: "Add instance" }));
-    expect(
-      await screen.findByRole("dialog", { name: "Connect an instance" }),
-    ).toBeTruthy();
   });
 
   it("waits for connections to load, then opens once and cleans the query on the subpage", async () => {

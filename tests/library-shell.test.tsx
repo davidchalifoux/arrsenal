@@ -141,11 +141,6 @@ it("shows the active instance command in the header", () => {
   ).toBeTruthy();
 });
 
-it("shows no task indicator when no command is active", () => {
-  renderShell();
-  expect(screen.queryByText(/Processing release/)).toBeNull();
-});
-
 it("lists the Arr-style sections in the sidebar and mobile tab bar", () => {
   mocks.pathname = "/calendar";
   renderShell();

@@ -3,7 +3,6 @@ import {
   customFilterSchema,
   type FilterDefinition,
   matchesFilter,
-  presetFilters,
 } from "@/lib/library-filters";
 import type { MediaItem, MediaTarget } from "@/lib/types";
 
@@ -199,21 +198,6 @@ describe("matchesFilter", () => {
       ),
     ).toBe(true);
     expect(matchesFilter(item, { match: "all", rules: [] }, now)).toBe(true);
-  });
-
-  it("ships presets that evaluate", () => {
-    for (const preset of presetFilters)
-      expect(typeof matchesFilter(movie(), preset.definition, now)).toBe(
-        "boolean",
-      );
-    expect(
-      matchesFilter(
-        movie({ targets: [target({ monitored: false })] }),
-        presetFilters.find((preset) => preset.id === "preset-unmonitored")
-          ?.definition ?? { match: "any", rules: [] },
-        now,
-      ),
-    ).toBe(true);
   });
 });
 

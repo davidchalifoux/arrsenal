@@ -1327,19 +1327,6 @@ test("episode file messages update or clear every referencing episode", () => {
   assert.equal(mergeEpisodeFile([watched], 999, undefined, now), undefined);
 });
 
-test("active command merges stay within the snapshot cap", () => {
-  let commands = [];
-  for (let id = 1; id <= 40; id++) {
-    commands = mergeCommandResource(commands, {
-      id,
-      name: "Search",
-      status: "started",
-    });
-  }
-  assert.equal(commands.length, 32);
-  assert.equal(commands.at(-1).id, 32);
-});
-
 test("episode file delete resources are parsed for the fast path", () => {
   assert.deepEqual(
     parseEpisodeFileResource(

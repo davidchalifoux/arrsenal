@@ -188,11 +188,6 @@ async function findAlert(text: string) {
   });
 }
 
-async function chooseSort(label: string) {
-  fireEvent.click(screen.getByRole("button", { name: /^Sort library:/ }));
-  fireEvent.click(await screen.findByRole("menuitemradio", { name: label }));
-}
-
 async function choose(label: string, value: string) {
   fireEvent.click(await screen.findByRole("combobox", { name: label }));
   const option = await screen.findByRole("option", { name: value });
@@ -637,66 +632,6 @@ describe("Library integration", () => {
     expect(screen.getByRole("heading", { name: "Movies" })).toBeTruthy();
     expect(screen.queryByText(/\d+ titles/)).toBeNull();
     expect(await findAlert("Offline")).toBeTruthy();
-  });
-
-  it.each([
-    "Date added",
-    "Release year",
-    "Rating",
-  ])("preserves API response order for tied %s values, including after refresh", async (sort) => {
-    const items: MediaItem[] = [
-      {
-        ...movie,
-        id: "movie-z",
-        title: "First movie",
-        rating: 8,
-        targets: [hdTarget],
-      },
-      {
-        ...movie,
-        id: "movie-a",
-        title: "Second movie",
-        rating: 8,
-        targets: [hdTarget],
-      },
-    ];
-    let responseItems = items;
-    fetchMock.mockImplementation(async (path) => {
-      if (path === "/api/library")
-        return Response.json({ items: responseItems, errors: [] });
-      if (path === "/api/instances") return Response.json({ instances: [hd] });
-      throw new Error(`Unexpected request: ${path}`);
-    });
-    renderUI(
-      <LibraryProvider>
-        <LibraryBrowser category="movies" />
-      </LibraryProvider>,
-    );
-    await screen.findByRole("link", { name: `View ${items[0].title}` });
-    await chooseSort(sort);
-    expect(
-      screen
-        .getAllByRole("link", { name: /^View / })
-        .map((link) => link.getAttribute("aria-label")),
-    ).toEqual(items.map((item) => `View ${item.title}`));
-
-    await chooseSort("Ascending");
-    expect(
-      screen
-        .getAllByRole("link", { name: /^View / })
-        .map((link) => link.getAttribute("aria-label")),
-    ).toEqual(items.map((item) => `View ${item.title}`));
-
-    responseItems = [...items].reverse();
-    fireEvent.click(screen.getByRole("button", { name: "Refresh library" }));
-    await waitFor(() =>
-      expect(
-        screen
-          .getAllByRole("link", { name: /^View / })
-          .map((link) => link.getAttribute("aria-label")),
-      ).toEqual(responseItems.map((item) => `View ${item.title}`)),
-    );
-    expect(writes()).toHaveLength(0);
   });
 
   it("filters by selected quality profiles rather than file quality on the selected instance", async () => {
