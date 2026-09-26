@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/davidchalifoux/arrsenal/compare/v0.7.0...v0.8.0) (2026-09-26)
+
+
+### Features
+
+* add manual search and range selection to Wanted rows ([fce0352](https://github.com/davidchalifoux/arrsenal/commit/fce0352cf943cb19807da50f0d2a6708ab0299ed))
+* add search and shift-click range selection to Activity ([fce0352](https://github.com/davidchalifoux/arrsenal/commit/fce0352cf943cb19807da50f0d2a6708ab0299ed))
+* sort by missing episodes and show a Monitored column ([fce0352](https://github.com/davidchalifoux/arrsenal/commit/fce0352cf943cb19807da50f0d2a6708ab0299ed))
+
+
+### Bug Fixes
+
+* keep dialog headers pinned while the content scrolls ([fce0352](https://github.com/davidchalifoux/arrsenal/commit/fce0352cf943cb19807da50f0d2a6708ab0299ed))
+
 ## [0.7.0](https://github.com/davidchalifoux/arrsenal/compare/v0.6.1...v0.7.0) (2026-09-26)
 
 
