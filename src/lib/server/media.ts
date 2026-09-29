@@ -275,6 +275,15 @@ export function mergeMedia(items: MediaItem[]): MediaItem[] {
   return [...merged.values()];
 }
 
+function episodeLabel(episode: Row) {
+  const season = num(episode.seasonNumber, -1);
+  const number = num(episode.episodeNumber, -1);
+  if (season < 0 || number < 0) return undefined;
+  const code = `S${String(season).padStart(2, "0")}E${String(number).padStart(2, "0")}`;
+  const title = str(episode.title);
+  return title ? `${code} · ${title}` : code;
+}
+
 export function normalizeQueue(item: Row, instance: InstanceConfig): QueueItem {
   const kind = instance.kind === "radarr" ? "movie" : "series";
   const media = row(kind === "movie" ? item.movie : item.series);
@@ -286,12 +295,17 @@ export function normalizeQueue(item: Row, instance: InstanceConfig): QueueItem {
     return [str(detail.title), ...strings(detail.messages)].filter(Boolean);
   });
   if (str(item.errorMessage)) warnings.push(str(item.errorMessage));
+  // Unmatched downloads have no media row; they wait for a manual import.
+  const mediaId =
+    num(media.id) > 0 ? normalizeMediaMetadata(media, instance).id : undefined;
   return {
     id: num(item.id),
     instanceId: instance.id,
     instanceName: instance.name,
     title: str(item.title, "Unknown download"),
     mediaTitle: str(media.title, str(item.title, "Unknown media")),
+    mediaId,
+    episode: kind === "series" ? episodeLabel(row(item.episode)) : undefined,
     kind,
     poster: mediaImage(media, instance) || undefined,
     quality: qualityName(item.quality),

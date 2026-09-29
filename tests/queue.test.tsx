@@ -606,6 +606,28 @@ describe("DownloadQueue", () => {
     expect(screen.getByText("No matching downloads")).toBeTruthy();
   });
 
+  it("links matched downloads to their media page and shows the episode", () => {
+    render(
+      <DownloadQueue
+        data={queue([
+          {
+            ...download,
+            mediaId: "series:tvdb:371980",
+            episode: "S02E01 · Hello, Ms. Cobel",
+          },
+          { ...download, id: 8, mediaTitle: "Unmatched batch" },
+        ])}
+        loading={false}
+        onRefresh={mock()}
+        notify={mock()}
+      />,
+    );
+    const link = screen.getByRole("link", { name: "Severance" });
+    expect(link.getAttribute("href")).toBe("/shows/371980-severance");
+    expect(screen.getByText(/S02E01 · Hello, Ms\. Cobel/)).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Unmatched batch" })).toBeNull();
+  });
+
   it("selects a range with shift-click", () => {
     const items = ["A", "B", "C"].map((mediaTitle, index) => ({
       ...download,

@@ -12,8 +12,9 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
+import Link from "next/link";
 import { Fragment, type ReactNode, useId, useRef, useState } from "react";
-import { api, sizeLabel } from "@/lib/client";
+import { api, mediaHref, sizeLabel } from "@/lib/client";
 import type { ActionResponse, QueueItem, QueueResponse } from "@/lib/types";
 import {
   Page,
@@ -46,6 +47,7 @@ export function matchesQueueSearch(item: QueueItem, query: string) {
   if (!terms.length) return true;
   const haystack = [
     item.mediaTitle,
+    item.episode ?? "",
     item.title,
     item.quality,
     item.instanceName,
@@ -709,7 +711,31 @@ export function DownloadQueue({
                               whiteSpace: "nowrap",
                             })}
                           >
-                            {item.mediaTitle}
+                            {item.mediaId ? (
+                              <Link
+                                href={mediaHref({
+                                  id: item.mediaId,
+                                  kind: item.kind,
+                                  title: item.mediaTitle,
+                                })}
+                                className={css({ _hover: { color: "accent" } })}
+                              >
+                                {item.mediaTitle}
+                              </Link>
+                            ) : (
+                              item.mediaTitle
+                            )}
+                            {item.episode && (
+                              <span
+                                className={css({
+                                  color: "muted",
+                                  fontWeight: "normal",
+                                })}
+                              >
+                                {" · "}
+                                {item.episode}
+                              </span>
+                            )}
                           </span>
                           <span
                             className={css({

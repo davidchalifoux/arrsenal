@@ -101,6 +101,8 @@ export const realtimeQueueItemSchema = z.object({
   instanceName: z.string(),
   title: z.string(),
   mediaTitle: z.string(),
+  mediaId: z.string().optional(),
+  episode: z.string().optional(),
   kind,
   poster: z.string().optional(),
   quality: z.string(),

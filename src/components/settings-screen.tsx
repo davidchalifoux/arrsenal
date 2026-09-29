@@ -3,6 +3,7 @@
 import { css } from "@styled-system/css";
 import { useRouter } from "next/navigation";
 import { useInstances, useSyncData } from "@/lib/client-data";
+import { ArrsenalAddress } from "./arrsenal-address";
 import { useLibraryActions } from "./library-provider";
 import { Page, PageHeader } from "./page-header";
 import { Settings } from "./settings";
@@ -44,6 +45,11 @@ export function SettingsScreen({ autoOpen = false }: { autoOpen?: boolean }) {
         void sync("all");
       }}
       notify={notify}
+      footer={
+        (instances.data?.instances.length ?? 0) > 0 && (
+          <ArrsenalAddress notify={notify} />
+        )
+      }
       autoOpen={autoOpen}
       onAutoOpened={() =>
         router.replace("/settings/connections", { scroll: false })

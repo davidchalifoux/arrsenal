@@ -4,6 +4,7 @@ import { z } from "zod";
 import { libraryPreferencesSchema } from "@/lib/library-options";
 import { hexColorPattern, legacyThemeIds, themeIds } from "@/lib/theme";
 import { isPosterSource } from "../image-sources";
+import { torrentLinkProblem } from "../release-links";
 
 const objectError = { error: "A JSON object is required." };
 
@@ -153,6 +154,34 @@ export const preferencesSchema = z.strictObject({
     .nullable()
     .optional(),
   library: libraryPreferencesSchema.optional(),
+  // Where Sonarr and Radarr download uploaded release files from Arrsenal.
+  arrsenalUrl: z
+    .string()
+    .max(2048)
+    .nullable()
+    .transform((value, context) => {
+      const raw = value?.trim();
+      if (!raw) return null;
+      try {
+        const url = new URL(raw);
+        if (
+          ["http:", "https:"].includes(url.protocol) &&
+          !url.username &&
+          !url.password &&
+          !url.search &&
+          !url.hash
+        )
+          return url.href.replace(/\/+$/, "");
+      } catch {}
+      context.issues.push({
+        code: "custom",
+        input: value,
+        message:
+          "Enter an http:// or https:// address, such as http://arrsenal:3000.",
+      });
+      return z.NEVER;
+    })
+    .optional(),
   // The last profile and root folder used when adding to each instance.
   addDefaults: z
     .record(
@@ -335,6 +364,42 @@ export const grabReleaseSchema = z.object(
   },
   objectError,
 );
+
+/** Largest NZB or torrent file a release push accepts, before base64 encoding. */
+export const MAX_RELEASE_FILE_BYTES = 10 * 1024 * 1024;
+
+export const pushReleaseSchema = z
+  .object(
+    {
+      instanceId: instanceIdSchema,
+      remoteId: integerSchema("remoteId"),
+      kind: mediaKindSchema,
+      title: textSchema("title", 500),
+      // A torrent link, or an uploaded NZB or torrent file (base64).
+      link: textSchema("link", 8192)
+        .refine((link) => !torrentLinkProblem(link), {
+          error: "link must be a magnet link or an HTTP(S) .torrent link.",
+        })
+        .optional(),
+      file: z
+        .string({ error: "file must be a base64 string." })
+        .max(Math.ceil(MAX_RELEASE_FILE_BYTES / 3) * 4, {
+          error: "Release files can be at most 10 MB.",
+        })
+        .regex(/^[A-Za-z0-9+/]+={0,2}$/, {
+          error: "file must be a base64 string.",
+        })
+        .optional(),
+    },
+    objectError,
+  )
+  .refine(
+    (value) => (value.link === undefined) !== (value.file === undefined),
+    {
+      error: "Send either a torrent link or a release file.",
+      path: ["link"],
+    },
+  );
 
 // Queue IDs are signed 32-bit hashes, unlike positive media/profile/indexer IDs.
 export const retryQueueSchema = z.object(
