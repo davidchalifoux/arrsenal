@@ -95,6 +95,7 @@ export function Settings({
   onAutoOpened,
   onDismiss,
   notice,
+  footer,
 }: {
   instances: InstanceSummary[];
   onRefresh: () => void;
@@ -104,6 +105,8 @@ export function Settings({
   onDismiss?: () => void;
   /** Page-level notices, shown under the page title. */
   notice?: ReactNode;
+  /** Settings shown below the instance list. */
+  footer?: ReactNode;
 }) {
   const id = useId();
   const [open, setOpen] = useState(false);
@@ -639,6 +642,7 @@ export function Settings({
           </Button>
         </div>
       )}
+      {footer}
 
       <Modal
         open={open}

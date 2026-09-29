@@ -61,33 +61,35 @@ export async function publicApi(
   }
 }
 
-export function mutationGuard(request: Request, bodyRequired = true): void {
-  const origin = request.headers.get("origin");
-  const site = request.headers.get("sec-fetch-site");
+/** The origin the browser addressed, from its Host header. */
+export function addressedOrigin(request: Request): string {
   const requestUrl = new URL(request.url);
   const host = request.headers.get("host");
   // Standalone request URLs use the bind address. The browser's Host is the
   // addressed origin; never substitute untrusted X-Forwarded-Host headers.
-  let addressedOrigin = requestUrl.origin;
-  if (host) {
-    try {
-      const addressedUrl = new URL(`${requestUrl.protocol}//${host}`);
-      if (
-        addressedUrl.username ||
-        addressedUrl.password ||
-        addressedUrl.pathname !== "/" ||
-        addressedUrl.search ||
-        addressedUrl.hash
-      ) {
-        throw new Error("Invalid Host");
-      }
-      addressedOrigin = addressedUrl.origin;
-    } catch {
-      throw new ApiError(403, "Invalid request host.");
+  if (!host) return requestUrl.origin;
+  try {
+    const addressedUrl = new URL(`${requestUrl.protocol}//${host}`);
+    if (
+      addressedUrl.username ||
+      addressedUrl.password ||
+      addressedUrl.pathname !== "/" ||
+      addressedUrl.search ||
+      addressedUrl.hash
+    ) {
+      throw new Error("Invalid Host");
     }
+    return addressedUrl.origin;
+  } catch {
+    throw new ApiError(403, "Invalid request host.");
   }
+}
+
+export function mutationGuard(request: Request, bodyRequired = true): void {
+  const origin = request.headers.get("origin");
+  const site = request.headers.get("sec-fetch-site");
   if (
-    (origin !== null && origin !== addressedOrigin) ||
+    (origin !== null && origin !== addressedOrigin(request)) ||
     (site !== null && site !== "same-origin" && site !== "none")
   ) {
     throw new ApiError(403, "Mutations are only allowed from the same origin.");
@@ -106,9 +108,9 @@ export function mutationGuard(request: Request, bodyRequired = true): void {
 
 export async function jsonBody(
   request: Request,
+  { maxBytes = 128 * 1024, timeoutMs = 10000 } = {},
 ): Promise<Record<string, unknown>> {
   mutationGuard(request);
-  const maxBytes = 128 * 1024;
   if (Number(request.headers.get("content-length")) > maxBytes) {
     throw new ApiError(413, "Request body is too large.");
   }
@@ -121,7 +123,7 @@ export async function jsonBody(
     timeoutError = new ApiError(408, "Request body timed out.");
     // Cancel closes pending reads even if the sender never finishes its JSON body.
     void reader.cancel().catch(() => {});
-  }, 10000);
+  }, timeoutMs);
   try {
     while (true) {
       const { done, value } = await reader.read();

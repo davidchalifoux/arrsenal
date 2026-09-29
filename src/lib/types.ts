@@ -92,6 +92,10 @@ export interface QueueItem {
   instanceName: string;
   title: string;
   mediaTitle: string;
+  /** Library media ID, present when the instance matched the download. */
+  mediaId?: string;
+  /** Episode label such as "S01E03 · Title", for matched Sonarr downloads. */
+  episode?: string;
   kind: MediaKind;
   poster?: string;
   quality: string;

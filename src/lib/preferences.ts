@@ -14,6 +14,8 @@ export type Preferences = {
   library?: LibraryPreferences;
   /** Last quality profile and root folder used per instance when adding. */
   addDefaults?: Record<string, AddDefault>;
+  /** Where Sonarr and Radarr download uploaded NZB files from Arrsenal. */
+  arrsenalUrl?: string | null;
 };
 
 export type AddDefault = { qualityProfileId: number; rootFolderPath: string };

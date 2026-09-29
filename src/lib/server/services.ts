@@ -1,5 +1,6 @@
 import "server-only";
 
+import { releaseFileKind } from "../release-links";
 import type { MediaKind } from "../types";
 import {
   arrRequest,
@@ -10,8 +11,14 @@ import {
   row,
   rows,
   str,
+  strings,
 } from "./arr";
-import { getInstance, type InstanceConfig, readInstances } from "./config";
+import {
+  getInstance,
+  type InstanceConfig,
+  readInstances,
+  readPreferences,
+} from "./config";
 import { episodeFilesForRemoval, verifyEpisode } from "./episodes";
 import { ApiError, errorMessage, parseInput } from "./http";
 import { normalizeRelease } from "./media";
@@ -21,9 +28,12 @@ import {
   mutationFailure,
   runAction,
 } from "./mutations";
+import { dropFile, holdFile, isFileHeld } from "./release-file-store";
 import {
   addMediaSchema,
   grabReleaseSchema,
+  MAX_RELEASE_FILE_BYTES,
+  pushReleaseSchema,
   removeEpisodeFilesSchema,
   removeMediaSchema,
   removeQueueSchema,
@@ -287,6 +297,121 @@ export async function grabRelease(input: unknown): Promise<Response> {
     });
     return "Release grab was requested from the instance. Check the queue for download progress.";
   });
+}
+
+/**
+ * Sends a torrent link or an uploaded NZB or torrent file to an instance.
+ * `browserOrigin` is the fallback address for fetching uploaded files when no
+ * Arrsenal address is set.
+ */
+export async function pushRelease(
+  input: unknown,
+  browserOrigin: string,
+): Promise<Response> {
+  const {
+    instanceId,
+    remoteId,
+    kind,
+    title,
+    link,
+    file: encoded,
+  } = parseInput(pushReleaseSchema, input);
+  const file = encoded === undefined ? undefined : releaseFile(encoded);
+  const protocol = file?.kind === "nzb" ? "usenet" : "torrent";
+  const fileNoun = file?.kind === "nzb" ? "NZB" : "torrent file";
+  const arrsenalUrl = file
+    ? ((await readPreferences()).arrsenalUrl ?? browserOrigin)
+    : undefined;
+  const instance = await getInstance(instanceId);
+  const noun = kind === "movie" ? "movie" : "show";
+  let token: string | undefined;
+  return runAction(instance, { operation: "grab", remoteId }, async (write) => {
+    requireKind(instance, kind);
+    // A push grabs as soon as it is approved, so check the match without grabbing.
+    const parsed = row(
+      await arrRequest(instance, "parse", { query: { title } }),
+    );
+    const match = row(kind === "movie" ? parsed.movie : parsed.series);
+    if (num(match.id) <= 0)
+      throw new ApiError(
+        422,
+        `${instance.name} can't match this release name to a ${noun} in its library. Override the name to use this ${noun}'s title.`,
+      );
+    if (num(match.id) !== remoteId)
+      throw new ApiError(
+        409,
+        `${instance.name} reads this release name as ${str(match.title, `another ${noun}`)}. Override the name to send it to this ${noun} instead.`,
+      );
+    if (kind === "series" && !rows(parsed.episodes).length)
+      throw new ApiError(
+        422,
+        `${instance.name} matched the show but no episodes. Check the season or episode numbers in the release name.`,
+      );
+    if (file)
+      token = holdFile({
+        bytes: file.bytes,
+        contentType:
+          file.kind === "nzb"
+            ? "application/x-nzb"
+            : "application/x-bittorrent",
+      });
+    // The instance fetches an uploaded file from Arrsenal while handling the push.
+    const downloadUrl = token
+      ? `${arrsenalUrl}/api/releases/file/${token}`
+      : (link as string);
+    try {
+      const decision = row(
+        rows(
+          await write("release/push", {
+            method: "POST",
+            timeoutMs: 30000,
+            body: {
+              title,
+              protocol,
+              // The magnet doubles as the download URL so each push gets a distinct GUID.
+              downloadUrl,
+              ...(/^magnet:/i.test(downloadUrl)
+                ? { magnetUrl: downloadUrl }
+                : {}),
+              publishDate: new Date().toISOString(),
+            },
+          }),
+        )[0],
+      );
+      if (decision.approved === true) {
+        if (token && isFileHeld(token))
+          throw new ApiError(
+            502,
+            `${instance.name} accepted the release but couldn't download the ${fileNoun} from ${arrsenalUrl}. Set an address ${instance.name} can reach in Settings > Connections, then try again. If the release shows up in Activity, remove it there first.`,
+          );
+        return `Release sent to ${instance.name}'s download client. Check Activity for progress.`;
+      }
+      if (decision.temporarilyRejected === true) {
+        // Keep the file: the instance downloads it when the delay ends.
+        token = undefined;
+        return `Release is pending on ${instance.name} because of a delay profile. It will be grabbed when the delay ends, or you can grab it now from Activity.`;
+      }
+      const rejections = strings(decision.rejections);
+      throw new ApiError(
+        422,
+        `${instance.name} rejected this release${rejections.length ? `: ${rejections.join("; ")}` : "."}`,
+      );
+    } finally {
+      if (token) dropFile(token);
+    }
+  });
+}
+
+function releaseFile(encoded: string) {
+  const bytes = new Uint8Array(Buffer.from(encoded, "base64"));
+  if (bytes.byteLength > MAX_RELEASE_FILE_BYTES)
+    throw new ApiError(413, "Release files can be at most 10 MB.");
+  // Read from the content, so a misnamed file still goes out the right way,
+  // and a wrong one fails before anything reaches the instance.
+  const kind = releaseFileKind(bytes);
+  if (!kind)
+    throw new ApiError(400, "This file isn't an NZB or a torrent file.");
+  return { bytes, kind };
 }
 
 export async function removeQueueItem(input: unknown): Promise<Response> {

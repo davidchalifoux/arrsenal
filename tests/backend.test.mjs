@@ -29,6 +29,9 @@ const lookupRoute = await import("../src/app/api/lookup/route.ts");
 const mediaRoute = await import("../src/app/api/media/route.ts");
 const searchRoute = await import("../src/app/api/search/route.ts");
 const releasesRoute = await import("../src/app/api/releases/route.ts");
+const pushRoute = await import("../src/app/api/releases/push/route.ts");
+const fileRoute = await import("../src/app/api/releases/file/[token]/route.ts");
+const preferencesRoute = await import("../src/app/api/preferences/route.ts");
 const queueRoute = await import("../src/app/api/queue/route.ts");
 const imageRoute = await import("../src/app/api/image/route.ts");
 const authRoute = await import("../src/app/api/auth/route.ts");
@@ -41,9 +44,8 @@ const {
   removeInstance,
   updateInstance,
 } = await import("../src/lib/server/config.ts");
-const { coverPath, mediaImage, mergeMedia, normalizeMedia } = await import(
-  "../src/lib/server/media.ts"
-);
+const { coverPath, mediaImage, mergeMedia, normalizeMedia, normalizeQueue } =
+  await import("../src/lib/server/media.ts");
 const {
   mergeCommandResource,
   mergeEpisodeResource,
@@ -2668,6 +2670,277 @@ test("normalization scopes fallback identities and does not conflate movie and s
       ),
     ])[0].status,
     "partial",
+  );
+});
+
+test("queue items link to matched media and label their episode", () => {
+  const instance = {
+    id: "s",
+    name: "S",
+    kind: "sonarr",
+    url: "http://localhost/sonarr",
+    apiKey: secret,
+  };
+  const matched = normalizeQueue(
+    {
+      id: 1,
+      title: "Show.S01E03.1080p",
+      series: { ...series, id: 22, tvdbId: 81189 },
+      episode: { seasonNumber: 1, episodeNumber: 3, title: "Pilot" },
+    },
+    instance,
+  );
+  assert.equal(matched.mediaId, "series:tvdb:81189");
+  assert.equal(matched.episode, "S01E03 · Pilot");
+  const unmatched = normalizeQueue(
+    { id: 2, title: "Old.Anime.Batch" },
+    instance,
+  );
+  assert.equal(unmatched.mediaId, undefined);
+  assert.equal(unmatched.episode, undefined);
+  const movie = normalizeQueue(
+    { id: 3, title: "Dune", movie: { id: 5, title: "Dune", tmdbId: 438631 } },
+    { ...instance, kind: "radarr" },
+  );
+  assert.equal(movie.mediaId, "movie:tmdb:438631");
+  assert.equal(movie.episode, undefined);
+});
+
+test("release push checks the parsed match before sending the link", async () => {
+  const magnet = "magnet:?xt=urn:btih:5f3a&dn=Old.Batch";
+  const env = await setup({
+    hd: {
+      kind: "sonarr",
+      media: [series],
+      respond(endpoint, req, url) {
+        if (endpoint === "parse") {
+          const title = url.searchParams.get("title");
+          return Response.json(
+            title.startsWith("Shogun")
+              ? {
+                  series: { id: 22, title: "Shogun" },
+                  episodes: title.includes("S09") ? [] : [{ id: 1 }],
+                }
+              : title.startsWith("Other")
+                ? { series: { id: 99, title: "Other Show" }, episodes: [] }
+                : {},
+          );
+        }
+        if (endpoint === "release/push" && req.method === "POST")
+          return Response.json(env.decision ?? [{ approved: true }]);
+      },
+    },
+  });
+  const instance = await env.connect("hd");
+  const push = async (body) => {
+    const response = await pushRoute.POST(
+      request("/api/releases/push", "POST", {
+        instanceId: instance.id,
+        remoteId: 22,
+        kind: "series",
+        title: "Shogun S01 1080p BluRay",
+        link: magnet,
+        ...body,
+      }),
+    );
+    return { status: response.status, body: await response.json() };
+  };
+  const pushes = () =>
+    env.calls.filter((call) => call.endpoint === "release/push");
+
+  const sent = await push();
+  assert.equal(sent.status, 200);
+  assert.equal(sent.body.success, true);
+  assert.match(sent.body.message, /sent to .*download client/);
+  expect(pushes()[0].body).toMatchObject({
+    title: "Shogun S01 1080p BluRay",
+    protocol: "torrent",
+    downloadUrl: magnet,
+    magnetUrl: magnet,
+  });
+  assert.equal(typeof pushes()[0].body.publishDate, "string");
+
+  const torrentFile = await push({
+    link: "https://nyaa.si/download/1.torrent",
+  });
+  assert.equal(torrentFile.status, 200);
+  expect(pushes()[1].body).toMatchObject({
+    protocol: "torrent",
+    downloadUrl: "https://nyaa.si/download/1.torrent",
+  });
+  assert.equal(pushes()[1].body.magnetUrl, undefined);
+
+  for (const [title, status, message] of [
+    ["Old.Batch", 422, /can't match this release name/],
+    ["Other Show S01", 409, /reads this release name as Other Show/],
+    ["Shogun S09", 422, /matched the show but no episodes/],
+  ]) {
+    const refused = await push({ title });
+    assert.equal(refused.status, status, title);
+    assert.equal(refused.body.success, false);
+    assert.match(refused.body.message, message);
+  }
+  assert.equal(pushes().length, 2);
+
+  env.decision = [{ approved: false, temporarilyRejected: true }];
+  assert.match((await push()).body.message, /pending .* delay profile/);
+  env.decision = [
+    {
+      approved: false,
+      rejections: ["Unknown quality", "Not wanted in profile"],
+    },
+  ];
+  const rejected = await push();
+  assert.equal(rejected.status, 422);
+  assert.equal(
+    rejected.body.message,
+    "hd rejected this release: Unknown quality; Not wanted in profile",
+  );
+
+  const callsBefore = env.calls.length;
+  for (const body of [
+    { link: "https://indexer.example/getnzb/a.nzb" },
+    { link: "ftp://example.com/file.torrent" },
+    { link: "magnet:?dn=no-hash" },
+    { title: "" },
+    { link: undefined },
+  ]) {
+    assert.equal((await push(body)).status, 400, JSON.stringify(body));
+  }
+  assert.equal((await push({ kind: "movie" })).status, 400);
+  assert.equal(env.calls.length, callsBefore);
+});
+
+test("uploaded release files are served once from a one-time link during the push", async () => {
+  const nzb = `<?xml version="1.0"?><nzb xmlns="http://www.newzbin.com/DTD/2003/nzb"><file subject="${"x".repeat(200000)}"/></nzb>`;
+  const encoded = Buffer.from(nzb).toString("base64");
+  const fetchFile = (downloadUrl) => {
+    const token = downloadUrl.split("/").at(-1);
+    return fileRoute.GET(new Request(downloadUrl), {
+      params: Promise.resolve({ token }),
+    });
+  };
+  const env = await setup({
+    hd: {
+      kind: "sonarr",
+      media: [series],
+      async respond(endpoint, req) {
+        if (endpoint === "parse")
+          return Response.json({
+            series: { id: 22, title: "Shogun" },
+            episodes: [{ id: 1 }],
+          });
+        if (endpoint === "release/push" && req.method === "POST") {
+          const { downloadUrl } = env.calls.at(-1).body;
+          env.pushed = downloadUrl;
+          if (env.fetch !== false) {
+            const response = await fetchFile(downloadUrl);
+            env.fetched = response.status === 200 ? await response.text() : "";
+          }
+          return Response.json(env.decision ?? [{ approved: true }]);
+        }
+      },
+    },
+  });
+  const instance = await env.connect("hd");
+  const push = async (body) => {
+    const response = await pushRoute.POST(
+      request("/api/releases/push", "POST", {
+        instanceId: instance.id,
+        remoteId: 22,
+        kind: "series",
+        title: "Shogun.S01.1080p.WEB-DL-GRP",
+        file: encoded,
+        ...body,
+      }),
+    );
+    return { status: response.status, body: await response.json() };
+  };
+
+  // Larger than the usual 128 KiB mutation limit. With no address saved, the
+  // instance downloads from the address the browser used.
+  const sent = await push();
+  assert.equal(sent.status, 200, sent.body.message);
+  assert.equal(env.calls.at(-1).body.protocol, "usenet");
+  assert.match(env.pushed, /^http:\/\/localhost:3000\/api\/releases\/file\//);
+  assert.equal(env.fetched, nzb);
+
+  const save = async (arrsenalUrl) => {
+    const response = await preferencesRoute.PATCH(
+      request("/api/preferences", "PATCH", { arrsenalUrl }),
+    );
+    return { status: response.status, body: await response.json() };
+  };
+  assert.equal((await save("ftp://arrsenal")).status, 400);
+  assert.equal((await save("http://arrsenal:3000/?x=1")).status, 400);
+  assert.equal((await save("  ")).body.arrsenalUrl, null);
+  assert.equal(
+    (await save("http://arrsenal:3000/")).body.arrsenalUrl,
+    "http://arrsenal:3000",
+  );
+  assert.equal((await push()).status, 200);
+  assert.match(
+    env.pushed,
+    /^http:\/\/arrsenal:3000\/api\/releases\/file\/[\w-]{43}$/,
+  );
+  assert.equal(env.fetched, nzb);
+  assert.equal((await fetchFile(env.pushed)).status, 404);
+
+  env.fetch = false;
+  const unreachable = await push();
+  assert.equal(unreachable.status, 502);
+  assert.match(
+    unreachable.body.message,
+    /couldn't download the NZB from http:\/\/arrsenal:3000\. Set an address .* in Settings > Connections/,
+  );
+  assert.equal((await fetchFile(env.pushed)).status, 404);
+
+  env.decision = [{ approved: false, temporarilyRejected: true }];
+  assert.equal((await push()).status, 200);
+  const delayed = await fetchFile(env.pushed);
+  assert.equal(delayed.status, 200);
+  assert.equal(delayed.headers.get("content-type"), "application/x-nzb");
+
+  env.decision = [{ approved: false, rejections: ["Not wanted"] }];
+  assert.equal((await push()).status, 422);
+  assert.equal((await fetchFile(env.pushed)).status, 404);
+
+  const callsBefore = env.calls.length;
+  for (const body of [
+    { link: "https://nyaa.si/download/1.torrent" },
+    { file: "not base64!" },
+    { file: Buffer.from("<html>login</html>").toString("base64") },
+    { file: Buffer.from("d3:fooi1ee").toString("base64") },
+  ]) {
+    assert.equal((await push(body)).status, 400, JSON.stringify(body));
+  }
+  assert.equal(env.calls.length, callsBefore);
+  assert.equal(
+    (await fetchFile("http://x/api/releases/file/short")).status,
+    404,
+  );
+
+  // Torrent files are recognized by content, even with an .nzb-looking name.
+  env.decision = undefined;
+  env.fetch = true;
+  const torrent = Buffer.from(
+    "d8:announce9:udp://x:14:infod6:lengthi1e4:name5:Batch12:piece lengthi16384e6:pieces0:ee",
+  );
+  const torrentPush = await push({ file: torrent.toString("base64") });
+  assert.equal(torrentPush.status, 200, torrentPush.body.message);
+  const torrentCall = env.calls.findLast(
+    (call) => call.endpoint === "release/push",
+  );
+  assert.equal(torrentCall.body.protocol, "torrent");
+  assert.equal(torrentCall.body.magnetUrl, undefined);
+  assert.equal(env.fetched, torrent.toString("latin1"));
+
+  env.fetch = false;
+  env.decision = [{ approved: false, temporarilyRejected: true }];
+  await push({ file: torrent.toString("base64") });
+  assert.equal(
+    (await fetchFile(env.pushed)).headers.get("content-type"),
+    "application/x-bittorrent",
   );
 });
 

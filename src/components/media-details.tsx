@@ -9,6 +9,7 @@ import {
   ClockIcon,
   HandIcon,
   HardDrivesIcon,
+  MagnetIcon,
   MagnifyingGlassIcon,
   PlusIcon,
   StarIcon,
@@ -27,6 +28,7 @@ import type {
   MediaTarget,
   Release,
 } from "@/lib/types";
+import { AddRelease } from "./add-release";
 import { Poster } from "./media-card";
 import {
   Page,
@@ -123,6 +125,7 @@ export function MediaDetails({
   const removeLock = useRef(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [releaseTarget, setReleaseTarget] = useState<MediaTarget | null>(null);
+  const [pushTarget, setPushTarget] = useState<MediaTarget | null>(null);
   const [searchScope, setSearchScope] = useState<{
     kind: "episode" | "season";
     id: number;
@@ -278,6 +281,13 @@ export function MediaDetails({
             aria-label="Interactive search"
             disabled={!media.targets.length}
             onClick={() => setReleaseTarget(media.targets[0])}
+          />
+          <ToolbarButton
+            icon={MagnetIcon}
+            label="Add release"
+            aria-label="Add release"
+            disabled={!media.targets.length}
+            onClick={() => setPushTarget(media.targets[0])}
           />
           <ToolbarButton
             icon={PlusIcon}
@@ -1166,6 +1176,15 @@ export function MediaDetails({
           </div>
         </div>
       </Modal>
+      {pushTarget && (
+        <AddRelease
+          media={media}
+          target={pushTarget}
+          onTarget={setPushTarget}
+          onClose={() => setPushTarget(null)}
+          notify={notify}
+        />
+      )}
       {releaseTarget && (
         <ReleaseSearch
           key={searchScope ? `${searchScope.kind}:${searchScope.id}` : "all"}

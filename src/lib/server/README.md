@@ -33,8 +33,16 @@ the Node.js runtime and standard Request/Response APIs. Server modules are marke
   Cross-site/same-site Fetch Metadata is rejected. Forwarded-host headers do not
   grant permission. No cross-origin CORS permission is emitted. Mutation
   bodies must be `application/json`, no larger than 128 KiB, and complete within
-  ten seconds; stalled body reads are canceled and return `408`. The bodyless
+  ten seconds; stalled body reads are canceled and return `408`. Release pushes
+  (`/api/releases/push`) allow 15 MiB and 60 seconds for a base64 NZB or
+  torrent file. The bodyless
   instance DELETE needs no content type; if it has a body, it must be a JSON object.
+- Uploaded NZB and torrent files are identified by content, held in process
+  memory (64 MiB total, oldest evicted) for at most 24 hours, and served once
+  from `/api/releases/file/<token>`, a public route because Sonarr and Radarr
+  have no session. The random 256-bit token is the only credential. The link
+  uses the `arrsenalUrl` preference (Settings > Connections), or else the
+  browser's Host. Restarting Arrsenal discards files still waiting.
 - Authentication is optional: absent `account` means open access; malformed account
   configuration fails closed. Settings > Security enables, changes, or disables the
   single account. Stored fields are username, Argon2id hash, and random generation.
