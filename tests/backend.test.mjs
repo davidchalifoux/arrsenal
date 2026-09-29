@@ -32,6 +32,8 @@ const releasesRoute = await import("../src/app/api/releases/route.ts");
 const pushRoute = await import("../src/app/api/releases/push/route.ts");
 const fileRoute = await import("../src/app/api/releases/file/[token]/route.ts");
 const preferencesRoute = await import("../src/app/api/preferences/route.ts");
+const historyRoute = await import("../src/app/api/history/route.ts");
+const blocklistRoute = await import("../src/app/api/blocklist/route.ts");
 const queueRoute = await import("../src/app/api/queue/route.ts");
 const imageRoute = await import("../src/app/api/image/route.ts");
 const authRoute = await import("../src/app/api/auth/route.ts");
@@ -2942,6 +2944,208 @@ test("uploaded release files are served once from a one-time link during the pus
     (await fetchFile(env.pushed)).headers.get("content-type"),
     "application/x-bittorrent",
   );
+});
+
+test("history merges instances newest first and maps each app's event codes", async () => {
+  const env = await setup({
+    tv: {
+      kind: "sonarr",
+      respond(endpoint, req, url) {
+        if (endpoint !== "history" || req.method !== "GET") return;
+        env.historyQueries.push(url.searchParams);
+        return Response.json({
+          page: 1,
+          pageSize: Number(url.searchParams.get("pageSize")),
+          totalRecords: 10,
+          records: [
+            {
+              id: 1,
+              eventType: "grabbed",
+              sourceTitle: "Shogun.S01E01.1080p",
+              date: "2026-09-28T12:00:00Z",
+              quality: quality("WEBDL-1080p"),
+              series: { ...series, id: 22, tvdbId: 392573 },
+              episode: { seasonNumber: 1, episodeNumber: 1, title: "Anjin" },
+              data: { indexer: "Nzb", downloadClientName: "SABnzbd" },
+            },
+            {
+              id: 2,
+              eventType: 5,
+              sourceTitle: "old.mkv",
+              date: "2026-09-26T12:00:00Z",
+              data: { reason: "Upgrade" },
+            },
+            { id: 3, eventType: "grabbed", date: "not a date" },
+          ],
+        });
+      },
+    },
+    films: {
+      kind: "radarr",
+      respond(endpoint, req) {
+        if (endpoint !== "history" || req.method !== "GET") return;
+        return Response.json({
+          page: 1,
+          pageSize: 100,
+          totalRecords: 1,
+          records: [
+            {
+              id: 9,
+              eventType: 6,
+              sourceTitle: "Dune.mkv",
+              date: "2026-09-27T12:00:00Z",
+              movie: { id: 5, title: "Dune", tmdbId: 438631 },
+              data: { reason: "Manual" },
+            },
+          ],
+        });
+      },
+    },
+  });
+  env.historyQueries = [];
+  const tv = await env.connect("tv");
+  await env.connect("films");
+  const read = async (query = "") =>
+    (await historyRoute.GET(request(`/api/history${query}`))).json();
+
+  const all = await read();
+  expect(all.items.map((item) => [item.id, item.event, item.detail])).toEqual([
+    [1, "grabbed", "Nzb → SABnzbd"],
+    [9, "deleted", "Deleted manually"],
+    [2, "deleted", "Replaced by an upgrade"],
+  ]);
+  expect(all.items[0]).toMatchObject({
+    mediaTitle: "Shogun",
+    mediaId: "series:tvdb:392573",
+    episode: "S01E01 · Anjin",
+    quality: "WEBDL-1080p",
+    instanceName: "tv",
+  });
+  expect(all.items[1]).toMatchObject({
+    kind: "movie",
+    mediaId: "movie:tmdb:438631",
+  });
+  // The TV instance has older events than it returned.
+  assert.equal(all.hasMore, true);
+  expect(env.historyQueries[0].get("includeEpisode")).toBe("true");
+
+  await read("?event=imported&limit=50");
+  expect(env.historyQueries.at(-1).getAll("eventType")).toEqual(["2", "3"]);
+  expect(env.historyQueries.at(-1).get("pageSize")).toBe("50");
+  await read("?event=deleted");
+  expect(env.historyQueries.at(-1).getAll("eventType")).toEqual(["5"]);
+
+  for (const query of ["?limit=0", "?limit=1001", "?event=nope"])
+    assert.equal(
+      (await historyRoute.GET(request(`/api/history${query}`))).status,
+      400,
+      query,
+    );
+
+  const failed = await historyRoute.POST(
+    request("/api/history", "POST", { instanceId: tv.id, id: 1 }),
+  );
+  assert.equal(failed.status, 200);
+  assert.match((await failed.json()).message, /Marked as failed on tv/);
+  assert.equal(
+    env.calls.at(-1).endpoint,
+    "history/failed/1",
+    "marks the event failed on its own instance",
+  );
+  assert.equal(env.calls.at(-1).method, "POST");
+});
+
+test("blocklist reads every instance and removes entries per instance in bulk", async () => {
+  const entry = (id, date, extra = {}) => ({
+    id,
+    date,
+    sourceTitle: `Release ${id}`,
+    quality: quality("Bluray-1080p"),
+    protocol: "torrent",
+    indexer: "Tracker",
+    message: "Manually marked as failed",
+    ...extra,
+  });
+  const env = await setup({
+    tv: {
+      kind: "sonarr",
+      respond(endpoint, req) {
+        if (endpoint === "blocklist" && req.method === "GET")
+          return Response.json({
+            page: 1,
+            pageSize: 1000,
+            totalRecords: 1,
+            records: [
+              entry(4, "2026-09-20T00:00:00Z", {
+                series: { ...series, id: 22 },
+                protocol: 1,
+              }),
+            ],
+          });
+        if (endpoint === "blocklist/bulk" && env.bulkFails)
+          return Response.json({ error: "no" }, { status: 500 });
+      },
+    },
+    films: {
+      kind: "radarr",
+      respond(endpoint, req) {
+        if (endpoint === "blocklist" && req.method === "GET")
+          return Response.json({
+            page: 1,
+            pageSize: 1000,
+            totalRecords: 1200,
+            records: [
+              entry(7, "2026-09-25T00:00:00Z", {
+                movie: { id: 5, title: "Dune", tmdbId: 438631 },
+              }),
+            ],
+          });
+      },
+    },
+  });
+  const tv = await env.connect("tv");
+  const films = await env.connect("films");
+  const list = await (
+    await blocklistRoute.GET(request("/api/blocklist"))
+  ).json();
+  expect(
+    list.items.map((item) => [item.id, item.mediaTitle, item.protocol]),
+  ).toEqual([
+    [7, "Dune", "torrent"],
+    [4, "Shogun", "usenet"],
+  ]);
+  assert.equal(list.truncated, true);
+
+  const remove = async (items) => {
+    const response = await blocklistRoute.DELETE(
+      request("/api/blocklist", "DELETE", { items }),
+    );
+    return { status: response.status, body: await response.json() };
+  };
+  const removed = await remove([
+    { instanceId: tv.id, id: 4 },
+    { instanceId: films.id, id: 7 },
+    { instanceId: films.id, id: 8 },
+  ]);
+  assert.equal(removed.status, 200);
+  assert.match(removed.body.message, /Removed 3 blocklist entries/);
+  const bulk = env.calls.filter((call) => call.endpoint === "blocklist/bulk");
+  expect(bulk.map((call) => [call.node, call.method, call.body])).toEqual([
+    ["tv", "DELETE", { ids: [4] }],
+    ["films", "DELETE", { ids: [7, 8] }],
+  ]);
+
+  env.bulkFails = true;
+  const partial = await remove([
+    { instanceId: tv.id, id: 4 },
+    { instanceId: films.id, id: 7 },
+  ]);
+  assert.equal(partial.status, 207);
+  assert.match(partial.body.message, /Removed 1 blocklist entry/);
+  assert.equal(partial.body.errors.length, 1);
+
+  for (const items of [[], [{ instanceId: tv.id, id: 0 }], "4"])
+    assert.equal((await remove(items)).status, 400, JSON.stringify(items));
 });
 
 test("live lookup merges available results, reports failed targets, and never claims trending", async () => {

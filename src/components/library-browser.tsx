@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { z } from "zod";
 import { useInstances, useLibrary } from "@/lib/client-data";
+import { libraryColumns } from "@/lib/library-columns";
 import {
   type CustomFilter,
   matchesFilter,
@@ -24,6 +25,11 @@ import { LibraryToolbar } from "./library-toolbar";
 import { MediaList } from "./media-card";
 import { Page, PageHeader, pageFooterStyle } from "./page-header";
 import { PosterGrid } from "./poster-grid";
+import {
+  TableOptionsDialog,
+  useTableColumns,
+  visibleColumns,
+} from "./table-options";
 import { Button, Notice } from "./ui";
 import {
   type LibraryCategory,
@@ -119,6 +125,7 @@ function LibrarySection({
     isNew: boolean;
   } | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const tableColumns = useTableColumns("library", libraryColumns);
   const [saveError, setSaveError] = useState<string | null>(null);
   const preferences = usePreferences();
   const savePreferences = useSavePreferences();
@@ -593,6 +600,7 @@ function LibrarySection({
         ) : (
           <MediaList
             items={filtered}
+            columns={visibleColumns(libraryColumns, tableColumns)}
             sort={sort}
             sortDirection={sortDirection}
             onSort={(next) =>
@@ -667,8 +675,14 @@ function LibrarySection({
           onDelete={deleteFilter}
         />
       )}
+      {/* Options follows the layout: poster settings, or the table's columns. */}
+      <TableOptionsDialog
+        open={optionsOpen && layout === "list"}
+        onOpenChange={setOptionsOpen}
+        control={tableColumns}
+      />
       <ViewOptionsDialog
-        open={optionsOpen}
+        open={optionsOpen && layout === "grid"}
         onOpenChange={setOptionsOpen}
         options={viewOptions}
         onChange={(view) =>

@@ -113,6 +113,67 @@ export interface QueueResponse {
   errors: ServiceError[];
 }
 
+/** History events, grouped the same way for Sonarr and Radarr. */
+export type HistoryEvent =
+  | "grabbed"
+  | "imported"
+  | "failed"
+  | "deleted"
+  | "renamed"
+  | "ignored"
+  | "unknown";
+
+export interface HistoryItem {
+  id: number;
+  instanceId: string;
+  instanceName: string;
+  kind: MediaKind;
+  event: HistoryEvent;
+  /** The release or file name the event is about. */
+  sourceTitle: string;
+  mediaTitle: string;
+  /** Library media ID, present when the instance knows the title. */
+  mediaId?: string;
+  /** Episode label such as "S01E03 · Title", for Sonarr events. */
+  episode?: string;
+  quality: string;
+  /** ISO timestamp. */
+  date: string;
+  /** One line of event detail: indexer and client, path, or reason. */
+  detail?: string;
+}
+
+export interface HistoryResponse {
+  items: HistoryItem[];
+  errors: ServiceError[];
+  /** True when an instance has older events than were loaded. */
+  hasMore: boolean;
+}
+
+export interface BlocklistItem {
+  id: number;
+  instanceId: string;
+  instanceName: string;
+  kind: MediaKind;
+  sourceTitle: string;
+  mediaTitle: string;
+  mediaId?: string;
+  quality: string;
+  /** ISO timestamp. */
+  date: string;
+  protocol: "torrent" | "usenet" | "unknown";
+  indexer?: string;
+  /** Why the release was blocklisted. */
+  message?: string;
+}
+
+export interface BlocklistResponse {
+  items: BlocklistItem[];
+  errors: ServiceError[];
+  /** True when an instance has more entries than one read returns. */
+  truncated: boolean;
+}
+
 export interface Release {
   guid: string;
   indexerId: number;

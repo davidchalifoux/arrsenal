@@ -275,7 +275,14 @@ export function mergeMedia(items: MediaItem[]): MediaItem[] {
   return [...merged.values()];
 }
 
-function episodeLabel(episode: Row) {
+/** Library media ID for an embedded series or movie row the instance knows. */
+export function linkedMediaId(media: Row, instance: InstanceConfig) {
+  return num(media.id) > 0
+    ? normalizeMediaMetadata(media, instance).id
+    : undefined;
+}
+
+export function episodeLabel(episode: Row) {
   const season = num(episode.seasonNumber, -1);
   const number = num(episode.episodeNumber, -1);
   if (season < 0 || number < 0) return undefined;
@@ -296,8 +303,7 @@ export function normalizeQueue(item: Row, instance: InstanceConfig): QueueItem {
   });
   if (str(item.errorMessage)) warnings.push(str(item.errorMessage));
   // Unmatched downloads have no media row; they wait for a manual import.
-  const mediaId =
-    num(media.id) > 0 ? normalizeMediaMetadata(media, instance).id : undefined;
+  const mediaId = linkedMediaId(media, instance);
   return {
     id: num(item.id),
     instanceId: instance.id,

@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import { libraryPreferencesSchema } from "@/lib/library-options";
+import { tableSettingsSchema } from "@/lib/table-columns";
 import { hexColorPattern, legacyThemeIds, themeIds } from "@/lib/theme";
 import { isPosterSource } from "../image-sources";
 import { torrentLinkProblem } from "../release-links";
@@ -154,6 +155,8 @@ export const preferencesSchema = z.strictObject({
     .nullable()
     .optional(),
   library: libraryPreferencesSchema.optional(),
+  // Column visibility and order for each configurable table.
+  tables: tableSettingsSchema.optional(),
   // Where Sonarr and Radarr download uploaded release files from Arrsenal.
   arrsenalUrl: z
     .string()
@@ -400,6 +403,36 @@ export const pushReleaseSchema = z
       path: ["link"],
     },
   );
+
+export const historyQuerySchema = z.object({
+  limit: queryIntegerSchema("limit")
+    .pipe(z.number().max(1000, { error: "limit can be at most 1000." }))
+    .default(100),
+  event: z
+    .enum(["grabbed", "imported", "failed", "deleted", "renamed", "ignored"], {
+      error:
+        "event must be grabbed, imported, failed, deleted, renamed, or ignored.",
+    })
+    .optional(),
+});
+
+export const markFailedSchema = z.object(
+  { instanceId: instanceIdSchema, id: integerSchema("id") },
+  objectError,
+);
+
+export const removeBlocklistSchema = z.object(
+  {
+    items: z
+      .array(
+        z.object({ instanceId: instanceIdSchema, id: integerSchema("id") }),
+        { error: "items must be a list of blocklist entries." },
+      )
+      .min(1, { error: "Choose at least one blocklist entry." })
+      .max(1000, { error: "Remove at most 1000 entries at once." }),
+  },
+  objectError,
+);
 
 // Queue IDs are signed 32-bit hashes, unlike positive media/profile/indexer IDs.
 export const retryQueueSchema = z.object(

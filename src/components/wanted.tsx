@@ -6,13 +6,21 @@ import {
   CheckSquareIcon,
   HandIcon,
   MagnifyingGlassIcon,
+  SlidersHorizontalIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import {
+  type CSSProperties,
+  Fragment,
+  type ReactNode,
+  useRef,
+  useState,
+} from "react";
 import { api, mediaHref } from "@/lib/client";
 import { useLibrary } from "@/lib/client-data";
+import type { ColumnDefinition } from "@/lib/table-columns";
 import type { ActionResponse, MediaItem, MediaTarget } from "@/lib/types";
 import { useLibraryActions } from "./library-provider";
 import { ReleaseSearch } from "./media-details";
@@ -25,6 +33,11 @@ import {
   ToolbarButton,
   ToolbarDivider,
 } from "./page-header";
+import {
+  TableOptionsDialog,
+  useTableColumns,
+  visibleColumns,
+} from "./table-options";
 import { Button, Notice, panelStyle, Spinner } from "./ui";
 import { useRangeSelection } from "./use-range-selection";
 
@@ -70,14 +83,40 @@ export function wantedRows(items: readonly MediaItem[]): WantedRow[] {
 
 type Scope = "all" | "movies" | "shows";
 
-const columns =
-  "20px minmax(0, 2.2fr) minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(0, 1fr) 72px 72px";
+/** Every Wanted column except the always-shown title, in default order. */
+export const wantedColumns: ColumnDefinition[] = [
+  { key: "title", label: "Title", locked: true },
+  { key: "target", label: "Instance" },
+  { key: "missing", label: "Missing" },
+  { key: "profile", label: "Quality profile" },
+  { key: "year", label: "Year" },
+];
+
+// Grid tracks for each column, between the checkbox and the actions.
+const wantedTracks: Record<string, string> = {
+  title: "minmax(0, 2.2fr)",
+  target: "minmax(0, 1.1fr)",
+  missing: "minmax(0, 1.4fr)",
+  profile: "minmax(0, 1fr)",
+  year: "72px",
+};
 
 const checkboxStyle = css({ width: "15px", height: "15px", m: 0 });
 const rowActionRaw = css.raw({ width: "30px", height: "30px" });
 
 export function Wanted() {
   const library = useLibrary();
+  const tableColumns = useTableColumns("wanted", wantedColumns);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const columns = visibleColumns(wantedColumns, tableColumns);
+  const columnLabels = new Map(
+    wantedColumns.map((column) => [column.key, column.label]),
+  );
+  const template = [
+    "20px",
+    ...columns.map((column) => wantedTracks[column]),
+    "72px",
+  ].join(" ");
   const { notify, refresh } = useLibraryActions();
   const [scope, setScope] = useState<Scope>("all");
   const [busy, setBusy] = useState<string | null>(null);
@@ -142,7 +181,17 @@ export function Wanted() {
   return (
     <Page
       toolbar={
-        <PageToolbar label="Wanted actions">
+        <PageToolbar
+          label="Wanted actions"
+          actions={
+            <ToolbarButton
+              icon={SlidersHorizontalIcon}
+              label="Options"
+              aria-label="Table options"
+              onClick={() => setOptionsOpen(true)}
+            />
+          }
+        >
           <ToolbarButton
             icon={ArrowClockwiseIcon}
             label="Refresh"
@@ -284,6 +333,7 @@ export function Wanted() {
         </div>
       ) : (
         <div
+          style={{ "--wanted-columns": template } as CSSProperties}
           className={css({
             border: "1px solid token(colors.line)",
             borderRadius: "12px",
@@ -294,7 +344,7 @@ export function Wanted() {
           <div
             className={css({
               display: { base: "none", md: "grid" },
-              gridTemplateColumns: columns,
+              gridTemplateColumns: "var(--wanted-columns)",
               alignItems: "center",
               gap: "14px",
               height: "38px",
@@ -319,152 +369,172 @@ export function Wanted() {
               }
               className={checkboxStyle}
             />
-            <span>Title</span>
-            <span>Target</span>
-            <span>Missing</span>
-            <span>Profile</span>
-            <span>Year</span>
+            {columns.map((column) => (
+              <span key={column}>{columnLabels.get(column)}</span>
+            ))}
             <span className={css({ textAlign: "right" })}>Actions</span>
           </div>
           <ul className={css({ listStyle: "none", m: 0, p: 0 })}>
-            {rows.map((row) => (
-              <li
-                key={row.key}
-                aria-label={`${row.media.title} on ${row.target.instanceName}`}
-                className={css({
-                  display: "grid",
-                  gridTemplateColumns: {
-                    base: "20px minmax(0, 1fr) auto",
-                    md: columns,
-                  },
-                  alignItems: "center",
-                  gap: "8px 14px",
-                  minHeight: "44px",
-                  px: "16px",
-                  py: { base: "8px", md: "4px" },
-                  borderBottom: "1px solid token(colors.lineSoft)",
-                  fontSize: "13px",
-                  _last: { borderBottom: 0 },
-                  _even: {
-                    bg: "color-mix(in srgb, var(--raised) 55%, transparent)",
-                  },
-                })}
-              >
-                <input
-                  type="checkbox"
-                  aria-label={`Select ${row.media.title} on ${row.target.instanceName}`}
-                  {...checkboxProps(row.key)}
-                  className={checkboxStyle}
-                />
-                <span className={css({ minWidth: 0 })}>
-                  <Link
-                    href={mediaHref(row.media)}
-                    className={css({
-                      display: "block",
-                      fontWeight: "500",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      _hover: { color: "accent" },
-                    })}
-                  >
-                    {row.media.title}
-                  </Link>
-                  <span
-                    className={css({
-                      display: { base: "block", md: "none" },
-                      fontSize: "12px",
-                      color: "subtle",
-                    })}
-                  >
-                    {row.target.instanceName} · {row.missing}
+            {rows.map((row) => {
+              const cells: Record<string, ReactNode> = {
+                title: (
+                  <span className={css({ minWidth: 0 })}>
+                    <Link
+                      href={mediaHref(row.media)}
+                      className={css({
+                        display: "block",
+                        fontWeight: "500",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        _hover: { color: "accent" },
+                      })}
+                    >
+                      {row.media.title}
+                    </Link>
+                    <span
+                      className={css({
+                        display: { base: "block", md: "none" },
+                        fontSize: "12px",
+                        color: "subtle",
+                      })}
+                    >
+                      {row.target.instanceName} · {row.missing}
+                    </span>
                   </span>
-                </span>
-                <span
-                  className={css({
-                    display: { base: "none", md: "block" },
-                    color: "soft",
-                  })}
-                >
-                  {row.target.instanceName}
-                </span>
-                <span
-                  className={css({
-                    display: { base: "none", md: "flex" },
-                    alignItems: "center",
-                    gap: "8px",
-                    fontFamily: "mono",
-                    fontSize: "12px",
-                  })}
-                >
+                ),
+                target: (
                   <span
-                    aria-hidden="true"
                     className={css({
-                      width: "6px",
-                      height: "6px",
-                      borderRadius: "999px",
-                      bg: "warning",
-                      flexShrink: 0,
+                      display: { base: "none", md: "block" },
+                      color: "soft",
                     })}
+                  >
+                    {row.target.instanceName}
+                  </span>
+                ),
+                missing: (
+                  <span
+                    className={css({
+                      display: { base: "none", md: "flex" },
+                      alignItems: "center",
+                      gap: "8px",
+                      fontFamily: "mono",
+                      fontSize: "12px",
+                    })}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={css({
+                        width: "6px",
+                        height: "6px",
+                        borderRadius: "999px",
+                        bg: "warning",
+                        flexShrink: 0,
+                      })}
+                    />
+                    {row.missing}
+                  </span>
+                ),
+                profile: (
+                  <span
+                    className={css({
+                      display: { base: "none", md: "block" },
+                      color: "muted",
+                    })}
+                  >
+                    {row.target.qualityProfile}
+                  </span>
+                ),
+                year: (
+                  <span
+                    className={css({
+                      display: { base: "none", md: "block" },
+                      fontFamily: "mono",
+                      fontSize: "12px",
+                      color: "muted",
+                    })}
+                  >
+                    {row.media.year || "TBA"}
+                  </span>
+                ),
+              };
+              return (
+                <li
+                  key={row.key}
+                  aria-label={`${row.media.title} on ${row.target.instanceName}`}
+                  className={css({
+                    display: "grid",
+                    gridTemplateColumns: {
+                      base: "20px minmax(0, 1fr) auto",
+                      md: "var(--wanted-columns)",
+                    },
+                    alignItems: "center",
+                    gap: "8px 14px",
+                    minHeight: "44px",
+                    px: "16px",
+                    py: { base: "8px", md: "4px" },
+                    borderBottom: "1px solid token(colors.lineSoft)",
+                    fontSize: "13px",
+                    _last: { borderBottom: 0 },
+                    _even: {
+                      bg: "color-mix(in srgb, var(--raised) 55%, transparent)",
+                    },
+                  })}
+                >
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${row.media.title} on ${row.target.instanceName}`}
+                    {...checkboxProps(row.key)}
+                    className={checkboxStyle}
                   />
-                  {row.missing}
-                </span>
-                <span
-                  className={css({
-                    display: { base: "none", md: "block" },
-                    color: "muted",
-                  })}
-                >
-                  {row.target.qualityProfile}
-                </span>
-                <span
-                  className={css({
-                    display: { base: "none", md: "block" },
-                    fontFamily: "mono",
-                    fontSize: "12px",
-                    color: "muted",
-                  })}
-                >
-                  {row.media.year || "TBA"}
-                </span>
-                <span
-                  className={css({
-                    display: "flex",
-                    justifyContent: "flex-end",
-                    gap: "2px",
-                  })}
-                >
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    styles={rowActionRaw}
-                    disabled={busy !== null}
-                    title="Automatic search"
-                    aria-label={`Search ${row.target.instanceName} for ${row.media.title}`}
-                    onClick={() => void search([row], row.key)}
+                  {columns.map((column) => (
+                    <Fragment key={column}>{cells[column]}</Fragment>
+                  ))}
+                  <span
+                    className={css({
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      gap: "2px",
+                    })}
                   >
-                    {busy === row.key ? (
-                      <Spinner size={14} />
-                    ) : (
-                      <MagnifyingGlassIcon size={15} />
-                    )}
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    styles={rowActionRaw}
-                    title="Manual search"
-                    aria-label={`Manual search ${row.target.instanceName} for ${row.media.title}`}
-                    onClick={() => setManual(row)}
-                  >
-                    <HandIcon size={15} />
-                  </Button>
-                </span>
-              </li>
-            ))}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      styles={rowActionRaw}
+                      disabled={busy !== null}
+                      title="Automatic search"
+                      aria-label={`Search ${row.target.instanceName} for ${row.media.title}`}
+                      onClick={() => void search([row], row.key)}
+                    >
+                      {busy === row.key ? (
+                        <Spinner size={14} />
+                      ) : (
+                        <MagnifyingGlassIcon size={15} />
+                      )}
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      styles={rowActionRaw}
+                      title="Manual search"
+                      aria-label={`Manual search ${row.target.instanceName} for ${row.media.title}`}
+                      onClick={() => setManual(row)}
+                    >
+                      <HandIcon size={15} />
+                    </Button>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
+      <TableOptionsDialog
+        open={optionsOpen}
+        onOpenChange={setOptionsOpen}
+        control={tableColumns}
+      />
       {manual && (
         <ReleaseSearch
           media={manual.media}

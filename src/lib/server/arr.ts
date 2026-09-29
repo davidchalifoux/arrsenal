@@ -63,7 +63,11 @@ export async function arrRequest(
   path: string,
   options: {
     method?: "GET" | "POST" | "DELETE";
-    query?: Record<string, string | number | boolean>;
+    /** Array values repeat the parameter, as in eventType=2&eventType=3. */
+    query?: Record<
+      string,
+      string | number | boolean | readonly (string | number)[]
+    >;
     body?: unknown;
     timeoutMs?: number;
     signal?: AbortSignal;
@@ -72,8 +76,11 @@ export async function arrRequest(
 ): Promise<unknown> {
   // All callers supply fixed API paths or an independently validated cover path.
   const url = new URL(`${instance.url}/api/v3/${path}`);
-  for (const [key, value] of Object.entries(options.query ?? {}))
-    url.searchParams.set(key, String(value));
+  for (const [key, value] of Object.entries(options.query ?? {})) {
+    if (Array.isArray(value))
+      for (const item of value) url.searchParams.append(key, String(item));
+    else url.searchParams.set(key, String(value));
+  }
   const timeout = AbortSignal.timeout(options.timeoutMs ?? 8000);
   const signal = options.signal
     ? AbortSignal.any([timeout, options.signal])

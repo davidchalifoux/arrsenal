@@ -15,6 +15,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { settingsSections } from "@/app/(library)/settings/sections";
 import { useInstances, useLibrary, useQueue } from "@/lib/client-data";
+import { activitySections } from "./activity-sections";
 import { useLibraryActions } from "./library-provider";
 import { Logo } from "./logo";
 import { SearchTrigger, TaskStatus } from "./page-header";
@@ -29,7 +30,12 @@ function activeSection(pathname: string): Section | null {
   if (pathname === "/" || matches(pathname, "/movies")) return "library";
   if (matches(pathname, "/shows")) return "library";
   if (matches(pathname, "/calendar")) return "calendar";
-  if (matches(pathname, "/queue")) return "activity";
+  if (
+    matches(pathname, "/queue") ||
+    matches(pathname, "/history") ||
+    matches(pathname, "/blocklist")
+  )
+    return "activity";
   if (matches(pathname, "/wanted")) return "wanted";
   if (matches(pathname, "/settings")) return "settings";
   return null;
@@ -341,10 +347,26 @@ function Sidebar({ pathname }: { pathname: string }) {
           label="Activity"
           icon={DownloadSimpleIcon}
           active={section === "activity"}
-          current={section === "activity"}
+          current={false}
         >
           <Count value={downloads} label="downloads" />
         </SectionLink>
+        {section === "activity" && (
+          <SubNavigation>
+            {activitySections.map((child) => (
+              <Link
+                key={child.href}
+                href={child.href}
+                aria-current={
+                  matches(pathname, child.href) ? "page" : undefined
+                }
+                className={childLinkStyle}
+              >
+                {child.title}
+              </Link>
+            ))}
+          </SubNavigation>
+        )}
         <SectionLink
           href="/wanted"
           label="Wanted"

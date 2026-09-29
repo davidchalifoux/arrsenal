@@ -9,8 +9,9 @@ import {
 import { css, cx } from "@styled-system/css";
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { type CSSProperties, Fragment, useCallback, useState } from "react";
 import { mediaHref, sizeLabel } from "@/lib/client";
+import { libraryColumns } from "@/lib/library-columns";
 import {
   defaultViewOptions,
   type LibraryViewOptions,
@@ -21,6 +22,7 @@ import {
   targetMonitoring,
 } from "@/lib/library-selectors";
 import type { MediaItem, MediaStatus, MediaTarget } from "@/lib/types";
+import { visibleColumns } from "./table-options";
 import type { LibrarySort, LibrarySortDirection } from "./use-library-view";
 import { useScrollList } from "./use-scroll-list";
 
@@ -422,8 +424,41 @@ function MonitoredCell({ item }: { item: MediaItem }) {
   );
 }
 
-const tableColumns =
-  "minmax(0, 2.6fr) 64px 72px minmax(0, 2fr) minmax(0, 1.2fr) 124px 96px 104px";
+const libraryTracks: Record<string, string> = {
+  title: "minmax(0, 2.6fr)",
+  year: "64px",
+  type: "72px",
+  targets: "minmax(0, 2fr)",
+  episodes: "minmax(0, 1.2fr)",
+  monitored: "124px",
+  size: "96px",
+  added: "104px",
+  rating: "64px",
+  genres: "minmax(0, 1.4fr)",
+  runtime: "72px",
+  profile: "minmax(0, 1.2fr)",
+};
+
+const librarySortKeys: Partial<Record<string, LibrarySort>> = {
+  title: "title",
+  year: "year",
+  episodes: "episodes",
+  monitored: "monitored",
+  size: "size",
+  added: "recent",
+  rating: "rating",
+};
+
+const rightAligned = new Set(["size", "added", "rating", "runtime"]);
+
+// Hidden on phones, where rows show only the title and target chips.
+const desktopCell = css.raw({ display: { base: "none", md: "block" } });
+const monoCell = css.raw({ fontFamily: "mono", fontSize: "12px" });
+const truncateCell = css.raw({
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+});
 
 const addedFormat = new Intl.DateTimeFormat(undefined, {
   month: "short",
@@ -491,13 +526,20 @@ export function MediaList({
   sort = "recent",
   sortDirection = "desc",
   onSort = () => {},
+  columns = visibleColumns(libraryColumns),
 }: {
   items: MediaItem[];
   sort?: LibrarySort;
   sortDirection?: LibrarySortDirection;
   onSort?: (sort: LibrarySort) => void;
+  /** Visible column keys in order, starting with the title. */
+  columns?: string[];
 }) {
   const headerProps = { sort, sortDirection, onSort };
+  const labels = new Map(
+    libraryColumns.map((column) => [column.key, column.label]),
+  );
+  const template = columns.map((column) => libraryTracks[column]).join(" ");
   const { listRef, rows, spacerStyle, measureElement } =
     useScrollList<HTMLDivElement>({
       count: items.length,
@@ -508,6 +550,7 @@ export function MediaList({
     });
   return (
     <div
+      style={{ "--library-columns": template } as CSSProperties}
       className={css({
         border: "1px solid token(colors.line)",
         borderRadius: "12px",
@@ -519,7 +562,7 @@ export function MediaList({
         <div
           className={css({
             display: { base: "none", md: "grid" },
-            gridTemplateColumns: tableColumns,
+            gridTemplateColumns: "var(--library-columns)",
             alignItems: "center",
             gap: "16px",
             height: "38px",
@@ -533,24 +576,15 @@ export function MediaList({
             color: "subtle",
           })}
         >
-          <SortHeader label="Title" sortKey="title" {...headerProps} />
-          <SortHeader label="Year" sortKey="year" {...headerProps} />
-          <SortHeader label="Type" {...headerProps} />
-          <SortHeader label="Targets" {...headerProps} />
-          <SortHeader label="Episodes" sortKey="episodes" {...headerProps} />
-          <SortHeader label="Monitored" sortKey="monitored" {...headerProps} />
-          <SortHeader
-            label="On disk"
-            sortKey="size"
-            align="right"
-            {...headerProps}
-          />
-          <SortHeader
-            label="Added"
-            sortKey="recent"
-            align="right"
-            {...headerProps}
-          />
+          {columns.map((column) => (
+            <SortHeader
+              key={column}
+              label={labels.get(column) ?? column}
+              sortKey={librarySortKeys[column]}
+              align={rightAligned.has(column) ? "right" : "left"}
+              {...headerProps}
+            />
+          ))}
         </div>
       </div>
       <div ref={listRef} style={spacerStyle}>
@@ -569,7 +603,7 @@ export function MediaList({
                 display: "grid",
                 gridTemplateColumns: {
                   base: "minmax(0, 1fr) auto",
-                  md: tableColumns,
+                  md: "var(--library-columns)",
                 },
                 alignItems: "center",
                 gap: "8px 16px",
@@ -586,93 +620,168 @@ export function MediaList({
                 _hover: { bg: "elevated" },
               })}
             >
-              <span
-                className={css({
-                  fontWeight: "500",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                })}
-              >
-                <Link
-                  href={mediaHref(item)}
-                  className={css({
-                    _after: { content: '""', position: "absolute", inset: 0 },
-                    _focusVisible: { outline: "none" },
-                    "&:focus-visible::after": {
-                      outline: "2px solid var(--accent)",
-                      outlineOffset: "-2px",
-                    },
-                  })}
-                >
-                  {item.title}
-                </Link>
-                <span
-                  className={css({
-                    display: { base: "block", md: "none" },
-                    mt: "2px",
-                    fontSize: "12px",
-                    color: "subtle",
-                    fontWeight: "400",
-                  })}
-                >
-                  {item.year || "TBA"} ·{" "}
-                  {item.kind === "movie" ? "Movie" : "Show"}
-                </span>
-              </span>
-              <span
-                className={css({
-                  display: { base: "none", md: "block" },
-                  fontFamily: "mono",
-                  fontSize: "12px",
-                  color: "muted",
-                })}
-              >
-                {item.year || "TBA"}
-              </span>
-              <span
-                className={css({
-                  display: { base: "none", md: "block" },
-                  color: "muted",
-                })}
-              >
-                {item.kind === "movie" ? "Movie" : "Show"}
-              </span>
-              <span className={css({ minWidth: 0 })}>
-                <TargetChips targets={item.targets} limit={4} />
-              </span>
-              <span className={css({ display: { base: "none", md: "block" } })}>
-                <EpisodeProgress item={item} />
-              </span>
-              <span className={css({ display: { base: "none", md: "block" } })}>
-                <MonitoredCell item={item} />
-              </span>
-              <span
-                className={css({
-                  display: { base: "none", md: "block" },
-                  textAlign: "right",
-                  fontFamily: "mono",
-                  fontSize: "12px",
-                  color: size ? "soft" : "faint",
-                })}
-              >
-                {size ? sizeLabel(size) : "—"}
-              </span>
-              <span
-                className={css({
-                  display: { base: "none", md: "block" },
-                  textAlign: "right",
-                  fontFamily: "mono",
-                  fontSize: "12px",
-                  color: "muted",
-                })}
-              >
-                {item.added ? addedFormat.format(new Date(item.added)) : "—"}
-              </span>
+              {columns.map((column) => (
+                <Fragment key={column}>
+                  {column === "title" ? (
+                    <span
+                      className={css({
+                        fontWeight: "500",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      })}
+                    >
+                      <Link
+                        href={mediaHref(item)}
+                        className={css({
+                          _after: {
+                            content: '""',
+                            position: "absolute",
+                            inset: 0,
+                          },
+                          _focusVisible: { outline: "none" },
+                          "&:focus-visible::after": {
+                            outline: "2px solid var(--accent)",
+                            outlineOffset: "-2px",
+                          },
+                        })}
+                      >
+                        {item.title}
+                      </Link>
+                      <span
+                        className={css({
+                          display: { base: "block", md: "none" },
+                          mt: "2px",
+                          fontSize: "12px",
+                          color: "subtle",
+                          fontWeight: "400",
+                        })}
+                      >
+                        {item.year || "TBA"} ·{" "}
+                        {item.kind === "movie" ? "Movie" : "Show"}
+                      </span>
+                    </span>
+                  ) : (
+                    <LibraryCell column={column} item={item} size={size} />
+                  )}
+                </Fragment>
+              ))}
             </div>
           );
         })}
       </div>
     </div>
   );
+}
+
+function LibraryCell({
+  column,
+  item,
+  size,
+}: {
+  column: string;
+  item: MediaItem;
+  size: number;
+}) {
+  switch (column) {
+    case "year":
+      return (
+        <span className={css(desktopCell, monoCell, { color: "muted" })}>
+          {item.year || "TBA"}
+        </span>
+      );
+    case "type":
+      return (
+        <span className={css(desktopCell, { color: "muted" })}>
+          {item.kind === "movie" ? "Movie" : "Show"}
+        </span>
+      );
+    case "targets":
+      // The one detail column phones keep, beside the title.
+      return (
+        <span className={css({ minWidth: 0 })}>
+          <TargetChips targets={item.targets} limit={4} />
+        </span>
+      );
+    case "episodes":
+      return (
+        <span className={css(desktopCell)}>
+          <EpisodeProgress item={item} />
+        </span>
+      );
+    case "monitored":
+      return (
+        <span className={css(desktopCell)}>
+          <MonitoredCell item={item} />
+        </span>
+      );
+    case "size":
+      return (
+        <span
+          className={css(desktopCell, monoCell, {
+            textAlign: "right",
+            color: size ? "soft" : "faint",
+          })}
+        >
+          {size ? sizeLabel(size) : "—"}
+        </span>
+      );
+    case "added":
+      return (
+        <span
+          className={css(desktopCell, monoCell, {
+            textAlign: "right",
+            color: "muted",
+          })}
+        >
+          {item.added ? addedFormat.format(new Date(item.added)) : "—"}
+        </span>
+      );
+    case "rating":
+      return (
+        <span
+          className={css(desktopCell, monoCell, {
+            textAlign: "right",
+            color: item.rating ? "soft" : "faint",
+          })}
+        >
+          {item.rating ? item.rating.toFixed(1) : "—"}
+        </span>
+      );
+    case "genres":
+      return (
+        <span
+          title={item.genres.join(", ")}
+          className={css(desktopCell, truncateCell, { color: "muted" })}
+        >
+          {item.genres.join(", ") || "—"}
+        </span>
+      );
+    case "runtime":
+      return (
+        <span
+          className={css(desktopCell, monoCell, {
+            textAlign: "right",
+            color: item.runtime ? "muted" : "faint",
+          })}
+        >
+          {item.runtime ? `${item.runtime}m` : "—"}
+        </span>
+      );
+    case "profile": {
+      const profiles = [
+        ...new Set(item.targets.map((target) => target.qualityProfile)),
+      ].join(", ");
+      return (
+        <span
+          title={profiles}
+          className={css(desktopCell, truncateCell, { color: "muted" })}
+        >
+          {profiles || "—"}
+        </span>
+      );
+    }
+    default:
+      return <span className={css(desktopCell)} />;
+  }
 }
