@@ -308,7 +308,8 @@ export function Modal({
   title: string;
   description?: string;
   children: ReactNode;
-  wide?: boolean;
+  /** Wider dialogs; "extra" fits a full table, such as manual search results. */
+  wide?: boolean | "extra";
   initialFocus?: ComponentProps<typeof Dialog.Popup>["initialFocus"];
   /** A command palette: no visible header, and the content manages scrolling. */
   command?: boolean;
@@ -353,7 +354,13 @@ export function Modal({
             initialFocus={initialFocus}
             className={css({
               width: "100%",
-              maxWidth: command ? "720px" : wide ? "800px" : "540px",
+              maxWidth: command
+                ? "720px"
+                : wide === "extra"
+                  ? "1240px"
+                  : wide
+                    ? "800px"
+                    : "540px",
               maxHeight: command ? "calc(85dvh - 24px)" : "calc(100dvh - 40px)",
               // The header stays put; only the body scrolls.
               overflow: "hidden",

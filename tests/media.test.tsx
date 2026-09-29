@@ -131,11 +131,18 @@ const rejected: Release = {
   indexerId: 31,
   title: "Dune.Part.Two.2024.2160p.WEB-DL",
   quality: "WEBDL-2160p",
+  qualityWeight: 18,
   size: 12 * 1024 ** 3,
   age: 2,
+  ageMinutes: 2 * 24 * 60,
   seeders: 18,
+  leechers: 3,
   protocol: "torrent",
   indexer: "Test indexer",
+  languages: ["English"],
+  customFormats: [],
+  customFormatScore: 0,
+  releaseWeight: 1,
   approved: false,
   rejections: ["Quality is not allowed in this profile."],
 };
@@ -173,6 +180,8 @@ function renderDetails() {
     onAddTarget: mock(),
     notify: mock(),
   };
+  // Manual search reads its saved columns; start from none saved.
+  queryClient.setQueryData(["preferences"], { timeZone: null });
   renderUI(<MediaDetails {...props} />);
   return props;
 }

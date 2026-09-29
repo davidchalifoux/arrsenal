@@ -12,6 +12,7 @@ import {
   MagnetIcon,
   MagnifyingGlassIcon,
   PlusIcon,
+  SlidersHorizontalIcon,
   StarIcon,
   TrashIcon,
   WarningCircleIcon,
@@ -37,7 +38,20 @@ import {
   ToolbarDivider,
   ToolbarLink,
 } from "./page-header";
+import {
+  bestMatch,
+  nextReleaseSort,
+  type ReleaseSort,
+  ReleaseTable,
+  releaseColumns,
+  sortReleases,
+} from "./release-table";
 import { SeriesEpisodes } from "./series-episodes";
+import {
+  TableOptionsDialog,
+  useTableColumns,
+  visibleColumns,
+} from "./table-options";
 import {
   Button,
   CheckField,
@@ -1225,6 +1239,9 @@ export function ReleaseSearch({
   const grabLock = useRef(false);
   const [grabbing, setGrabbing] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Release | null>(null);
+  const [sort, setSort] = useState<ReleaseSort>(bestMatch);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const tableColumns = useTableColumns("releases", releaseColumns);
   const releases = useQuery({
     queryKey: [
       "releases",
@@ -1274,7 +1291,7 @@ export function ReleaseSearch({
       }}
       title="Manual search"
       description={`Find a release for ${media.title}${searchScope ? ` · ${searchScope.code}` : ""}. Your instance's indexers and quality rules are used.`}
-      wide
+      wide="extra"
       controls={
         <div
           className={css({
@@ -1311,6 +1328,37 @@ export function ReleaseSearch({
             )}
             Search again
           </Button>
+          <span
+            className={css({
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              ml: "auto",
+              color: "muted",
+              fontSize: "12px",
+            })}
+          >
+            {sort.key === "rank" ? (
+              "Sorted by best match"
+            ) : (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSort(bestMatch)}
+              >
+                Sort by best match
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="Table options"
+              onClick={() => setOptionsOpen(true)}
+            >
+              <SlidersHorizontalIcon size={14} />
+              Options
+            </Button>
+          </span>
         </div>
       }
       footer={
@@ -1378,73 +1426,20 @@ export function ReleaseSearch({
           No releases found. Check this instance&apos;s indexers and try again.
         </p>
       ) : (
-        <div
-          className={css({
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px",
-          })}
-        >
-          {releases.data?.items.map((release) => (
-            <div
-              key={`${release.indexerId}:${release.guid}`}
-              className={css({
-                border: "1px solid token(colors.line)",
-                borderRadius: "7px",
-                p: "13px",
-                display: "flex",
-                gap: "14px",
-                alignItems: "center",
-              })}
-            >
-              <div className={css({ minWidth: 0, flex: 1 })}>
-                <p
-                  title={release.title}
-                  className={css({
-                    fontSize: "12px",
-                    overflowWrap: "anywhere",
-                    fontWeight: "500",
-                  })}
-                >
-                  {release.title}
-                </p>
-                <p
-                  className={css({
-                    fontSize: "10px",
-                    color: "muted",
-                    mt: "7px",
-                  })}
-                >
-                  {release.quality} · {sizeLabel(release.size)} ·{" "}
-                  {release.indexer} · {release.age}d old{" "}
-                  {release.seeders !== undefined
-                    ? ` · ${release.seeders} seeders`
-                    : ""}
-                </p>
-                {release.rejections.length > 0 && (
-                  <p
-                    className={css({
-                      color: "warning",
-                      fontSize: "10px",
-                      mt: "7px",
-                    })}
-                  >
-                    {release.rejections.join(" · ")}
-                  </p>
-                )}
-              </div>
-              <Button
-                size="sm"
-                disabled={grabbing !== null}
-                onClick={() => setConfirm(release)}
-              >
-                <ArrowDownIcon size={14} />
-                Grab
-              </Button>
-            </div>
-          ))}
-        </div>
+        <ReleaseTable
+          releases={sortReleases(releases.data?.items ?? [], sort)}
+          columns={visibleColumns(releaseColumns, tableColumns)}
+          sort={sort}
+          onSort={(key) => setSort((current) => nextReleaseSort(current, key))}
+          grabbing={grabbing}
+          onGrab={setConfirm}
+        />
       )}
+      <TableOptionsDialog
+        open={optionsOpen}
+        onOpenChange={setOptionsOpen}
+        control={tableColumns}
+      />
     </Modal>
   );
 }

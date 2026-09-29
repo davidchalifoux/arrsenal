@@ -100,7 +100,6 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-
 // Wanted reads its saved columns through React Query. Seeded preferences
 // keep that read from using up the mocked API responses below.
 function renderWanted() {
