@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.0](https://github.com/davidchalifoux/arrsenal/compare/v0.8.0...v0.9.0) (2026-09-29)
+
+
+### Features
+
+* add History, Blocklist, and table column options ([#40](https://github.com/davidchalifoux/arrsenal/issues/40)) ([c725009](https://github.com/davidchalifoux/arrsenal/commit/c72500937e6349d13f39efc122fc400f43c09aea))
+* add releases from files or links, and link Activity titles ([#38](https://github.com/davidchalifoux/arrsenal/issues/38)) ([94cd494](https://github.com/davidchalifoux/arrsenal/commit/94cd49408fca48fe0a75cf6acee2736d444d5013))
+* turn manual search into a sortable release table ([#41](https://github.com/davidchalifoux/arrsenal/issues/41)) ([eb59640](https://github.com/davidchalifoux/arrsenal/commit/eb59640f9bbff0fe2802c14ba22f5cb7fc612c5b))
+
 ## [0.8.0](https://github.com/davidchalifoux/arrsenal/compare/v0.7.0...v0.8.0) (2026-09-26)
 
 
