@@ -325,16 +325,43 @@ export function normalizeQueue(item: Row, instance: InstanceConfig): QueueItem {
   };
 }
 
+// Optional lists of named objects; a missing or odd list is just empty.
+function names(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((entry) => str(row(entry).name)).filter(Boolean)
+    : [];
+}
+
+// Only plain web links are shown; an indexer could send any scheme.
+function webUrl(value: unknown): string | undefined {
+  try {
+    const url = new URL(str(value));
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.href
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function normalizeRelease(item: Row): Release {
-  const rejections = strings(item.rejections);
+  // Radarr formats some rejections as "…: {quality} [{custom formats}]",
+  // which reads "HDTV-1080p []" when the existing file matches no formats.
+  const rejections = strings(item.rejections).map((message) =>
+    message.replace(/\s*\[\s*\]$/, ""),
+  );
   return {
     guid: str(item.guid),
     indexerId: num(item.indexerId),
     title: str(item.title, "Untitled release"),
     quality: qualityName(item.quality),
+    qualityWeight: num(item.qualityWeight),
     size: num(item.size),
     age: num(item.age),
+    ageMinutes: num(item.ageMinutes, num(item.age) * 24 * 60),
     seeders: typeof item.seeders === "number" ? num(item.seeders) : undefined,
+    leechers:
+      typeof item.leechers === "number" ? num(item.leechers) : undefined,
     protocol: str(
       item.protocol,
       num(item.protocol) === 1
@@ -344,6 +371,11 @@ export function normalizeRelease(item: Row): Release {
           : "unknown",
     ),
     indexer: str(item.indexer, "Unknown indexer"),
+    languages: names(item.languages),
+    customFormats: names(item.customFormats),
+    customFormatScore: num(item.customFormatScore),
+    releaseWeight: num(item.releaseWeight),
+    infoUrl: webUrl(item.infoUrl),
     approved:
       item.approved !== false &&
       item.rejected !== true &&

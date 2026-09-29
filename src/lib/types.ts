@@ -179,11 +179,27 @@ export interface Release {
   indexerId: number;
   title: string;
   quality: string;
+  /** The instance's ranking of qualities; higher is better. */
+  qualityWeight: number;
   size: number;
+  /** Age in whole days. */
   age: number;
+  /** Age in minutes, for sorting releases from the same day. */
+  ageMinutes: number;
   seeders?: number;
+  leechers?: number;
   protocol: string;
   indexer: string;
+  languages: string[];
+  customFormats: string[];
+  customFormatScore: number;
+  /**
+   * The instance's preference order for this search, from its quality
+   * profile and custom formats; lower is a better match.
+   */
+  releaseWeight: number;
+  /** The release's page on its indexer, when it has one. */
+  infoUrl?: string;
   approved: boolean;
   rejections: string[];
 }

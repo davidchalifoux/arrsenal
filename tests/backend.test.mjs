@@ -3148,6 +3148,89 @@ test("blocklist reads every instance and removes entries per instance in bulk", 
     assert.equal((await remove(items)).status, 400, JSON.stringify(items));
 });
 
+test("manual search releases carry scores, peers, languages, and safe links", async () => {
+  const base = {
+    guid: "a",
+    indexerId: 4,
+    title: "Show.S01.1080p",
+    quality: quality("WEBDL-1080p"),
+    qualityWeight: 12,
+    size: 1000,
+    age: 3,
+    ageMinutes: 4400,
+    protocol: "torrent",
+    seeders: 40,
+    leechers: 2,
+    indexer: "Nyaa.si (Prowlarr)",
+    languages: [{ id: 8, name: "Japanese" }],
+    customFormats: [{ id: 1, name: "Anime Web Tier 01" }],
+    customFormatScore: 400,
+    releaseWeight: 2,
+    infoUrl: "https://nyaa.si/view/1",
+    approved: true,
+    rejections: [],
+  };
+  const env = await setup({
+    hd: {
+      kind: "sonarr",
+      media: [series],
+      releases: [
+        {
+          ...base,
+          approved: false,
+          rejections: [
+            "Existing file meets cutoff: HDTV-1080p []",
+            "Existing file meets cutoff: Bluray-1080p [Remux]",
+          ],
+        },
+        {
+          ...base,
+          guid: "b",
+          protocol: "usenet",
+          seeders: undefined,
+          leechers: undefined,
+          infoUrl: "javascript:alert(1)",
+          customFormats: undefined,
+          customFormatScore: undefined,
+        },
+      ],
+    },
+  });
+  const instance = await env.connect("hd");
+  const body = await (
+    await releasesRoute.GET(
+      request(
+        `/api/releases?instanceId=${instance.id}&remoteId=22&kind=series`,
+      ),
+    )
+  ).json();
+  const { items } = body;
+  assert.ok(items, JSON.stringify(body));
+  expect(items[0]).toMatchObject({
+    qualityWeight: 12,
+    ageMinutes: 4400,
+    seeders: 40,
+    leechers: 2,
+    languages: ["Japanese"],
+    customFormats: ["Anime Web Tier 01"],
+    customFormatScore: 400,
+    releaseWeight: 2,
+    infoUrl: "https://nyaa.si/view/1",
+  });
+  // Empty custom format lists are dropped; real ones stay.
+  expect(items[0].rejections).toEqual([
+    "Existing file meets cutoff: HDTV-1080p",
+    "Existing file meets cutoff: Bluray-1080p [Remux]",
+  ]);
+  expect(items[1]).toMatchObject({
+    protocol: "usenet",
+    customFormats: [],
+    customFormatScore: 0,
+  });
+  assert.equal(items[1].infoUrl, undefined);
+  assert.equal(items[1].seeders, undefined);
+});
+
 test("live lookup merges available results, reports failed targets, and never claims trending", async () => {
   const env = await setup({
     hd: { lookup: [{ ...movie, id: 0 }] },

@@ -7,6 +7,7 @@ export const tableIds = [
   "history",
   "blocklist",
   "wanted",
+  "releases",
 ] as const;
 export type TableId = (typeof tableIds)[number];
 
