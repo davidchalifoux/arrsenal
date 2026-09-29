@@ -14,7 +14,7 @@ import {
 } from "@phosphor-icons/react";
 import { css, cva } from "@styled-system/css";
 import { type QueryFunctionContext, useQueries } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { type CSSProperties, useRef, useState } from "react";
 import { api, qualityLabel, sizeLabel } from "@/lib/client";
 import { realtimeQuery } from "@/lib/realtime-query";
 import type {
@@ -583,12 +583,23 @@ export function SeriesEpisodes({
                   </span>
                 </span>
                 <span
+                  // One fixed-width column per target, so each instance's
+                  // label lines up down the list whatever its summary says.
+                  style={
+                    {
+                      "--targets": targetSummaries.length,
+                    } as CSSProperties
+                  }
                   className={css({
-                    display: "flex",
-                    flexWrap: "wrap",
+                    display: "grid",
+                    gridTemplateColumns: {
+                      base: "minmax(0, 1fr)",
+                      md: "repeat(var(--targets), 190px)",
+                    },
                     alignItems: "center",
-                    gap: "8px 20px",
+                    gap: "6px 20px",
                     ml: { base: "20px", md: "auto" },
+                    minWidth: 0,
                   })}
                 >
                   {targetSummaries.map(
@@ -604,19 +615,31 @@ export function SeriesEpisodes({
                         key={target.instanceId}
                         title={`${target.instanceName}: ${description}${stale ? " (may be incomplete or out of date)" : ""}`}
                         className={css({
-                          display: "inline-flex",
+                          display: "flex",
                           alignItems: "center",
                           gap: "6px",
+                          minWidth: 0,
                           fontSize: "11px",
                         })}
                       >
-                        <span className={css({ color: "muted" })}>
+                        <span
+                          className={css({
+                            color: "muted",
+                            minWidth: 0,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          })}
+                        >
                           {target.instanceName}
                         </span>
                         <span
-                          className={statusStyle({
-                            status: status as EpisodeStatus,
-                          })}
+                          className={css(
+                            statusStyle.raw({
+                              status: status as EpisodeStatus,
+                            }),
+                            { flexShrink: 0, whiteSpace: "nowrap" },
+                          )}
                         >
                           {summary}
                           {complete && <CheckCircleIcon size={12} />}
