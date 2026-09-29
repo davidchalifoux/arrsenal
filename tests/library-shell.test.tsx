@@ -198,6 +198,25 @@ it("expands only the active section's sub-navigation", () => {
       .getByRole("link", { name: "Connections" })
       .getAttribute("aria-current"),
   ).toBeNull();
+
+  mocks.pathname = "/history";
+  view.rerender(<LibraryShell>History</LibraryShell>);
+  expect(main().queryByRole("link", { name: "Security" })).toBeNull();
+  expect(
+    main()
+      .getAllByRole("link")
+      .filter((link) =>
+        ["/queue", "/history", "/blocklist"].includes(
+          link.getAttribute("href") ?? "",
+        ),
+      )
+      .map((link) => [link.textContent, link.getAttribute("aria-current")]),
+  ).toEqual([
+    [expect.stringContaining("Activity"), null],
+    ["Queue", null],
+    ["History", "page"],
+    ["Blocklist", null],
+  ]);
 });
 
 it("links each instance to its connection settings with a health label", () => {
@@ -239,6 +258,8 @@ it.each([
   ["/shows/123/seasons/1", "Library"],
   ["/queue", "Activity"],
   ["/queue/123", "Activity"],
+  ["/history", "Activity"],
+  ["/blocklist", "Activity"],
   ["/calendar", "Calendar"],
   ["/calendar/upcoming", "Calendar"],
   ["/wanted", "Wanted"],

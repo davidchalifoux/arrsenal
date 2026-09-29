@@ -25,6 +25,14 @@ import {
   ToolbarDivider,
 } from "./page-header";
 import {
+  cellStyle,
+  checkboxStyle,
+  columnLg,
+  columnMd,
+  columnSm,
+  headCellStyle,
+} from "./table-styles";
+import {
   Button,
   CheckField,
   inputRaw,
@@ -123,31 +131,6 @@ const statusLabels: Record<string, string> = {
   error: "Error",
   unknown: "Status unknown",
 };
-
-const checkboxStyle = css({
-  width: "15px",
-  height: "15px",
-  m: 0,
-  display: "block",
-});
-
-const headCellStyle = css({
-  px: "10px",
-  py: "7px",
-  textAlign: "left",
-  fontWeight: "500",
-  whiteSpace: "nowrap",
-});
-const cellStyle = css({
-  px: "10px",
-  py: "7px",
-  textAlign: "left",
-  verticalAlign: "middle",
-  borderTop: "1px solid token(colors.line)",
-});
-const columnSm = css({ display: { base: "none", sm: "table-cell" } });
-const columnMd = css({ display: { base: "none", md: "table-cell" } });
-const columnLg = css({ display: { base: "none", lg: "table-cell" } });
 
 export function DownloadQueue({
   data,

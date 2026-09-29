@@ -401,6 +401,36 @@ export const pushReleaseSchema = z
     },
   );
 
+export const historyQuerySchema = z.object({
+  limit: queryIntegerSchema("limit")
+    .pipe(z.number().max(1000, { error: "limit can be at most 1000." }))
+    .default(100),
+  event: z
+    .enum(["grabbed", "imported", "failed", "deleted", "renamed", "ignored"], {
+      error:
+        "event must be grabbed, imported, failed, deleted, renamed, or ignored.",
+    })
+    .optional(),
+});
+
+export const markFailedSchema = z.object(
+  { instanceId: instanceIdSchema, id: integerSchema("id") },
+  objectError,
+);
+
+export const removeBlocklistSchema = z.object(
+  {
+    items: z
+      .array(
+        z.object({ instanceId: instanceIdSchema, id: integerSchema("id") }),
+        { error: "items must be a list of blocklist entries." },
+      )
+      .min(1, { error: "Choose at least one blocklist entry." })
+      .max(1000, { error: "Remove at most 1000 entries at once." }),
+  },
+  objectError,
+);
+
 // Queue IDs are signed 32-bit hashes, unlike positive media/profile/indexer IDs.
 export const retryQueueSchema = z.object(
   {

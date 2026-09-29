@@ -18,6 +18,10 @@ const effects = {
   grab: ["commands", "queue", "library", "episodes", "calendar"],
   removeQueue: ["commands", "queue", "library", "episodes", "calendar"],
   retryQueue: ["commands", "queue", "library", "episodes", "calendar"],
+  // Marking failed blocklists the release and may start a replacement search.
+  markFailed: ["commands", "queue", "library", "episodes", "calendar"],
+  // The blocklist is not a realtime topic; its page refetches after a change.
+  unblock: [],
 } satisfies Record<string, RealtimeTopic[]>;
 
 type MutationScope = { operation: keyof typeof effects; remoteId?: number };
@@ -89,7 +93,7 @@ export async function executeMutation(
   } finally {
     // Reconcile once per target, including partial writes and ambiguous failures.
     // Validation/read failures need no reconciliation. Never retry a write here.
-    if (attemptedWrites) {
+    if (attemptedWrites && effects[scope.operation].length) {
       publishInstanceChange(
         instance,
         null,
