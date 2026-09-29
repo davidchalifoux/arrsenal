@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import { libraryPreferencesSchema } from "@/lib/library-options";
+import { tableSettingsSchema } from "@/lib/table-columns";
 import { hexColorPattern, legacyThemeIds, themeIds } from "@/lib/theme";
 import { isPosterSource } from "../image-sources";
 import { torrentLinkProblem } from "../release-links";
@@ -154,6 +155,8 @@ export const preferencesSchema = z.strictObject({
     .nullable()
     .optional(),
   library: libraryPreferencesSchema.optional(),
+  // Column visibility and order for each configurable table.
+  tables: tableSettingsSchema.optional(),
   // Where Sonarr and Radarr download uploaded release files from Arrsenal.
   arrsenalUrl: z
     .string()

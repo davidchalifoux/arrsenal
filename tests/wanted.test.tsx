@@ -100,6 +100,19 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+
+// Wanted reads its saved columns through React Query. Seeded preferences
+// keep that read from using up the mocked API responses below.
+function renderWanted() {
+  const client = new QueryClient();
+  client.setQueryData(["preferences"], { timeZone: null });
+  return render(
+    <QueryClientProvider client={client}>
+      <Wanted />
+    </QueryClientProvider>,
+  );
+}
+
 describe("wantedRows", () => {
   it("lists monitored missing or partial targets with what is missing", () => {
     expect(
@@ -118,7 +131,7 @@ describe("wantedRows", () => {
 describe("Wanted", () => {
   it("filters by kind and searches one row", async () => {
     apiMock.mockResolvedValue({ success: true, message: "ok" });
-    render(<Wanted />);
+    renderWanted();
     expect(screen.getByRole("heading", { name: "Wanted" })).toBeTruthy();
     expect(screen.queryByText("Unmonitored")).toBeNull();
     // One missing movie reads as singular in the footer.
@@ -150,7 +163,7 @@ describe("Wanted", () => {
     apiMock
       .mockResolvedValueOnce({ success: true, message: "ok" })
       .mockResolvedValueOnce({ success: false, message: "Offline" });
-    render(<Wanted />);
+    renderWanted();
     expect(
       screen
         .getByRole("button", { name: "Search 0 selected" })
@@ -169,11 +182,7 @@ describe("Wanted", () => {
 
   it("opens a manual search beside the automatic one", async () => {
     apiMock.mockResolvedValue({ items: [] });
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <Wanted />
-      </QueryClientProvider>,
-    );
+    renderWanted();
     const row = screen.getByRole("listitem", { name: "Dune on Movies HD" });
     fireEvent.click(
       within(row).getByRole("button", {
@@ -194,7 +203,7 @@ describe("Wanted", () => {
     state.items = ["A", "B", "C", "D", "E"].map((title, index) =>
       item({ id: `movie:tmdb:${index}`, title }),
     );
-    render(<Wanted />);
+    renderWanted();
     const box = (title: string) =>
       screen.getByRole("checkbox", { name: `Select ${title} on Movies HD` });
     const checked = () =>

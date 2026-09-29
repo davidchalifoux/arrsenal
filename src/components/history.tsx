@@ -9,6 +9,7 @@ import {
   type Icon,
   PencilSimpleIcon,
   QuestionIcon,
+  SlidersHorizontalIcon,
   TrashIcon,
   WarningCircleIcon,
   XCircleIcon,
@@ -20,9 +21,10 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import Link from "next/link";
-import { useId, useRef, useState } from "react";
+import { type ReactNode, useId, useRef, useState } from "react";
 import { api, mediaHref } from "@/lib/client";
 import { fullDateTime, relativeTime } from "@/lib/relative-time";
+import type { ColumnDefinition } from "@/lib/table-columns";
 import { useTimezonePreference } from "@/lib/timezone-preference";
 import type {
   ActionResponse,
@@ -39,6 +41,12 @@ import {
   SegmentedTabs,
   ToolbarButton,
 } from "./page-header";
+import {
+  type TableColumnsControl,
+  TableOptionsDialog,
+  useTableColumns,
+  visibleColumns,
+} from "./table-options";
 import {
   cellStyle,
   columnLg,
@@ -99,6 +107,7 @@ export function HistoryScreen() {
   const client = useQueryClient();
   const [event, setEvent] = useState<EventFilter>("all");
   const [limit, setLimit] = useState(PAGE_SIZE);
+  const tableColumns = useTableColumns("history", historyColumns);
   const history = useQuery({
     queryKey: historyQueryKey(event, limit),
     queryFn: ({ signal }) =>
@@ -128,6 +137,7 @@ export function HistoryScreen() {
       onRefresh={() => void history.refetch()}
       onChanged={() => void client.invalidateQueries({ queryKey: ["history"] })}
       notify={notify}
+      tableColumns={tableColumns}
     />
   );
 }
@@ -142,6 +152,7 @@ export function HistoryView({
   onRefresh,
   onChanged,
   notify,
+  tableColumns,
 }: {
   data?: HistoryResponse;
   loading: boolean;
@@ -152,8 +163,15 @@ export function HistoryView({
   onRefresh: () => void;
   onChanged: () => void;
   notify: (message: string, error?: boolean) => void;
+  /** Saved column choices; the defaults are used without them. */
+  tableColumns?: TableColumnsControl;
 }) {
   const id = useId();
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const columns = visibleColumns(historyColumns, tableColumns);
+  const labels = new Map(
+    historyColumns.map((column) => [column.key, column.label]),
+  );
   const { timeZone } = useTimezonePreference();
   const [query, setQuery] = useState("");
   const [instance, setInstance] = useState("all");
@@ -217,7 +235,19 @@ export function HistoryView({
       className={css({ minWidth: 0 })}
       aria-labelledby={`${id}-heading`}
       toolbar={
-        <PageToolbar label="History actions">
+        <PageToolbar
+          label="History actions"
+          actions={
+            tableColumns && (
+              <ToolbarButton
+                icon={SlidersHorizontalIcon}
+                label="Options"
+                aria-label="Table options"
+                onClick={() => setOptionsOpen(true)}
+              />
+            )
+          }
+        >
           <ToolbarButton
             icon={ArrowClockwiseIcon}
             label={loading ? "Refreshing..." : "Refresh"}
@@ -364,24 +394,19 @@ export function HistoryView({
               <caption className={css({ srOnly: true })}>History</caption>
               <thead className={tableHeadStyle}>
                 <tr>
-                  <th scope="col" className={headCellStyle}>
-                    Event
-                  </th>
-                  <th
-                    scope="col"
-                    className={`${headCellStyle} ${css({ width: "100%" })}`}
-                  >
-                    Title
-                  </th>
-                  <th scope="col" className={`${headCellStyle} ${columnMd}`}>
-                    Quality
-                  </th>
-                  <th scope="col" className={headCellStyle}>
-                    Date
-                  </th>
-                  <th scope="col" className={`${headCellStyle} ${columnLg}`}>
-                    Details
-                  </th>
+                  {columns.map((key) => (
+                    <th
+                      key={key}
+                      scope="col"
+                      className={cx(
+                        headCellStyle,
+                        historyCells[key].hide,
+                        historyCells[key].head,
+                      )}
+                    >
+                      {labels.get(key)}
+                    </th>
+                  ))}
                   <th scope="col" className={headCellStyle}>
                     <span className={css({ srOnly: true })}>Actions</span>
                   </th>
@@ -392,6 +417,7 @@ export function HistoryView({
                   <HistoryRow
                     key={historyKey(item)}
                     item={item}
+                    columns={columns}
                     timeZone={timeZone}
                     onMarkFailed={() => {
                       setFailError("");
@@ -419,6 +445,13 @@ export function HistoryView({
         )}
       </div>
 
+      {tableColumns && (
+        <TableOptionsDialog
+          open={optionsOpen}
+          onOpenChange={setOptionsOpen}
+          control={tableColumns}
+        />
+      )}
       <Modal
         open={failing !== null}
         onOpenChange={(open) => {
@@ -467,35 +500,38 @@ export function HistoryView({
   );
 }
 
-function HistoryRow({
-  item,
-  timeZone,
-  onMarkFailed,
-}: {
-  item: HistoryItem;
-  timeZone: string | null;
-  onMarkFailed: () => void;
-}) {
-  const event = events[item.event];
-  const EventIcon = event.icon;
-  return (
-    <tr aria-label={`${item.mediaTitle} ${event.label.toLowerCase()}`}>
-      <td className={`${cellStyle} ${css({ whiteSpace: "nowrap" })}`}>
-        <span className={event.className}>
-          <EventIcon size={14} weight="bold" aria-hidden="true" />
-          {event.label}
-        </span>
-      </td>
-      <td className={`${cellStyle} ${css({ maxWidth: 0 })}`}>
-        <span
-          className={css({
-            display: "block",
-            fontWeight: "550",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          })}
-        >
+/** Every History column except the always-shown title, in default order. */
+export const historyColumns: ColumnDefinition[] = [
+  { key: "title", label: "Title", locked: true },
+  { key: "event", label: "Event" },
+  { key: "quality", label: "Quality" },
+  { key: "date", label: "Date" },
+  { key: "instance", label: "Instance" },
+  { key: "details", label: "Details" },
+];
+
+const truncate = css.raw({
+  display: "block",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+});
+
+type HistoryCell = {
+  /** Responsive hiding, shared by the header and the cells. */
+  hide?: string;
+  head?: string;
+  cell?: string;
+  render: (item: HistoryItem, timeZone: string | null) => ReactNode;
+};
+
+const historyCells: Record<string, HistoryCell> = {
+  title: {
+    head: css({ width: "100%" }),
+    cell: css({ maxWidth: 0 }),
+    render: (item) => (
+      <>
+        <span className={css(truncate, { fontWeight: "550" })}>
           {item.mediaId ? (
             <Link
               href={mediaHref({
@@ -519,49 +555,93 @@ function HistoryRow({
         </span>
         <span
           title={item.sourceTitle}
-          className={css({
-            display: "block",
+          className={css(truncate, {
             mt: "2px",
             color: "subtle",
             fontSize: "11px",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
           })}
         >
           {item.sourceTitle}
         </span>
-      </td>
-      <td
-        className={`${cellStyle} ${columnMd} ${css({ whiteSpace: "nowrap", color: "soft" })}`}
-      >
-        {item.quality || "Unknown"}
-      </td>
-      <td className={`${cellStyle} ${css({ whiteSpace: "nowrap" })}`}>
-        <time
-          dateTime={item.date}
-          title={fullDateTime(item.date, timeZone)}
-          className={css({ color: "soft" })}
-        >
-          {relativeTime(item.date)}
-        </time>
-      </td>
-      <td
-        className={`${cellStyle} ${columnLg} ${css({ maxWidth: "320px", color: "muted" })}`}
-      >
-        <span
-          title={item.detail}
-          className={css({
-            display: "block",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          })}
-        >
-          {item.instanceName}
-          {item.detail && ` · ${item.detail}`}
+      </>
+    ),
+  },
+  event: {
+    cell: css({ whiteSpace: "nowrap" }),
+    render: (item) => {
+      const event = events[item.event];
+      const EventIcon = event.icon;
+      return (
+        <span className={event.className}>
+          <EventIcon size={14} weight="bold" aria-hidden="true" />
+          {event.label}
         </span>
-      </td>
+      );
+    },
+  },
+  quality: {
+    hide: columnMd,
+    cell: css({ whiteSpace: "nowrap", color: "soft" }),
+    render: (item) => item.quality || "Unknown",
+  },
+  date: {
+    cell: css({ whiteSpace: "nowrap" }),
+    render: (item, timeZone) => (
+      <time
+        dateTime={item.date}
+        title={fullDateTime(item.date, timeZone)}
+        className={css({ color: "soft" })}
+      >
+        {relativeTime(item.date)}
+      </time>
+    ),
+  },
+  instance: {
+    hide: columnLg,
+    cell: css({ whiteSpace: "nowrap", color: "muted" }),
+    render: (item) => item.instanceName,
+  },
+  details: {
+    hide: columnLg,
+    cell: css({ maxWidth: "320px", color: "muted" }),
+    render: (item) =>
+      item.detail ? (
+        <span title={item.detail} className={css(truncate)}>
+          {item.detail}
+        </span>
+      ) : (
+        "—"
+      ),
+  },
+};
+
+function HistoryRow({
+  item,
+  columns,
+  timeZone,
+  onMarkFailed,
+}: {
+  item: HistoryItem;
+  columns: string[];
+  timeZone: string | null;
+  onMarkFailed: () => void;
+}) {
+  return (
+    <tr
+      aria-label={`${item.mediaTitle} ${events[item.event].label.toLowerCase()}`}
+    >
+      {columns.map((key) => (
+        <td
+          key={key}
+          className={cx(
+            cellStyle,
+            historyCells[key].hide,
+            historyCells[key].cell,
+          )}
+        >
+          {historyCells[key].render(item, timeZone)}
+        </td>
+      ))}
       <td className={`${cellStyle} ${css({ textAlign: "right" })}`}>
         {item.event === "grabbed" && (
           <Button

@@ -121,7 +121,8 @@ describe("HistoryView", () => {
     ).toBe("/shows/392573-shogun");
     expect(within(row).getByText(/S01E01 · Anjin/)).toBeTruthy();
     expect(within(row).getByText("2 hours ago")).toBeTruthy();
-    expect(within(row).getByText("Sonarr HD · Nzb → SABnzbd")).toBeTruthy();
+    expect(within(row).getByText("Sonarr HD")).toBeTruthy();
+    expect(within(row).getByText("Nzb → SABnzbd")).toBeTruthy();
     // Unmatched media stays plain text; only grabs can be marked failed.
     const movie = screen.getByRole("row", { name: "Dune imported" });
     expect(within(movie).queryByRole("link")).toBeNull();
@@ -222,14 +223,15 @@ describe("BlocklistView", () => {
   it("lists entries with their reason", () => {
     renderBlocklist();
     const row = screen.getByRole("row", { name: "Shogun blocklist entry" });
+    expect(within(row).getByText("DrunkenSlug")).toBeTruthy();
     expect(
-      within(row)
-        .getByText("Sonarr HD · DrunkenSlug · Manually marked as failed")
-        .getAttribute("title"),
+      within(row).getByText("Manually marked as failed").getAttribute("title"),
     ).toBe("Manually marked as failed");
     // Without an indexer, the protocol stands in.
     expect(
-      screen.getByText("Radarr HD · Torrent · Manually marked as failed"),
+      within(
+        screen.getByRole("row", { name: "Dune blocklist entry" }),
+      ).getByText("Torrent"),
     ).toBeTruthy();
     expect(
       within(screen.getByRole("row", { name: "Dune blocklist entry" }))

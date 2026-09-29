@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type { LibraryPreferences } from "./library-options";
+import type { TableSettings } from "./table-columns";
 import type { ThemeId } from "./theme";
 
 export const preferencesQueryKey = ["preferences"];
@@ -14,6 +15,8 @@ export type Preferences = {
   library?: LibraryPreferences;
   /** Last quality profile and root folder used per instance when adding. */
   addDefaults?: Record<string, AddDefault>;
+  /** Column visibility and order for each configurable table. */
+  tables?: TableSettings;
   /** Where Sonarr and Radarr download uploaded NZB files from Arrsenal. */
   arrsenalUrl?: string | null;
 };

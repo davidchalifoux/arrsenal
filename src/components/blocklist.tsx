@@ -3,15 +3,17 @@
 import {
   ArrowClockwiseIcon,
   ProhibitIcon,
+  SlidersHorizontalIcon,
   TrashIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { css, cx } from "@styled-system/css";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useId, useRef, useState } from "react";
+import { type ReactNode, useId, useRef, useState } from "react";
 import { api, mediaHref } from "@/lib/client";
 import { fullDateTime, relativeTime } from "@/lib/relative-time";
+import type { ColumnDefinition } from "@/lib/table-columns";
 import { useTimezonePreference } from "@/lib/timezone-preference";
 import type {
   ActionResponse,
@@ -27,6 +29,12 @@ import {
   ToolbarButton,
   ToolbarDivider,
 } from "./page-header";
+import {
+  type TableColumnsControl,
+  TableOptionsDialog,
+  useTableColumns,
+  visibleColumns,
+} from "./table-options";
 import {
   cellStyle,
   checkboxStyle,
@@ -51,9 +59,112 @@ const protocolLabels: Record<BlocklistItem["protocol"], string> = {
   unknown: "Unknown",
 };
 
+/** Every Blocklist column except the always-shown title, in default order. */
+export const blocklistColumns: ColumnDefinition[] = [
+  { key: "title", label: "Title", locked: true },
+  { key: "quality", label: "Quality" },
+  { key: "date", label: "Date" },
+  { key: "instance", label: "Instance" },
+  { key: "indexer", label: "Indexer" },
+  { key: "reason", label: "Reason" },
+];
+
+const truncate = css.raw({
+  display: "block",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+});
+
+type BlocklistCell = {
+  /** Responsive hiding, shared by the header and the cells. */
+  hide?: string;
+  head?: string;
+  cell?: string;
+  render: (item: BlocklistItem, timeZone: string | null) => ReactNode;
+};
+
+const blocklistCells: Record<string, BlocklistCell> = {
+  title: {
+    head: css({ width: "100%" }),
+    cell: css({ maxWidth: 0 }),
+    render: (item) => (
+      <>
+        <span className={css(truncate, { fontWeight: "550" })}>
+          {item.mediaId ? (
+            <Link
+              href={mediaHref({
+                id: item.mediaId,
+                kind: item.kind,
+                title: item.mediaTitle,
+              })}
+              className={css({ _hover: { color: "accent" } })}
+            >
+              {item.mediaTitle}
+            </Link>
+          ) : (
+            item.mediaTitle
+          )}
+        </span>
+        <span
+          title={item.sourceTitle}
+          className={css(truncate, {
+            mt: "2px",
+            color: "subtle",
+            fontSize: "11px",
+          })}
+        >
+          {item.sourceTitle}
+        </span>
+      </>
+    ),
+  },
+  quality: {
+    hide: columnMd,
+    cell: css({ whiteSpace: "nowrap", color: "soft" }),
+    render: (item) => item.quality || "Unknown",
+  },
+  date: {
+    cell: css({ whiteSpace: "nowrap" }),
+    render: (item, timeZone) => (
+      <time
+        dateTime={item.date}
+        title={fullDateTime(item.date, timeZone)}
+        className={css({ color: "soft" })}
+      >
+        {relativeTime(item.date)}
+      </time>
+    ),
+  },
+  instance: {
+    hide: columnLg,
+    cell: css({ whiteSpace: "nowrap", color: "muted" }),
+    render: (item) => item.instanceName,
+  },
+  indexer: {
+    hide: columnLg,
+    cell: css({ whiteSpace: "nowrap", color: "muted" }),
+    // Without an indexer, the protocol stands in.
+    render: (item) => item.indexer ?? protocolLabels[item.protocol],
+  },
+  reason: {
+    hide: columnLg,
+    cell: css({ maxWidth: "280px", color: "muted" }),
+    render: (item) =>
+      item.message ? (
+        <span title={item.message} className={css(truncate)}>
+          {item.message}
+        </span>
+      ) : (
+        "—"
+      ),
+  },
+};
+
 export function BlocklistScreen() {
   const { notify } = useLibraryActions();
   const client = useQueryClient();
+  const tableColumns = useTableColumns("blocklist", blocklistColumns);
   const blocklist = useQuery({
     queryKey: blocklistQueryKey,
     queryFn: ({ signal }) =>
@@ -70,6 +181,7 @@ export function BlocklistScreen() {
         void client.invalidateQueries({ queryKey: blocklistQueryKey })
       }
       notify={notify}
+      tableColumns={tableColumns}
     />
   );
 }
@@ -81,6 +193,7 @@ export function BlocklistView({
   onRefresh,
   onChanged,
   notify,
+  tableColumns,
 }: {
   data?: BlocklistResponse;
   loading: boolean;
@@ -88,8 +201,15 @@ export function BlocklistView({
   onRefresh: () => void;
   onChanged: () => void;
   notify: (message: string, error?: boolean) => void;
+  /** Saved column choices; the defaults are used without them. */
+  tableColumns?: TableColumnsControl;
 }) {
   const id = useId();
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const columns = visibleColumns(blocklistColumns, tableColumns);
+  const labels = new Map(
+    blocklistColumns.map((column) => [column.key, column.label]),
+  );
   const { timeZone } = useTimezonePreference();
   const [query, setQuery] = useState("");
   const [instance, setInstance] = useState("all");
@@ -171,7 +291,19 @@ export function BlocklistView({
       className={css({ minWidth: 0 })}
       aria-labelledby={`${id}-heading`}
       toolbar={
-        <PageToolbar label="Blocklist actions">
+        <PageToolbar
+          label="Blocklist actions"
+          actions={
+            tableColumns && (
+              <ToolbarButton
+                icon={SlidersHorizontalIcon}
+                label="Options"
+                aria-label="Table options"
+                onClick={() => setOptionsOpen(true)}
+              />
+            )
+          }
+        >
           <ToolbarButton
             icon={ArrowClockwiseIcon}
             label={loading ? "Refreshing..." : "Refresh"}
@@ -381,21 +513,19 @@ export function BlocklistView({
                       className={checkboxStyle}
                     />
                   </th>
-                  <th
-                    scope="col"
-                    className={`${headCellStyle} ${css({ width: "100%" })}`}
-                  >
-                    Title
-                  </th>
-                  <th scope="col" className={`${headCellStyle} ${columnMd}`}>
-                    Quality
-                  </th>
-                  <th scope="col" className={headCellStyle}>
-                    Date
-                  </th>
-                  <th scope="col" className={`${headCellStyle} ${columnLg}`}>
-                    Reason
-                  </th>
+                  {columns.map((key) => (
+                    <th
+                      key={key}
+                      scope="col"
+                      className={cx(
+                        headCellStyle,
+                        blocklistCells[key].hide,
+                        blocklistCells[key].head,
+                      )}
+                    >
+                      {labels.get(key)}
+                    </th>
+                  ))}
                   <th scope="col" className={headCellStyle}>
                     <span className={css({ srOnly: true })}>Actions</span>
                   </th>
@@ -424,83 +554,18 @@ export function BlocklistView({
                           className={checkboxStyle}
                         />
                       </td>
-                      <td className={`${cellStyle} ${css({ maxWidth: 0 })}`}>
-                        <span
-                          className={css({
-                            display: "block",
-                            fontWeight: "550",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          })}
-                        >
-                          {item.mediaId ? (
-                            <Link
-                              href={mediaHref({
-                                id: item.mediaId,
-                                kind: item.kind,
-                                title: item.mediaTitle,
-                              })}
-                              className={css({ _hover: { color: "accent" } })}
-                            >
-                              {item.mediaTitle}
-                            </Link>
-                          ) : (
-                            item.mediaTitle
+                      {columns.map((key) => (
+                        <td
+                          key={key}
+                          className={cx(
+                            cellStyle,
+                            blocklistCells[key].hide,
+                            blocklistCells[key].cell,
                           )}
-                        </span>
-                        <span
-                          title={item.sourceTitle}
-                          className={css({
-                            display: "block",
-                            mt: "2px",
-                            color: "subtle",
-                            fontSize: "11px",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          })}
                         >
-                          {item.sourceTitle}
-                        </span>
-                      </td>
-                      <td
-                        className={`${cellStyle} ${columnMd} ${css({ whiteSpace: "nowrap", color: "soft" })}`}
-                      >
-                        {item.quality || "Unknown"}
-                      </td>
-                      <td
-                        className={`${cellStyle} ${css({ whiteSpace: "nowrap" })}`}
-                      >
-                        <time
-                          dateTime={item.date}
-                          title={fullDateTime(item.date, timeZone)}
-                          className={css({ color: "soft" })}
-                        >
-                          {relativeTime(item.date)}
-                        </time>
-                      </td>
-                      <td
-                        className={`${cellStyle} ${columnLg} ${css({ maxWidth: "320px", color: "muted" })}`}
-                      >
-                        <span
-                          title={item.message}
-                          className={css({
-                            display: "block",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          })}
-                        >
-                          {[
-                            item.instanceName,
-                            item.indexer ?? protocolLabels[item.protocol],
-                            item.message,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </span>
-                      </td>
+                          {blocklistCells[key].render(item, timeZone)}
+                        </td>
+                      ))}
                       <td
                         className={`${cellStyle} ${css({ textAlign: "right" })}`}
                       >
@@ -525,6 +590,13 @@ export function BlocklistView({
         )}
       </div>
 
+      {tableColumns && (
+        <TableOptionsDialog
+          open={optionsOpen}
+          onOpenChange={setOptionsOpen}
+          control={tableColumns}
+        />
+      )}
       <Modal
         open={removing !== null}
         onOpenChange={(open) => {
