@@ -25,9 +25,12 @@ The interface uses Base UI, PandaCSS, Phosphor icons, Geist, and TanStack Query.
 ## App structure
 
 Explicit App Router pages live under `src/app/(library)/`: the library index,
-movies, shows, missing media, discovery, queue, settings, and separate
-`movies/[id]` and `shows/[id]` detail routes. The shared layout keeps navigation
-and global dialogs mounted between pages; it does not select or render screens.
+movies and shows with separate `movies/[id]` and `shows/[id]` detail routes,
+calendar, wanted, the `(activity)` group (queue, history, and blocklist), and
+settings (connections, personalization, security, and about). `missing` and
+`discover` redirect to Wanted and the add dialog. The shared layout keeps
+navigation and global dialogs mounted between pages; it does not select or
+render screens.
 
 Pages render their shell without waiting for Sonarr/Radarr. Client components
 fetch unified data through Next.js API routes using one persistent TanStack
