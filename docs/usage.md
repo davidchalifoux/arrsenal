@@ -103,7 +103,7 @@ The library table, Queue, History, Blocklist, Wanted, and manual search results 
 - **Connections**: connect, edit, test, and disconnect Sonarr and Radarr instances. This page also sets the **Arrsenal address** that instances use to download uploaded release files.
 - **Personalization**: choose one of six themes (Dark, the default; Light; Sonarr; Midnight; Radarr; or Graphite), an accent color, the time zone, and the library's default view, sort, and order.
 - **Security**: turn on optional single-account authentication, change credentials, or sign out. See [security and account recovery](security.md).
-- **About**: shows your installed version and project links, and checks GitHub for the latest stable release. Results are cached for one hour; if the check fails, the rest of Settings still works.
+- **About**: shows your installed version and project links, and checks for updates. Results are cached for 15 minutes, and **Check now** checks again immediately; if the check fails, the rest of Settings still works. When a newer release is out, the sidebar shows **Update available** (a dot on the Settings tab on phones) until you update or dismiss it for that release. Clear **Check for new releases** to turn off update checks. The check sends no data about your install.
 
 Custom filters, view and table options, the add dialog's last-used profiles and root folders, and everything in Personalization are saved in the server configuration, so every browser shares them. API keys stay on the server, and there is no database. See [configuration and backups](configuration.md).
 

@@ -27,6 +27,8 @@ The site is meant to run on Vercel at [www.arrsenal.com](https://www.arrsenal.co
 
 The production URL lives in `src/lib/site.ts` and feeds the canonical URL, Open Graph tags, `robots.txt`, `sitemap.xml`, and the JSON-LD structured data. Update it there if the domain changes.
 
+`/v1/releases/latest.json` is the update feed that Arrsenal installs check. It is generated at build time from the newest `X.Y.Z` image tag on GitHub Container Registry, and the release workflow redeploys the site after each image is published. Its address and response shape (`version` and `url`) are permanent, because every install from the first release with this check onward requests it. If GHCR can't be reached, the build fails and Vercel keeps serving the previous deploy.
+
 The **Site** GitHub Actions workflow lints and builds pull requests that touch `site/`.
 
 ## How it stays out of the app
