@@ -196,7 +196,7 @@ export function Hero() {
               alt="Arrsenal's library in poster view, showing movies and shows from four Sonarr and Radarr instances with HD and 4K availability on every title"
               width={2880}
               height={1770}
-              priority
+              preload
               sizes="(min-width: 1160px) 1100px, 100vw"
               className={css({
                 w: "full",

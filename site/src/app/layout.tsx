@@ -1,5 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import {
+  siteDescription,
+  siteName,
+  siteTitle,
+  siteUrl,
+  socialTitle,
+} from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,22 +19,32 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const description =
-  "One self-hosted library for all your Sonarr and Radarr instances. See every title, quality, queue, and missing episode across HD and 4K without switching tabs.";
-
 export const metadata: Metadata = {
-  // Set SITE_URL at build time so social previews resolve to absolute URLs.
-  metadataBase: new URL(process.env.SITE_URL ?? "http://localhost:3100"),
-  title: "Arrsenal | One home for your Sonarr and Radarr libraries",
-  description,
-  icons: { icon: "/icon.svg" },
+  metadataBase: new URL(siteUrl),
+  title: siteTitle,
+  description: siteDescription,
+  alternates: { canonical: "/" },
   openGraph: {
-    title: "Arrsenal",
-    description,
     type: "website",
-    images: [{ url: "/library.png", width: 2880, height: 1770 }],
+    url: "/",
+    siteName,
+    title: socialTitle,
+    description: siteDescription,
+    locale: "en_US",
+    images: [
+      {
+        url: "/library.png",
+        width: 2880,
+        height: 1770,
+        alt: "Arrsenal's library showing movies and shows from four Sonarr and Radarr instances",
+      },
+    ],
   },
-  twitter: { card: "summary_large_image" },
+  twitter: {
+    card: "summary_large_image",
+    title: socialTitle,
+    description: siteDescription,
+  },
 };
 
 export const viewport: Viewport = {

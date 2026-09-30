@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "bun --bun next dev --port 3100",
     "build": "bun --bun next build",
-    "start": "bunx serve out",
+    "start": "bun --bun next start --port 3100",
     "lint": "bun --bun biome check",
     "format": "bun --bun biome format --write",
     "prepare": "bun --bun panda codegen"
@@ -22,6 +22,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "schema-dts": "^2.0.0",
     "typescript": "^7.0.2"
   },
   "packageManager": "bun@1.4.2",

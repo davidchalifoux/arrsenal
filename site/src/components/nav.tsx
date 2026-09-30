@@ -41,7 +41,7 @@ export function Nav() {
             letterSpacing: "-0.01em",
           })}
         >
-          <Image src="/logo.svg" alt="" width={24} height={24} priority />
+          <Image src="/logo.svg" alt="" width={24} height={24} preload />
           Arrsenal
         </a>
         <div
