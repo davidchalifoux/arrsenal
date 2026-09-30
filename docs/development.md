@@ -68,6 +68,10 @@ merging, and all upstream requests remain exclusively server-side.
 
 See the [client data reference](../src/lib/README.md) and [backend reference](../src/lib/server/README.md) for implementation contracts. Read the relevant installed Next.js guides in `node_modules/next/dist/docs/` before changing application code.
 
+## Landing site
+
+The marketing site lives in `site/`, a separate Next.js project with its own dependencies. It is excluded from the app's type checking, Docker image, and releases. See the [site README](../site/README.md).
+
 ## Verification
 
 The **CI** GitHub Actions workflow runs `test` and `build` as separate parallel checks when pull requests are opened, updated, or reopened. Each check installs the Bun version pinned in `package.json`, installs dependencies with `--frozen-lockfile`, and runs the corresponding script. New commits cancel outdated runs. The workflow can also be run manually from the Actions tab.
