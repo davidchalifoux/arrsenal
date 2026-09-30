@@ -14,6 +14,8 @@ const nextConfig: NextConfig = {
       "./node_modules/{set-cookie-parser,psl,punycode,universalify,url-parse,querystringify,requires-port,tldts,tldts-core}/**/*",
     ],
   },
+  // The landing site in site/ is a separate project; keep it out of the app bundle.
+  outputFileTracingExcludes: { "*": ["./site/**/*"] },
   devIndicators: false,
   images: {
     remotePatterns: posterSources.map(({ hostname, pathname }) => ({

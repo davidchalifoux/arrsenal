@@ -10,10 +10,12 @@ Arrsenal brings your movies, shows, and download queues into one web interface, 
 
 ## What you can do
 
-- Browse one library in a Sonarr/Radarr-style layout with poster and table views, search, sorting, and saved custom filters.
+- Browse one library in a Sonarr/Radarr-style layout with poster and table views, search, sorting, saved custom filters, and configurable columns.
 - See each title's availability and quality across your Sonarr and Radarr instances.
 - Add movies and shows to multiple instances with a quality profile and root folder for each.
-- Search for releases, inspect rejection reasons, and manage a combined download queue.
+- Search for releases in a sortable table with rejection reasons, or send your own NZB, torrent file, or magnet link.
+- Manage a combined download queue, History, and Blocklist across every instance.
+- Find everything missing in Wanted, and see upcoming episodes and releases on one calendar.
 - Manage movies, shows, seasons, and episode files from their detail pages.
 
 Arrsenal is a companion to Sonarr and Radarr, not a replacement. They still handle indexers, download clients, quality profiles, root folders, and media management. See the [usage guide](docs/usage.md) for details and action limitations.
@@ -78,10 +80,10 @@ Connections and preferences persist in the `arrsenal-config` volume. API keys st
 
 | Guide | What you'll find |
 | --- | --- |
-| [Using Arrsenal](docs/usage.md) | Features, live updates, action behavior, and safe deletion |
+| [Using Arrsenal](docs/usage.md) | Every section of the app, action behavior, live updates, and safe deletion |
 | [Deployment](docs/deployment.md) | Docker updates, version pinning, source builds, networking, proxies, and troubleshooting |
 | [Configuration and backups](docs/configuration.md) | Storage locations, permissions, backups, and configuration recovery |
-| [Security and account recovery](docs/security.md) | Authentication, public artwork, HTTPS, sessions, and forgotten credentials |
+| [Security and account recovery](docs/security.md) | Authentication, public artwork and release files, HTTPS, sessions, and forgotten credentials |
 | [Development](docs/development.md) | Bun setup, application structure, tests, and CI |
 | [Release automation](docs/releases.md) | Contributor commit conventions and maintainer publishing procedures |
 | [Client data reference](src/lib/README.md) | Query cache, selectors, and browser realtime behavior |

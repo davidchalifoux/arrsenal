@@ -8,6 +8,8 @@ Enable the optional instance-wide account in **Settings > Security** by choosing
 
 Artwork is intentionally public, including when authentication is enabled, so Next.js can resize and cache it. Anyone who obtains or guesses an artwork URL can view it; cached images can remain available after logout or removal from the library. Library metadata, settings, and controls remain authenticated. Image requests retain strict path, destination, size, and raster-format restrictions, and upstream API keys stay server-side.
 
+Release files uploaded with **Add release** are served to Sonarr or Radarr without authentication, because the instance downloads them itself. Each file is available through an unguessable link that works once and expires after 24 hours. Files are held in memory only.
+
 Only an Argon2id password hash is stored in private `config.json`, alongside the existing instance configuration. Sessions use opaque HttpOnly, SameSite cookies, expire after seven days, and are lost on server restart. Use one Arrsenal server process; sessions are not shared between replicas. Configuration and backups remain sensitive: upstream API keys must remain recoverable and are not password-hashed.
 
 Use HTTPS on untrusted networks. HTTP remains supported for trusted LANs but exposes passwords and session cookies to network interception. Cookies use `Secure` when accessed through HTTPS. Reverse proxies must preserve the public request host and scheme, and direct access must be restricted when proxy authentication is used. Same-origin mutation protection remains enabled and is not a substitute for authentication.

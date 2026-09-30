@@ -7,7 +7,7 @@ export const settingsSections = [
   {
     href: "/settings/personalization",
     title: "Personalization",
-    description: "Choose the shared timezone preference for this library.",
+    description: "Choose the shared theme, time zone, and library defaults.",
   },
   {
     href: "/settings/security",
