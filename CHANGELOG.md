@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/davidchalifoux/arrsenal/compare/v0.9.0...v0.10.0) (2026-09-30)
+
+
+### Features
+
+* check arrsenal.com for updates and show them in the sidebar ([#47](https://github.com/davidchalifoux/arrsenal/issues/47)) ([fea220f](https://github.com/davidchalifoux/arrsenal/commit/fea220f2494c363f0fd5f6b255880d9523e73b4d))
+
 ## [0.9.0](https://github.com/davidchalifoux/arrsenal/compare/v0.8.0...v0.9.0) (2026-09-29)
 
 
