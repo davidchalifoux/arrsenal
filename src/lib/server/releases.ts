@@ -1,36 +1,36 @@
+import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { version } from "../../../package.json";
+import { readPreferences } from "./config";
 
 export const currentVersion = version;
 export const repositoryUrl = "https://github.com/davidchalifoux/arrsenal";
 
-// GitHub's latest-release endpoint excludes prereleases; compare numeric parts,
-// not strings (0.10.0 is newer than 0.9.0).
-const stableVersion =
-  /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[\w.-]+)?$/;
+// The website publishes the newest release with a Docker image, so a release
+// is only announced once it can be pulled. The address and shape are permanent.
+export const releaseFeedUrl =
+  "https://www.arrsenal.com/v1/releases/latest.json";
+const releaseFeedTag = "release-feed";
+
+// Compare numeric parts, not strings (0.10.0 is newer than 0.9.0).
+const stableVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const releaseSchema = z.object({
-  tag_name: z.string().regex(stableVersion),
-  draft: z.literal(false),
-  prerelease: z.literal(false),
+  version: z.string().regex(stableVersion),
 });
 
-export async function getLatestRelease() {
+/** Checks the release feed, cached for 15 minutes unless `fresh` is set. */
+export async function getLatestRelease({ fresh = false } = {}) {
   try {
-    const response = await fetch(
-      "https://api.github.com/repos/davidchalifoux/arrsenal/releases/latest",
-      {
-        headers: {
-          Accept: "application/vnd.github+json",
-          "X-GitHub-Api-Version": "2022-11-28",
-          "User-Agent": "Arrsenal",
-        },
-        next: { revalidate: 3600 },
-        signal: AbortSignal.timeout(5000),
-      },
-    );
+    const response = await fetch(releaseFeedUrl, {
+      headers: { Accept: "application/json", "User-Agent": "Arrsenal" },
+      ...(fresh
+        ? { cache: "no-store" as const }
+        : { next: { revalidate: 900, tags: [releaseFeedTag] } }),
+      signal: AbortSignal.timeout(5000),
+    });
     if (!response.ok) return null;
     const release = releaseSchema.parse(await response.json());
-    const latest = stableVersion.exec(release.tag_name);
+    const latest = stableVersion.exec(release.version);
     const installed = stableVersion.exec(currentVersion.split("-")[0]);
     if (!latest || !installed) return null;
     let comparison = 0;
@@ -43,13 +43,36 @@ export async function getLatestRelease() {
       }
     }
     return {
-      version: release.tag_name.replace(/^v/, ""),
-      url: `${repositoryUrl}/releases/tag/${encodeURIComponent(release.tag_name)}`,
+      version: release.version,
+      url: `${repositoryUrl}/releases/tag/v${release.version}`,
       updateAvailable:
         comparison > 0 || (comparison === 0 && currentVersion.includes("-")),
     };
   } catch {
-    // Network failures, rate limits, and invalid releases must not break Settings.
+    // Network failures and invalid responses must not break Settings.
     return null;
   }
+}
+
+/** The update check result, or `enabled: false` when checks are turned off. */
+export async function getUpdateStatus() {
+  if ((await readPreferences()).updateChecks === false) {
+    return { enabled: false as const, release: null };
+  }
+  return { enabled: true as const, release: await getLatestRelease() };
+}
+
+/**
+ * A manual check: skips the cached answer and expires it, so every browser's
+ * next check fetches the feed again too.
+ */
+export async function checkForUpdates() {
+  if ((await readPreferences()).updateChecks === false) {
+    return { enabled: false as const, release: null };
+  }
+  revalidateTag(releaseFeedTag, { expire: 0 });
+  return {
+    enabled: true as const,
+    release: await getLatestRelease({ fresh: true }),
+  };
 }

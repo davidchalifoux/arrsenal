@@ -185,6 +185,10 @@ export const preferencesSchema = z.strictObject({
       return z.NEVER;
     })
     .optional(),
+  // Whether Arrsenal checks arrsenal.com for new releases.
+  updateChecks: z.boolean().optional(),
+  // The release version whose sidebar notice was dismissed.
+  dismissedUpdate: z.string().max(100).nullable().optional(),
   // The last profile and root folder used when adding to each instance.
   addDefaults: z
     .record(

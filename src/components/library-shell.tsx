@@ -7,6 +7,7 @@ import {
   type Icon,
   SquaresFourIcon,
   WarningCircleIcon,
+  XIcon,
 } from "@phosphor-icons/react";
 import { css } from "@styled-system/css";
 import { useQuery } from "@tanstack/react-query";
@@ -15,6 +16,8 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { settingsSections } from "@/app/(library)/settings/sections";
 import { useInstances, useLibrary, useQueue } from "@/lib/client-data";
+import { useSavePreferences } from "@/lib/preferences";
+import { useAnnouncedUpdate } from "@/lib/updates";
 import { activitySections } from "./activity-sections";
 import { useLibraryActions } from "./library-provider";
 import { Logo } from "./logo";
@@ -266,6 +269,75 @@ function InstanceList() {
   );
 }
 
+function UpdateNotice() {
+  const update = useAnnouncedUpdate();
+  const save = useSavePreferences();
+  if (!update) return null;
+  return (
+    <div
+      className={css({
+        display: "flex",
+        alignItems: "center",
+        gap: "4px",
+        p: "8px 12px",
+        borderTop: "1px solid token(colors.line)",
+      })}
+    >
+      <Link
+        href="/settings/about"
+        className={css({
+          display: "flex",
+          alignItems: "center",
+          gap: "9px",
+          flexGrow: 1,
+          minWidth: 0,
+          mx: "-4px",
+          px: "8px",
+          py: "5px",
+          borderRadius: "7px",
+          fontSize: "13px",
+          fontWeight: "500",
+          color: "soft",
+          _hover: { bg: "elevated", color: "ink" },
+        })}
+      >
+        <span
+          aria-hidden="true"
+          className={css({
+            width: "7px",
+            height: "7px",
+            borderRadius: "999px",
+            flexShrink: 0,
+            bg: "accent",
+          })}
+        />
+        Update available
+      </Link>
+      <button
+        type="button"
+        aria-label="Dismiss update notice"
+        title="Dismiss until the next release"
+        onClick={() => save.mutate({ dismissedUpdate: update.version })}
+        className={css({
+          width: "28px",
+          height: "28px",
+          display: "grid",
+          placeItems: "center",
+          flexShrink: 0,
+          border: 0,
+          borderRadius: "7px",
+          bg: "transparent",
+          color: "subtle",
+          cursor: "pointer",
+          _hover: { bg: "elevated", color: "ink" },
+        })}
+      >
+        <XIcon size={14} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
 function useDownloadCount() {
   return useQueue().data?.items.length ?? 0;
 }
@@ -403,6 +475,7 @@ function Sidebar({ pathname }: { pathname: string }) {
         )}
       </nav>
       <div className={css({ flexGrow: 1 })} />
+      <UpdateNotice />
       <InstanceList />
     </aside>
   );
@@ -444,6 +517,7 @@ const mobileTabs: {
 function MobileNavigation({ pathname }: { pathname: string }) {
   const section = activeSection(pathname);
   const downloads = useDownloadCount();
+  const update = useAnnouncedUpdate();
   return (
     <nav
       aria-label="Mobile navigation"
@@ -462,6 +536,7 @@ function MobileNavigation({ pathname }: { pathname: string }) {
       {mobileTabs.map((tab) => {
         const active = section === tab.section;
         const count = tab.section === "activity" ? downloads : 0;
+        const updateDot = tab.section === "settings" && update;
         return (
           <Link
             key={tab.href}
@@ -499,8 +574,26 @@ function MobileNavigation({ pathname }: { pathname: string }) {
                   <Count value={count} label="downloads" />
                 </span>
               )}
+              {updateDot && (
+                <span
+                  aria-hidden="true"
+                  className={css({
+                    position: "absolute",
+                    top: "-1px",
+                    right: "-3px",
+                    width: "8px",
+                    height: "8px",
+                    borderRadius: "999px",
+                    bg: "accent",
+                    boxShadow: "0 0 0 2px token(colors.sidebar)",
+                  })}
+                />
+              )}
             </span>
             {tab.label}
+            {updateDot && (
+              <span className={css({ srOnly: true })}>, update available</span>
+            )}
           </Link>
         );
       })}

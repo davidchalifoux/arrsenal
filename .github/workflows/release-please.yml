@@ -77,3 +77,12 @@ jobs:
             org.opencontainers.image.revision=${{ needs.release-please.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Refresh the update feed on www.arrsenal.com
+        env:
+          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$VERCEL_DEPLOY_HOOK" ]; then
+            echo "::warning::VERCEL_DEPLOY_HOOK is not set, so installs will not see this release until the site next deploys."
+            exit 0
+          fi
+          curl --fail --silent --show-error --retry 3 --request POST "$VERCEL_DEPLOY_HOOK" > /dev/null

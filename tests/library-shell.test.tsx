@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, expect, it, mock, spyOn } from "bun:test";
 import {
   QueryClient,
   QueryClientProvider,
@@ -10,6 +10,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import type { ComponentProps, PropsWithChildren } from "react";
@@ -160,6 +161,73 @@ it("lists the Arr-style sections in the sidebar and mobile tab bar", () => {
       .getAllByRole("link")
       .map((link) => [link.textContent, link.getAttribute("href")]),
   ).toEqual(sections);
+});
+
+function announceUpdate(dismissedUpdate: string | null = null) {
+  client.setQueryData(["updates"], {
+    enabled: true,
+    release: {
+      version: "9.9.9",
+      url: "https://github.com/davidchalifoux/arrsenal/releases/tag/v9.9.9",
+      updateAvailable: true,
+    },
+  });
+  client.setQueryData(["preferences"], { timeZone: null, dismissedUpdate });
+}
+
+it("announces an available update without naming the version", () => {
+  announceUpdate();
+  renderShell();
+  const link = screen.getByRole("link", { name: "Update available" });
+  expect(link.getAttribute("href")).toBe("/settings/about");
+  expect(screen.queryByText(/9\.9\.9/)).toBeNull();
+  const mobile = within(
+    screen.getByRole("navigation", { name: "Mobile navigation" }),
+  );
+  expect(
+    mobile.getByRole("link", { name: "Settings, update available" }),
+  ).toBeTruthy();
+});
+
+it("hides the update notice once that release is dismissed", async () => {
+  const fetcher = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async () => Response.json({ timeZone: null, dismissedUpdate: "9.9.9" }),
+      { preconnect: fetch.preconnect },
+    ),
+  );
+  announceUpdate();
+  renderShell();
+  await act(async () => {
+    fireEvent.click(
+      screen.getByRole("button", { name: "Dismiss update notice" }),
+    );
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("link", { name: "Update available" })).toBeNull(),
+  );
+  expect(
+    screen.getByRole("navigation", { name: "Mobile navigation" }).textContent,
+  ).not.toContain("update available");
+  const save = fetcher.mock.calls.find(([path]) => path === "/api/preferences");
+  expect(JSON.parse(String(save?.[1]?.body))).toEqual({
+    dismissedUpdate: "9.9.9",
+  });
+  fetcher.mockRestore();
+});
+
+it("shows no update notice for a dismissed or current release", () => {
+  announceUpdate("9.9.9");
+  renderShell();
+  expect(screen.queryByText("Update available")).toBeNull();
+  cleanup();
+  client.setQueryData(["updates"], {
+    enabled: true,
+    release: { version: "0.0.1", url: "", updateAvailable: false },
+  });
+  client.setQueryData(["preferences"], { timeZone: null });
+  renderShell();
+  expect(screen.queryByText("Update available")).toBeNull();
 });
 
 it("expands only the active section's sub-navigation", () => {

@@ -19,6 +19,10 @@ export type Preferences = {
   tables?: TableSettings;
   /** Where Sonarr and Radarr download uploaded NZB files from Arrsenal. */
   arrsenalUrl?: string | null;
+  /** Whether Arrsenal checks arrsenal.com for new releases. Defaults to on. */
+  updateChecks?: boolean;
+  /** The release version whose sidebar notice was dismissed. */
+  dismissedUpdate?: string | null;
 };
 
 export type AddDefault = { qualityProfileId: number; rootFolderPath: string };
