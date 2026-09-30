@@ -203,6 +203,24 @@ export function About({
             </li>
           ))}
         </ul>
+
+        <p className={css({ fontSize: "12px", color: "subtle" })}>
+          Arrsenal is free software, licensed under the{" "}
+          <a
+            href={`${repositoryUrl}/blob/main/LICENSE`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={css({
+              color: "soft",
+              textDecoration: "underline",
+              textUnderlineOffset: "3px",
+              _hover: { color: "ink" },
+            })}
+          >
+            GNU General Public License v3.0
+          </a>
+          .
+        </p>
       </div>
     </Page>
   );
