@@ -31,14 +31,6 @@ export const metadata: Metadata = {
     title: socialTitle,
     description: siteDescription,
     locale: "en_US",
-    images: [
-      {
-        url: "/library.png",
-        width: 2880,
-        height: 1770,
-        alt: "Arrsenal's library showing movies and shows from four Sonarr and Radarr instances",
-      },
-    ],
   },
   twitter: {
     card: "summary_large_image",
