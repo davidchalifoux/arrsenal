@@ -3,12 +3,26 @@ import { css } from "@styled-system/css";
 import Image from "next/image";
 import { container, primaryButton, repoUrl, secondaryButton } from "./styles";
 
+// Grouped in pairs so a narrow screen breaks between pairs, never leaving a
+// separator stranded at the end of a line.
 const highlights = [
-  "Open source",
-  "Self-hosted",
-  "Runs in Docker",
-  "No database",
+  ["Open source", "Self-hosted"],
+  ["Runs in Docker", "No database"],
 ];
+
+const separator = css({ color: "faint", px: "2.5" });
+
+function Separator({ className = separator }: { className?: string }) {
+  return (
+    <>
+      <span aria-hidden className={className}>
+        ·
+      </span>
+      {/* Screen readers skip the dot, so give them a pause instead. */}
+      <span className={css({ srOnly: true })}>, </span>
+    </>
+  );
+}
 
 export function Hero() {
   return (
@@ -121,40 +135,34 @@ export function Hero() {
               View on GitHub
             </a>
           </div>
-          <ul
+          <p
             className={css({
               mt: "7",
               display: "flex",
-              flexWrap: "wrap",
-              justifyContent: "center",
-              columnGap: "5",
-              rowGap: "2",
+              flexDirection: { base: "column", sm: "row" },
+              alignItems: "center",
+              rowGap: "1.5",
               fontSize: "sm",
               color: "subtle",
             })}
           >
-            {highlights.map((item) => (
-              <li
-                key={item}
-                className={css({
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "2",
-                })}
-              >
-                <span
-                  aria-hidden
-                  className={css({
-                    w: "1",
-                    h: "1",
-                    rounded: "full",
-                    bg: "faint",
-                  })}
-                />
-                {item}
-              </li>
+            {highlights.map((pair, index) => (
+              <span key={pair[0]} className={css({ display: "flex" })}>
+                {index > 0 && (
+                  <Separator
+                    className={css({
+                      display: { base: "none", sm: "inline" },
+                      color: "faint",
+                      px: "2.5",
+                    })}
+                  />
+                )}
+                {pair[0]}
+                <Separator />
+                {pair[1]}
+              </span>
             ))}
-          </ul>
+          </p>
         </div>
 
         <figure className={css({ mt: { base: "14", md: "20" } })}>
@@ -169,28 +177,6 @@ export function Hero() {
                 "0 40px 120px -30px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.02)",
             })}
           >
-            <div
-              aria-hidden
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: "1.5",
-                h: { base: "6", md: "8" },
-                px: "3",
-              })}
-            >
-              {[0, 1, 2].map((dot) => (
-                <span
-                  key={dot}
-                  className={css({
-                    w: "2.5",
-                    h: "2.5",
-                    rounded: "full",
-                    bg: "elevated",
-                  })}
-                />
-              ))}
-            </div>
             <Image
               src="/library.png"
               alt="Arrsenal's library in poster view, showing movies and shows from four Sonarr and Radarr instances with HD and 4K availability on every title"
@@ -199,6 +185,7 @@ export function Hero() {
               preload
               sizes="(min-width: 1160px) 1100px, 100vw"
               className={css({
+                display: "block",
                 w: "full",
                 h: "auto",
                 rounded: { base: "md", md: "lg" },
