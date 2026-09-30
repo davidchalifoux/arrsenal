@@ -90,3 +90,7 @@ Connections and preferences persist in the `arrsenal-config` volume. API keys st
 For version history, see [GitHub Releases](https://github.com/davidchalifoux/arrsenal/releases) or the [changelog](CHANGELOG.md). **Settings > About** shows your installed version and checks for the latest stable release. Report problems through [GitHub Issues](https://github.com/davidchalifoux/arrsenal/issues).
 
 Arrsenal is not endorsed by TMDB, TheTVDB, Sonarr, or Radarr.
+
+## License
+
+Arrsenal is licensed under the [GNU General Public License v3.0](LICENSE).
