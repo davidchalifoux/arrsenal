@@ -17,10 +17,15 @@ Open [localhost:3100](http://localhost:3100). The port differs from the app's 30
 ```sh
 bun run lint    # Biome, extending the repository's root biome.json
 bun run format
-bun run build   # Static export to site/out
+bun run build
+bun run start   # Serve the production build on localhost:3100
 ```
 
-The site is a static export, so `out/` can be deployed to any static host. Set `SITE_URL` (for example `SITE_URL=https://arrsenal.example.com bun run build`) so Open Graph images resolve to absolute URLs.
+## Deploy
+
+The site is meant to run on Vercel at [www.arrsenal.com](https://www.arrsenal.com). Set the Vercel project's **Root Directory** to `site`. It runs as a regular Next.js app rather than a static export, so `next/image` can optimize images from `public/` on request.
+
+The production URL lives in `src/lib/site.ts` and feeds the canonical URL, Open Graph tags, `robots.txt`, `sitemap.xml`, and the JSON-LD structured data. Update it there if the domain changes.
 
 The **Site** GitHub Actions workflow lints and builds pull requests that touch `site/`.
 

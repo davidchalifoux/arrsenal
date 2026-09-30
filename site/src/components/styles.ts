@@ -1,6 +1,6 @@
 import { css } from "@styled-system/css";
 
-export const repoUrl = "https://github.com/davidchalifoux/arrsenal";
+export { repoUrl } from "@/lib/site";
 
 export const container = css({
   w: "full",
